@@ -1,21 +1,11 @@
-import os
 import json
 import time
 import pandas as pd
 from google import genai
 from py2neo import Graph, Node, Relationship
-from pydantic import ValidationError
 
-# 1. 环境配置
 client = genai.Client()
 graph = Graph("bolt://localhost:7687", auth=("neo4j", "testawa1234"))
-
-# 2. 定义分析函数 (使用新版 Client 语法)
-import json
-import time
-import sys
-from google import genai
-from pydantic import ValidationError
 
 def analyze_demand_with_gemini(demand_text, max_retries=5):
     """
@@ -41,7 +31,7 @@ def analyze_demand_with_gemini(demand_text, max_retries=5):
     for attempt in range(1, max_retries + 1):
         try:
             response = client.models.generate_content(
-                model="gemini-3.1-flash-lite-preview", 
+                model="gemini-2.5-flash", 
                 contents=prompt,
                 config={
                     'response_mime_type': 'application/json',
@@ -71,7 +61,7 @@ def create_graph(csv_path):
     print("开始清洗旧数据并导入新数据...")
     # graph.delete_all()
 
-    for index, row in df[100:].iterrows():
+    for index, row in df[473:].iterrows():
         # Job
         job = Node("Job", 
                    title=row['name'], 
@@ -115,6 +105,5 @@ def create_graph(csv_path):
 
     print("图谱构建完成！")
 
-# 4. 运行
 if __name__ == "__main__":
     create_graph("../datasets/jobs.csv")
