@@ -8,3 +8,9 @@ __MACOSX
 
 # 数据库本地文件
 neo4j
+
+# 环境变量
+.env
+
+# python 包
+.venc
