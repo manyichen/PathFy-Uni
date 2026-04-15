@@ -1,0 +1,29 @@
+---
+import FeatureBento from "@components/home/FeatureBento.svelte";
+import FunShowcase from "@components/home/FunShowcase.svelte";
+import HeroBurst from "@components/home/HeroBurst.astro";
+import SiteIntroPanel from "@components/home/SiteIntroPanel.astro";
+import Layout from "@layouts/Layout.astro";
+---
+
+<Layout
+	title="首页"
+	description="基于 AI 的大学生职业规划智能体：岗位画像、能力拆解、人岗匹配与生涯报告。"
+>
+	<div class="space-y-12 pb-8">
+		<HeroBurst />
+		<SiteIntroPanel />
+		<FunShowcase client:visible />
+		<div class="relative" aria-hidden="true">
+			<div
+				class="h-px w-full bg-gradient-to-r from-transparent via-[var(--primary)]/45 to-transparent"
+			></div>
+			<div class="absolute left-1/2 top-1/2 flex -translate-x-1/2 -translate-y-1/2 gap-1">
+				<span class="h-1.5 w-1.5 rounded-full bg-[var(--primary)]/70"></span>
+				<span class="h-1.5 w-1.5 rounded-full bg-[var(--primary)]/45"></span>
+				<span class="h-1.5 w-1.5 rounded-full bg-[var(--primary)]/25"></span>
+			</div>
+		</div>
+		<FeatureBento client:visible />
+	</div>
+</Layout>

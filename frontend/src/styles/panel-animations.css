@@ -1,0 +1,19 @@
+/* 摘自 suillilab — 浮动面板显隐 */
+
+.float-panel {
+	transition:
+		opacity 0.3s ease,
+		transform 0.3s ease;
+}
+
+.float-panel-closed {
+	opacity: 0;
+	transform: translateY(-0.25rem);
+	pointer-events: none;
+}
+
+.float-panel:not(.float-panel-closed) {
+	opacity: 1;
+	transform: translateY(0);
+	pointer-events: auto;
+}

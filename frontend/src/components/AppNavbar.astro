@@ -1,0 +1,369 @@
+---
+import { Icon } from "astro-icon/components";
+import DisplaySettings from "@components/DisplaySettings.svelte";
+import LightDarkSwitch from "@components/LightDarkSwitch.svelte";
+import {
+	BANNER_HEIGHT,
+	BANNER_HEIGHT_HOME,
+} from "@constants/constants";
+import { siteConfig } from "@/config";
+import { url } from "@utils/url-utils";
+
+const nav = [
+	{ name: "首页", href: "/", protected: false },
+	{ name: "岗位探索", href: "/jobs/", protected: false },
+	{ name: "能力画像", href: "/profile/", protected: true },
+	{ name: "人岗匹配", href: "/match/", protected: true },
+	{ name: "职业图谱", href: "/graph/", protected: true },
+	{ name: "生涯报告", href: "/report/", protected: true },
+];
+
+const showHue = !siteConfig.themeColor.fixed;
+const navbarTransparentMode =
+	siteConfig.banner?.navbar?.transparentMode ?? "semi";
+const isHomePage = Astro.url.pathname === "/" || Astro.url.pathname === "";
+const titleText = siteConfig.navbarTitle?.text ?? siteConfig.title;
+const titleIcon =
+	siteConfig.navbarTitle?.icon ?? "/assets/home/fu.svg";
+---
+
+<div
+	id="navbar-wrapper"
+	class="pointer-events-auto sticky top-0 z-50"
+>
+	<div
+		id="navbar"
+		class="relative onload-animation px-2 pt-0 md:px-4"
+		data-transparent-mode={navbarTransparentMode}
+		data-is-home={isHomePage}
+	>
+		<div class="absolute left-0 right-0 -top-8 h-8 bg-[var(--card-bg)] transition"></div>
+		<div
+			class="!overflow-visible mx-auto flex h-[4.5rem] max-w-[var(--page-width)] items-center justify-between px-4"
+		>
+			<a
+				href={url("/")}
+				class="btn-plain scale-animation flex h-[3.25rem] items-center rounded-lg px-5 font-bold active:scale-95"
+				aria-label={`${titleText} 首页`}
+			>
+				<div class="text-md flex flex-row items-center">
+					<img
+						src={url(titleIcon)}
+						alt=""
+						aria-hidden="true"
+						class="mb-1 mr-2 h-[1.75rem] w-[1.75rem] object-contain"
+						width="28"
+						height="28"
+						loading="eager"
+						decoding="async"
+					/>
+					<span class="text-black dark:text-white">{titleText}</span>
+				</div>
+			</a>
+
+			<div class="hidden items-center space-x-1 md:flex">
+				{
+					nav.map((item) => (
+						<a
+							href={url(item.href)}
+							data-protected={item.protected ? "true" : "false"}
+							class="btn-plain rounded-lg px-3 py-2 text-sm font-medium text-black/75 dark:text-white/75"
+						>
+							{item.name}
+						</a>
+					))
+				}
+			</div>
+
+			<div class="flex items-center">
+				<a
+					id="user-center-entry"
+					href={url("/account/")}
+					class="btn-plain hidden rounded-lg px-3 py-2 text-sm font-medium text-black/85 dark:text-white/85"
+					aria-label="个人中心"
+				>
+					个人中心
+				</a>
+				<a
+					id="auth-entry"
+					href={url("/login")}
+					class="btn-plain rounded-lg px-3 py-2 text-sm font-semibold text-black dark:text-white"
+					aria-label="登录入口"
+				>
+					登录
+				</a>
+				{
+					showHue && (
+						<button
+							type="button"
+							class="btn-plain scale-animation h-11 w-11 rounded-lg active:scale-90"
+							id="display-settings-switch"
+							aria-label="主题色设置"
+							aria-expanded="false"
+						>
+							<Icon
+								name="material-symbols:palette-outline"
+								class="text-[1.25rem]"
+							/>
+						</button>
+					)
+				}
+				<LightDarkSwitch client:load />
+				<button
+					type="button"
+					class="btn-plain scale-animation flex h-11 w-11 items-center justify-center rounded-lg md:!hidden"
+					id="mobile-nav-toggle"
+					aria-label="打开菜单"
+					aria-expanded="false"
+				>
+					<Icon name="material-symbols:menu-rounded" class="text-[1.25rem]" />
+				</button>
+			</div>
+		</div>
+
+		<div
+			id="mobile-nav-panel"
+			class="float-panel-closed mx-auto max-w-[var(--page-width)] border-t border-black/5 px-4 py-3 dark:border-white/10 md:hidden"
+		>
+			<nav class="flex flex-col gap-1" aria-label="移动端导航">
+				{
+					nav.map((item) => (
+						<a
+							href={url(item.href)}
+							data-protected={item.protected ? "true" : "false"}
+							class="btn-plain rounded-lg px-3 py-2.5 text-left text-sm font-medium"
+						>
+							{item.name}
+						</a>
+					))
+				}
+				<a
+					id="mobile-user-center-entry"
+					href={url("/account/")}
+					class="btn-plain mt-1 hidden rounded-lg px-3 py-2.5 text-left text-sm font-medium"
+				>
+					个人中心
+				</a>
+				<a
+					id="mobile-auth-entry"
+					href={url("/login")}
+					class="btn-plain mt-1 rounded-lg px-3 py-2.5 text-left text-sm font-semibold"
+				>
+					登录
+				</a>
+			</nav>
+		</div>
+	</div>
+
+	{showHue && <DisplaySettings client:load />}
+</div>
+
+<script>
+	import {
+		BANNER_HEIGHT,
+		BANNER_HEIGHT_HOME,
+	} from "@constants/constants";
+
+	const TOKEN_KEY = "auth_token";
+	const USER_KEY = "auth_user";
+
+	function isLoggedIn() {
+		return Boolean(localStorage.getItem(TOKEN_KEY));
+	}
+
+	function getStoredUserName() {
+		const raw = localStorage.getItem(USER_KEY);
+		if (!raw) return null;
+		try {
+			const user = JSON.parse(raw) as { username?: string };
+			return user.username ?? null;
+		} catch {
+			return null;
+		}
+	}
+
+	function isPublicPath(pathname: string) {
+		return (
+			pathname === "/" ||
+			pathname === "" ||
+			pathname.startsWith("/jobs") ||
+			pathname.startsWith("/login") ||
+			pathname.startsWith("/register")
+		);
+	}
+
+	function toLogin() {
+		const target = `/login?redirect=${encodeURIComponent(window.location.pathname)}`;
+		window.location.assign(target);
+	}
+
+	function setupAuthEntry() {
+		const authEntry = document.getElementById("auth-entry") as HTMLAnchorElement | null;
+		const userCenterEntry = document.getElementById(
+			"user-center-entry",
+		) as HTMLAnchorElement | null;
+		const mobileAuthEntry = document.getElementById(
+			"mobile-auth-entry",
+		) as HTMLAnchorElement | null;
+		const mobileUserCenterEntry = document.getElementById(
+			"mobile-user-center-entry",
+		) as HTMLAnchorElement | null;
+		const loggedIn = isLoggedIn();
+		const userName = getStoredUserName();
+		const text = loggedIn ? "退出登录" : "登录";
+		const href = loggedIn ? "#" : "/login";
+
+		for (const el of [authEntry, mobileAuthEntry]) {
+			if (!el) continue;
+			el.textContent = text;
+			el.href = href;
+			el.onclick = (e) => {
+				if (!isLoggedIn()) return;
+				e.preventDefault();
+				localStorage.removeItem(TOKEN_KEY);
+				localStorage.removeItem(USER_KEY);
+				window.location.assign("/");
+			};
+		}
+
+		const centerText = userName ? `你好，${userName}` : "个人中心";
+		for (const el of [userCenterEntry, mobileUserCenterEntry]) {
+			if (!el) continue;
+			el.textContent = centerText;
+			el.classList.toggle("hidden", !loggedIn);
+		}
+	}
+
+	function setupAuthGuard() {
+		const currentPath = window.location.pathname;
+		if (!isPublicPath(currentPath) && !isLoggedIn()) {
+			toLogin();
+			return;
+		}
+
+		const protectedLinks = document.querySelectorAll(
+			'a[data-protected="true"]',
+		);
+		protectedLinks.forEach((link) => {
+			link.addEventListener("click", (e) => {
+				if (isLoggedIn()) return;
+				e.preventDefault();
+				toLogin();
+			});
+		});
+	}
+
+	function setupNav() {
+		const displayBtn = document.getElementById("display-settings-switch");
+		const displayPanel = document.getElementById("display-setting");
+		const mobileToggle = document.getElementById("mobile-nav-toggle");
+		const mobilePanel = document.getElementById("mobile-nav-panel");
+
+		displayBtn?.addEventListener("click", (e) => {
+			e.stopPropagation();
+			displayPanel?.classList.toggle("float-panel-closed");
+			const open = !displayPanel?.classList.contains("float-panel-closed");
+			displayBtn.setAttribute("aria-expanded", String(open));
+		});
+
+		mobileToggle?.addEventListener("click", () => {
+			mobilePanel?.classList.toggle("float-panel-closed");
+			const open = !mobilePanel?.classList.contains("float-panel-closed");
+			mobileToggle.setAttribute("aria-expanded", String(open));
+		});
+
+		document.addEventListener("click", (e) => {
+			const t = e.target as Node;
+			if (
+				displayPanel &&
+				!displayPanel.contains(t) &&
+				displayBtn &&
+				!displayBtn.contains(t)
+			) {
+				displayPanel.classList.add("float-panel-closed");
+				displayBtn.setAttribute("aria-expanded", "false");
+			}
+		});
+	}
+
+	function throttle(func: () => void, limit: number) {
+		let inThrottle = false;
+		return function () {
+			if (!inThrottle) {
+				func();
+				inThrottle = true;
+				setTimeout(() => {
+					inThrottle = false;
+				}, limit);
+			}
+		};
+	}
+
+	function clamp(n: number, min: number, max: number) {
+		return Math.min(max, Math.max(min, n));
+	}
+
+	/**
+	 * 首页：以 #home-hero 底边为「横幅结束」，在一段滚动距离内渐变隐藏顶栏（仿 suillilab 横幅体验，更顺）。
+	 * 其他页：仍用视口高度公式，同样用渐变带代替单点切换。
+	 */
+	function scrollNavbar() {
+		const navbar = document.getElementById("navbar-wrapper");
+		const navInner = document.getElementById("navbar");
+		if (!navbar || !navInner) return;
+
+		const scrollTop = document.documentElement.scrollTop;
+		const isHome = navInner.getAttribute("data-is-home") === "true";
+		const hero = document.getElementById("home-hero");
+
+		let fadeStart: number;
+		let fadeEnd: number;
+
+		if (isHome && hero) {
+			const heroBottom = scrollTop + hero.getBoundingClientRect().bottom;
+			fadeStart = heroBottom - 200;
+			fadeEnd = heroBottom - 40;
+		} else {
+			const isWide = window.innerWidth >= 1024;
+			const currentBannerHeight =
+				isHome && isWide ? BANNER_HEIGHT_HOME : BANNER_HEIGHT;
+			const center = Math.max(
+				48,
+				window.innerHeight * (currentBannerHeight / 100) - 88,
+			);
+			fadeStart = center - 110;
+			fadeEnd = center + 24;
+		}
+
+		const range = Math.max(1, fadeEnd - fadeStart);
+		const p = clamp((scrollTop - fadeStart) / range, 0, 1);
+
+		requestAnimationFrame(() => {
+			navbar.style.setProperty("--navbar-hide-progress", String(p));
+			navbar.style.pointerEvents = p > 0.96 ? "none" : "auto";
+		});
+	}
+
+	const onScroll = throttle(scrollNavbar, 16);
+
+	setupNav();
+	setupAuthEntry();
+	setupAuthGuard();
+	scrollNavbar();
+	window.addEventListener("scroll", onScroll, { passive: true });
+	window.addEventListener("resize", scrollNavbar, { passive: true });
+</script>
+
+<style>
+	#mobile-nav-panel.float-panel-closed {
+		display: none;
+	}
+	#mobile-nav-panel:not(.float-panel-closed) {
+		display: block;
+	}
+	@media (min-width: 1280px) {
+		#mobile-nav-panel {
+			display: none !important;
+		}
+	}
+</style>

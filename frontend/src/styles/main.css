@@ -1,0 +1,158 @@
+@import "./theme-variables.css";
+@import "./transition.css";
+@import "./panel-animations.css";
+@import "./interactive.css";
+@import "./navbar-mizuki.css";
+
+/* 与 suillilab 一致：本地字体放入 public/assets/font/ 后生效（可选） */
+@font-face {
+	font-family: "ZenMaruGothic-Medium";
+	src: url("/assets/font/ZenMaruGothic-Medium.woff2") format("woff2");
+	font-weight: 500;
+	font-display: swap;
+}
+
+@font-face {
+	font-family: "萝莉体 第二版";
+	src: url("/assets/font/萝莉体 第二版.woff2") format("woff2");
+	font-style: normal;
+	font-weight: 400;
+	font-display: swap;
+}
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+	body {
+		font-feature-settings:
+			"kern" 1,
+			"liga" 1;
+		text-rendering: optimizeLegibility;
+		-webkit-font-smoothing: antialiased;
+	}
+	h1,
+	h2,
+	h3 {
+		@apply font-semibold tracking-tight;
+	}
+}
+
+html {
+	scroll-behavior: smooth;
+}
+
+::selection {
+	background-color: var(--selection-bg);
+	color: inherit;
+}
+
+:root:not(.dark) ::selection {
+	color: #000;
+}
+
+:root.dark ::selection {
+	color: #fff;
+}
+
+@layer components {
+	.card-base {
+		@apply rounded-[var(--radius-large)] overflow-hidden bg-[var(--card-bg)] transition-colors duration-150;
+	}
+
+	.card-shadow {
+		@apply drop-shadow-[0_2px_4px_rgba(0,0,0,0.05)] dark:drop-shadow-none;
+	}
+
+	.link {
+		@apply transition-colors duration-150 rounded-md p-1 -m-1 expand-animation;
+	}
+
+	.expand-animation {
+		@apply relative before:ease-out before:duration-75 before:transition-all active:bg-none hover:before:bg-[var(--btn-plain-bg-hover)] active:before:bg-[var(--btn-plain-bg-active)] z-0
+			before:absolute before:rounded-[inherit] before:inset-0 before:scale-[0.85] hover:before:scale-100 before:-z-10;
+	}
+
+	.btn-plain {
+		@apply transition-colors duration-150 relative flex items-center justify-center bg-none
+			text-black/75 hover:text-[var(--primary)] dark:text-white/75 dark:hover:text-[var(--primary)];
+	}
+	.btn-plain.scale-animation {
+		@apply expand-animation;
+	}
+	.btn-plain:not(.scale-animation) {
+		@apply hover:bg-[var(--btn-plain-bg-hover)] active:bg-[var(--btn-plain-bg-active)];
+	}
+
+	.btn-regular {
+		@apply transition-colors duration-150 flex items-center justify-center rounded-lg bg-[var(--btn-regular-bg)] hover:bg-[var(--btn-regular-bg-hover)] active:bg-[var(--btn-regular-bg-active)]
+			text-[var(--btn-content)] dark:text-white/75;
+	}
+
+	.float-panel {
+		@apply top-[5.25rem] rounded-[var(--radius-large)] overflow-hidden bg-[var(--float-panel-bg)] transition-colors duration-150 shadow-xl dark:shadow-none;
+	}
+
+	.text-90 {
+		@apply text-black/90 dark:text-white/90;
+	}
+	.text-75 {
+		@apply text-black/75 dark:text-white/75;
+	}
+	.text-50 {
+		@apply text-black/50 dark:text-white/50;
+	}
+
+	/**
+	 * suillilab 顶栏隐藏：由脚本写入 --navbar-hide-progress（0~1），
+	 * 随滚动渐变，避免「突然消失」。
+	 */
+	#navbar-wrapper {
+		--navbar-hide-progress: 0;
+		opacity: calc(1 - var(--navbar-hide-progress));
+		transform: translateY(calc(-4rem * var(--navbar-hide-progress)));
+	}
+
+	/** suillilab MainGridLayout + Layout.astro：横幅底波动画 */
+	.home-hero-waves {
+		overflow: visible;
+		z-index: 5;
+		transform: translateZ(0);
+		will-change: transform;
+		contain: layout style paint;
+		isolation: isolate;
+		margin-bottom: -1px;
+	}
+
+	.home-hero-waves svg {
+		width: 100%;
+		height: 100%;
+		display: block;
+		transform: translateZ(0);
+		backface-visibility: hidden;
+	}
+
+	.home-hero-waves use {
+		will-change: transform;
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		.home-hero-waves .parallax use {
+			animation: none !important;
+		}
+	}
+
+	.home-hero-waves .parallax > use {
+		animation: hero-wave 25s cubic-bezier(0.5, 0.5, 0.45, 0.5) infinite;
+	}
+
+	@keyframes hero-wave {
+		0% {
+			transform: translate3d(-90px, 0, 0);
+		}
+		100% {
+			transform: translate3d(85px, 0, 0);
+		}
+	}
+}

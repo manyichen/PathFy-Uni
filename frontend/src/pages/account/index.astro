@@ -1,0 +1,10 @@
+---
+import AccountProfileCard from "@components/account/AccountProfileCard.svelte";
+import Layout from "@layouts/Layout.astro";
+---
+
+<Layout title="个人中心" description="用户基础信息与账户设置">
+	<section class="onload-animation py-2">
+		<AccountProfileCard client:load />
+	</section>
+</Layout>

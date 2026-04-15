@@ -1,0 +1,109 @@
+---
+import ConfigCarrier from "@components/ConfigCarrier.astro";
+import AppNavbar from "@components/AppNavbar.astro";
+import { siteConfig } from "@/config";
+import { url } from "@utils/url-utils";
+import { DARK_MODE, DEFAULT_THEME, LIGHT_MODE, PAGE_WIDTH } from "@constants/constants";
+import "../styles/main.css";
+
+interface Props {
+	title?: string;
+	description?: string;
+}
+
+const { title, description } = Astro.props;
+const pageTitle = title
+	? `${title} · ${siteConfig.title}`
+	: siteConfig.subtitle
+		? `${siteConfig.title} - ${siteConfig.subtitle}`
+		: siteConfig.title;
+const metaDesc =
+	description ?? "基于 AI 的大学生职业规划智能体 — 岗位画像、能力画像与人岗匹配。";
+const configHue = siteConfig.themeColor.hue;
+
+/** 与 suillilab Layout.astro 相同：ASCII 字体优先，CJK 回退 */
+let bodyFontFamily = "";
+if (siteConfig.font) {
+	const fonts: string[] = [];
+	if (siteConfig.font.asciiFont?.fontFamily) {
+		const asciiFont = siteConfig.font.asciiFont.fontFamily;
+		fonts.push(asciiFont.includes(" ") ? `"${asciiFont}"` : asciiFont);
+	}
+	if (siteConfig.font.cjkFont?.fontFamily) {
+		const cjkFont = siteConfig.font.cjkFont.fontFamily;
+		fonts.push(cjkFont.includes(" ") ? `"${cjkFont}"` : cjkFont);
+	}
+	fonts.push(
+		"system-ui",
+		"-apple-system",
+		"BlinkMacSystemFont",
+		"'Segoe UI'",
+		"Roboto",
+		"Oxygen",
+		"Ubuntu",
+		"Cantarell",
+		"'Open Sans'",
+		"'Helvetica Neue'",
+		"sans-serif",
+	);
+	bodyFontFamily = fonts.join(", ");
+}
+---
+
+<!doctype html>
+<html
+	lang="zh-CN"
+	class="bg-[var(--page-bg)] text-[14px] md:text-[16px]"
+	style={`--page-width: ${PAGE_WIDTH}rem;`}
+>
+	<head>
+		<meta charset="UTF-8" />
+		<meta name="viewport" content="width=device-width" />
+		<meta name="description" content={metaDesc} />
+		<title>{pageTitle}</title>
+		<link rel="icon" type="image/svg+xml" href={url("/favicon.svg")} />
+		<link rel="preconnect" href="https://fonts.googleapis.com" />
+		<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+		<link
+			href="https://fonts.googleapis.com/css2?family=Zen+Maru+Gothic:wght@400;500;700&family=Noto+Sans+SC:wght@400;500;600;700&display=swap"
+			rel="stylesheet"
+		/>
+		<meta name="generator" content={Astro.generator} />
+		<script
+			is:inline
+			define:vars={{
+				DEFAULT_THEME,
+				LIGHT_MODE,
+				DARK_MODE,
+				configHue,
+			}}
+		>
+			const theme = localStorage.getItem("theme") || DEFAULT_THEME;
+			switch (theme) {
+				case LIGHT_MODE:
+					document.documentElement.classList.remove("dark");
+					break;
+				case DARK_MODE:
+					document.documentElement.classList.add("dark");
+					break;
+			}
+			const isDark = document.documentElement.classList.contains("dark");
+			document.documentElement.setAttribute(
+				"data-theme",
+				isDark ? "github-dark" : "github-light",
+			);
+			const hue = localStorage.getItem("hue") || String(configHue);
+			document.documentElement.style.setProperty("--hue", hue);
+		</script>
+	</head>
+	<body
+		class="min-h-screen text-90 antialiased"
+		style={bodyFontFamily ? `font-family: ${bodyFontFamily};` : ""}
+	>
+		<ConfigCarrier />
+		<AppNavbar />
+		<main class="mx-auto w-full max-w-[var(--page-width)] px-4 pb-16 pt-6 md:px-6">
+			<slot />
+		</main>
+	</body>
+</html>

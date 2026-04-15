@@ -1,0 +1,117 @@
+/* 首页与交互组件：光斑、渐变、入场 */
+
+@keyframes ca-float {
+	0%,
+	100% {
+		transform: translate(0, 0) scale(1);
+	}
+	33% {
+		transform: translate(12px, -18px) scale(1.05);
+	}
+	66% {
+		transform: translate(-10px, 10px) scale(0.98);
+	}
+}
+
+@keyframes ca-gradient-flow {
+	0% {
+		background-position: 0% 50%;
+	}
+	50% {
+		background-position: 100% 50%;
+	}
+	100% {
+		background-position: 0% 50%;
+	}
+}
+
+@keyframes ca-shimmer {
+	0% {
+		background-position: -200% center;
+	}
+	100% {
+		background-position: 200% center;
+	}
+}
+
+@keyframes ca-pulse-ring {
+	0% {
+		transform: scale(1);
+		opacity: 0.5;
+	}
+	100% {
+		transform: scale(1.4);
+		opacity: 0;
+	}
+}
+
+@keyframes ca-dash {
+	to {
+		stroke-dashoffset: 0;
+	}
+}
+
+.ca-blob {
+	animation: ca-float 12s ease-in-out infinite;
+}
+.ca-blob-delay-1 {
+	animation-delay: -4s;
+}
+.ca-blob-delay-2 {
+	animation-delay: -8s;
+}
+
+.ca-gradient-flow {
+	background-size: 200% 200%;
+	animation: ca-gradient-flow 14s ease infinite;
+}
+
+.ca-text-shimmer {
+	background: linear-gradient(
+		105deg,
+		var(--deep-text) 0%,
+		var(--deep-text) 40%,
+		var(--primary) 50%,
+		var(--deep-text) 60%,
+		var(--deep-text) 100%
+	);
+	background-size: 200% auto;
+	-webkit-background-clip: text;
+	background-clip: text;
+	color: transparent;
+	animation: ca-shimmer 6s linear infinite;
+}
+
+:root.dark .ca-text-shimmer {
+	background: linear-gradient(
+		105deg,
+		#fff 0%,
+		#fff 38%,
+		var(--primary) 50%,
+		#fff 62%,
+		#fff 100%
+	);
+	background-size: 200% auto;
+	-webkit-background-clip: text;
+	background-clip: text;
+}
+
+.ca-glass {
+	background: color-mix(in oklch, var(--card-bg) 75%, transparent);
+	backdrop-filter: blur(12px);
+	-webkit-backdrop-filter: blur(12px);
+}
+
+.ca-card-tilt {
+	transform-style: preserve-3d;
+	transition:
+		transform 0.35s cubic-bezier(0.23, 1, 0.32, 1),
+		box-shadow 0.35s ease;
+	will-change: transform;
+}
+
+.ca-card-tilt:hover {
+	box-shadow:
+		0 20px 40px -15px color-mix(in oklch, var(--primary) 35%, transparent),
+		0 0 0 1px color-mix(in oklch, var(--primary) 25%, transparent);
+}

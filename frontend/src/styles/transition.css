@@ -1,0 +1,42 @@
+/* 摘自 suillilab transition.css — 页面块入场动画（无 Swup 亦可使用） */
+
+@keyframes fade-in-up {
+	from {
+		opacity: 0;
+		transform: translateY(1.5rem) translateX(0.5rem);
+	}
+	to {
+		opacity: 1;
+		transform: translateY(0) translateX(0);
+	}
+}
+
+@keyframes fade-in {
+	from {
+		opacity: 0;
+	}
+	to {
+		opacity: 1;
+	}
+}
+
+.onload-animation {
+	opacity: 0;
+	animation: fade-in-up 300ms ease-out forwards;
+}
+
+.onload-animation:nth-child(1) {
+	animation-delay: 0ms;
+}
+.onload-animation:nth-child(2) {
+	animation-delay: 50ms;
+}
+.onload-animation:nth-child(3) {
+	animation-delay: 100ms;
+}
+.onload-animation:nth-child(4) {
+	animation-delay: 150ms;
+}
+.onload-animation:nth-child(5) {
+	animation-delay: 200ms;
+}

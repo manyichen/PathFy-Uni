@@ -1,0 +1,12 @@
+/**
+ * 导航栏容器样式（摘自 suillilab mobile-navbar.css 中与无 Banner 场景相关的部分）
+ * #navbar 内层白底圆角条，与 Mizuki 主题一致。
+ */
+/* 顶栏透明度/位移由 main.css 中 --navbar-hide-progress 控制，不再用 transition 以免与滚动插值打架 */
+
+/* 第二条子节点为顶栏主条（首条为 onload 占位条） */
+#navbar > div:nth-child(2) {
+	background: var(--card-bg);
+	border-radius: var(--radius-large);
+	transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}

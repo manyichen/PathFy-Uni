@@ -1,0 +1,19 @@
+---
+import CareerGraphPreview from "@components/interactive/CareerGraphPreview.svelte";
+import Layout from "@layouts/Layout.astro";
+---
+
+<Layout title="职业图谱" description="岗位垂直与换岗路径图谱。">
+	<section class="onload-animation space-y-6">
+		<div>
+			<h1 class="mb-2 text-2xl font-bold text-black dark:text-white">职业关联图谱</h1>
+			<p class="text-sm text-75">
+				展示<strong>垂直晋升路径</strong>与<strong>换岗血缘</strong>。下方为前端演示图，正式数据来自 <code
+					class="rounded bg-[var(--btn-regular-bg)] px-1.5 py-0.5 text-xs"
+					>GET /api/jobs/…/graph</code
+				>。
+			</p>
+		</div>
+		<CareerGraphPreview client:visible />
+	</section>
+</Layout>
