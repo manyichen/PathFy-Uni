@@ -5,3 +5,4 @@ cryptography>=46.0.7
 python-dotenv>=1.0.1
 PyJWT>=2.9.0
 neo4j>=5.28.2
+openai>=1.99.0

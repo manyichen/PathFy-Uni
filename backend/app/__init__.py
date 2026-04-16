@@ -4,6 +4,7 @@ from flask_cors import CORS
 from .auth import auth_bp
 from .config import Config
 from .jobs import jobs_bp
+from .jobs_assistant import jobs_assistant_bp
 
 
 def create_app() -> Flask:
@@ -25,6 +26,7 @@ def create_app() -> Flask:
                 "routes": [
                     "GET /api/health",
                     "GET /api/jobs",
+                    "POST /api/jobs/assistant/chat",
                     "POST /api/auth/register",
                     "POST /api/auth/login",
                     "GET /api/auth/me",
@@ -38,4 +40,5 @@ def create_app() -> Flask:
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(jobs_bp)
+    app.register_blueprint(jobs_assistant_bp)
     return app

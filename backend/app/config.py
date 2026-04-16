@@ -20,4 +20,11 @@ class Config:
     NEO4J_PASSWORD = os.getenv("NEO4J_PASSWORD", "")
     NEO4J_DATABASE = os.getenv("NEO4J_DATABASE", "neo4j")
 
+    ARK_API_KEY = os.getenv("ARK_API_KEY", "")
+    ARK_BASE_URL = os.getenv("ARK_BASE_URL", "https://ark.cn-beijing.volces.com/api/v3")
+    ARK_MODEL = os.getenv("ARK_MODEL", "doubao-seed-2-0-mini-260215")
+    AI_MAX_RETURN_JOBS = int(os.getenv("AI_MAX_RETURN_JOBS", "40"))
+    AI_CONTEXT_WINDOW = int(os.getenv("AI_CONTEXT_WINDOW", "6"))
+    AI_LLM_TIMEOUT_SECONDS = int(os.getenv("AI_LLM_TIMEOUT_SECONDS", "90"))
+
     FRONTEND_ORIGIN = os.getenv("FRONTEND_ORIGIN", "http://localhost:4321")
