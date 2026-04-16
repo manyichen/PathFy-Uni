@@ -9,9 +9,9 @@ class Config:
     SECRET_KEY = os.getenv("SECRET_KEY", "dev-secret")
     TOKEN_EXPIRES_HOURS = int(os.getenv("TOKEN_EXPIRES_HOURS", "24"))
 
-    MYSQL_HOST = os.getenv("MYSQL_HOST", "127.0.0.1")
+    MYSQL_HOST = os.getenv("MYSQL_HOST", "47.104.168.245")
     MYSQL_PORT = int(os.getenv("MYSQL_PORT", "3306"))
-    MYSQL_USER = os.getenv("MYSQL_USER", "root")
+    MYSQL_USER = os.getenv("MYSQL_USER", "suilli")
     MYSQL_PASSWORD = os.getenv("MYSQL_PASSWORD", "")
     MYSQL_DATABASE = os.getenv("MYSQL_DATABASE", "suilli_mizi")
 
