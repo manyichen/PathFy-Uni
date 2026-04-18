@@ -6,4 +6,9 @@ python-dotenv>=1.0.1
 PyJWT>=2.9.0
 neo4j>=5.28.2
 openai>=1.99.0
-openai>=1.99.0
+requests>=2.31.0
+# profile utils: Baidu OCR (aip), PDF pages, pyecharts radar
+baidu-aip>=4.16.10
+chardet>=5.0.0
+PyMuPDF>=1.24.0
+pyecharts>=2.0.0

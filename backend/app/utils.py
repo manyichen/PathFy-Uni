@@ -7,17 +7,26 @@ from pyecharts import options as opts
 import fitz
 from app.config import Config
 
-# ===================== 百度OCR（真实调用）=====================
-ocr_client = AipOcr(
-    Config.OCR_APP_ID,
-    Config.OCR_API_KEY,
-    Config.OCR_SECRET_KEY
-)
+# 百度 OCR：未配置 OCR_* 时仍可启动应用，仅在调用 ocr_image 时初始化客户端
+_ocr_client = None
+
+
+def _get_ocr_client():
+    global _ocr_client
+    if _ocr_client is None:
+        app_id = str(Config.OCR_APP_ID or "").strip()
+        api_key = str(Config.OCR_API_KEY or "").strip()
+        secret = str(Config.OCR_SECRET_KEY or "").strip()
+        if not (app_id and api_key and secret):
+            raise RuntimeError("未配置 OCR_APP_ID / OCR_API_KEY / OCR_SECRET_KEY，无法使用百度 OCR")
+        _ocr_client = AipOcr(app_id, api_key, secret)
+    return _ocr_client
+
 
 def ocr_image(file_path):
     with open(file_path, "rb") as f:
         img_data = f.read()
-    result = ocr_client.basicGeneral(img_data)
+    result = _get_ocr_client().basicGeneral(img_data)
     words = result.get("words_result", [])
     return "\n".join([w["words"] for w in words])
 
