@@ -34,3 +34,12 @@ class Config:
     OCR_SECRET_KEY = os.getenv("OCR_SECRET_KEY")
 
     DASHSCOPE_API_KEY = os.getenv("DASHSCOPE_API_KEY")
+
+    # 人岗匹配 POST /api/match/preview（与 tools/job_eval 可共用 DEEPSEEK_API_KEY）
+    MATCH_PREVIEW_MAX_SCAN = int(os.getenv("MATCH_PREVIEW_MAX_SCAN", "2000"))
+    MATCH_PREVIEW_MAX_SCAN_HARD = int(os.getenv("MATCH_PREVIEW_MAX_SCAN_HARD", "8000"))
+    MATCH_TOP_K_RETURN = int(os.getenv("MATCH_TOP_K_RETURN", "30"))
+    MATCH_LLM_POOL_K = int(os.getenv("MATCH_LLM_POOL_K", "40"))
+    DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY", "")
+    MATCH_DEEPSEEK_MODEL = os.getenv("MATCH_DEEPSEEK_MODEL", "deepseek-chat")
+    MATCH_LLM_TIMEOUT_SECONDS = float(os.getenv("MATCH_LLM_TIMEOUT_SECONDS", "120"))

@@ -1,23 +1,21 @@
 ---
-import MatchPlayground from "@components/interactive/MatchPlayground.svelte";
+import PersonJobMatchPanel from "@components/match/PersonJobMatchPanel.svelte";
 import Layout from "@layouts/Layout.astro";
 ---
 
-<Layout title="人岗匹配" description="四维度人岗匹配分析。">
+<Layout title="人岗匹配" description="八维缺口粗排与可选 DeepSeek 精排。">
 	<section class="onload-animation space-y-8">
 		<div>
-			<h1 class="mb-2 text-2xl font-bold text-black dark:text-white">人岗匹配分析</h1>
+			<h1 class="mb-2 text-2xl font-bold text-black dark:text-white">人岗匹配</h1>
 			<p class="max-w-3xl text-sm leading-relaxed text-75">
-				从<strong class="text-[var(--primary)]">基础要求</strong>、<strong
-					class="text-[var(--primary)]">职业技能</strong
-				>、<strong class="text-[var(--primary)]">职业素养</strong>、<strong
-					class="text-[var(--primary)]">发展潜力</strong
-				>四维度对比岗位画像与学生画像，按权重综合打分（对接 <code
+				选择测试画像、设置岗位筛选，调用后端 <code
 					class="rounded bg-[var(--btn-regular-bg)] px-1.5 py-0.5 text-xs"
-					>POST /api/match</code
-				>）。
+					>POST /api/match/preview</code
+				>：Neo4j 扫描岗位做八维加权缺口粗排；勾选「LLM 精排」时需配置 <code
+					class="rounded bg-[var(--btn-regular-bg)] px-1.5 py-0.5 text-xs">DEEPSEEK_API_KEY</code
+				>。
 			</p>
 		</div>
-		<MatchPlayground client:visible />
+		<PersonJobMatchPanel client:visible />
 	</section>
 </Layout>
