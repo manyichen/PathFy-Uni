@@ -1,25 +1,20 @@
 import re
 from datetime import datetime, timedelta, timezone
-
 import jwt
 from flask import Blueprint, current_app, jsonify, request
 from pymysql.err import IntegrityError
 from werkzeug.security import check_password_hash, generate_password_hash
-
 from .db import db_cursor
 
 auth_bp = Blueprint("auth", __name__, url_prefix="/api/auth")
-
 EMAIL_RE = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
 USERNAME_RE = re.compile(r"^[a-zA-Z0-9_]{2,32}$")
-
 
 def _create_token(user_id: int, username: str, email: str) -> str:
     expires = datetime.now(tz=timezone.utc) + timedelta(
         hours=current_app.config["TOKEN_EXPIRES_HOURS"]
     )
     payload = {
-        # PyJWT validates "sub" as a string in newer versions.
         "sub": str(user_id),
         "username": username,
         "email": email,
@@ -27,7 +22,6 @@ def _create_token(user_id: int, username: str, email: str) -> str:
         "iat": datetime.now(tz=timezone.utc),
     }
     return jwt.encode(payload, current_app.config["SECRET_KEY"], algorithm="HS256")
-
 
 @auth_bp.post("/register")
 def register():
@@ -37,15 +31,7 @@ def register():
     password = payload.get("password") or ""
 
     if not USERNAME_RE.match(username):
-        return (
-            jsonify(
-                {
-                    "ok": False,
-                    "message": "用户名需为2-32位，仅支持字母、数字和下划线",
-                }
-            ),
-            400,
-        )
+        return jsonify({"ok": False,"message": "用户名需为2-32位，仅支持字母、数字和下划线"}), 400
     if not EMAIL_RE.match(email):
         return jsonify({"ok": False, "message": "邮箱格式不正确"}), 400
     if len(password) < 6:
@@ -56,33 +42,25 @@ def register():
 
     try:
         with db_cursor() as (_, cursor):
-            cursor.execute(
-                """
+            cursor.execute("""
                 INSERT INTO users (username, email, password_hash, created_at, updated_at)
                 VALUES (%s, %s, %s, %s, %s)
-                """,
-                (username, email, password_hash, now, now),
-            )
+            """, (username, email, password_hash, now, now))
             user_id = cursor.lastrowid
     except IntegrityError:
         return jsonify({"ok": False, "message": "用户名或邮箱已存在"}), 409
 
     token = _create_token(user_id, username, email)
-    return (
-        jsonify(
-            {
-                "ok": True,
-                "message": "注册成功",
-                "data": {
-                    "token": token,
-                    "user": {"id": user_id, "username": username, "email": email},
-                },
-            }
-        ),
-        201,
-    )
+    return jsonify({
+        "ok": True,
+        "message": "注册成功",
+        "data": {
+            "token": token,
+            "user": {"id": user_id, "username": username, "email": email}
+        }
+    }), 201
 
-
+# ==================== 原版干净登录 ====================
 @auth_bp.route("/login", methods=["POST", "GET"])
 def login():
     if request.method == "POST":
@@ -90,7 +68,6 @@ def login():
         account = (payload.get("account") or "").strip()
         password = payload.get("password") or ""
     else:
-        # Fallback for clients that accidentally submit login as GET.
         account = (request.args.get("account") or "").strip()
         password = request.args.get("password") or ""
 
@@ -98,15 +75,12 @@ def login():
         return jsonify({"ok": False, "message": "账号和密码不能为空"}), 400
 
     with db_cursor() as (_, cursor):
-        cursor.execute(
-            """
+        cursor.execute("""
             SELECT id, username, email, password_hash
             FROM users
             WHERE email = %s OR username = %s
             LIMIT 1
-            """,
-            (account.lower(), account),
-        )
+        """, (account.lower(), account))
         user = cursor.fetchone()
 
     if not user or not check_password_hash(user["password_hash"], password):
@@ -119,21 +93,18 @@ def login():
         )
 
     token = _create_token(user["id"], user["username"], user["email"])
-    return jsonify(
-        {
-            "ok": True,
-            "message": "登录成功",
-            "data": {
-                "token": token,
-                "user": {
-                    "id": user["id"],
-                    "username": user["username"],
-                    "email": user["email"],
-                },
+    return jsonify({
+        "ok": True,
+        "message": "登录成功",
+        "data": {
+            "token": token,
+            "user": {
+                "id": user["id"],
+                "username": user["username"],
+                "email": user["email"],
             },
-        }
-    )
-
+        },
+    })
 
 @auth_bp.get("/me")
 def me():
@@ -155,15 +126,13 @@ def me():
     except (TypeError, ValueError):
         user_id = None
 
-    return jsonify(
-        {
-            "ok": True,
-            "data": {
-                "user": {
-                    "id": user_id,
-                    "username": payload.get("username"),
-                    "email": payload.get("email"),
-                }
-            },
+    return jsonify({
+        "ok": True,
+        "data": {
+            "user": {
+                "id": user_id,
+                "username": payload.get("username"),
+                "email": payload.get("email"),
+            }
         }
-    )
+    })

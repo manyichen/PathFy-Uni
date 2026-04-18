@@ -1,0 +1,19 @@
+---
+import Layout from '../../layouts/Layout.astro';
+import PersonalityTest from '../../components/personality/PersonalityTest.svelte';
+---
+
+<Layout title="性格测试" description="通过MBTI性格测试，了解你的职业性格类型。">
+  <section class="onload-animation space-y-8">
+    <div>
+      <h1 class="mb-2 text-2xl font-bold text-black dark:text-white">职业性格测试</h1>
+      <p class="max-w-3xl text-sm leading-relaxed text-75">
+        通过MBTI性格测试，了解你的职业性格类型，获取个性化的职业建议和发展方向。
+      </p>
+    </div>
+
+    <div class="rounded-2xl border bg-background p-6 shadow-sm">
+      <PersonalityTest client:load />
+    </div>
+  </section>
+</Layout>

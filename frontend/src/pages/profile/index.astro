@@ -1,34 +1,249 @@
 ---
-import ResumeDropZone from "@components/interactive/ResumeDropZone.svelte";
-import SkillRadarDemo from "@components/interactive/SkillRadarDemo.svelte";
-import Layout from "@layouts/Layout.astro";
+import Layout from '../../layouts/Layout.astro';
+import RadarChart from '../../components/profile/RadarChart.svelte';
 ---
 
-<Layout title="能力画像" description="简历解析与就业能力画像。">
-	<section class="onload-animation space-y-8">
-		<div>
-			<h1 class="mb-2 text-2xl font-bold text-black dark:text-white">学生就业能力画像</h1>
-			<p class="max-w-3xl text-sm leading-relaxed text-75">
-				支持<strong>简历上传</strong>与<strong>表单录入</strong>；后端通过大模型拆解为结构化画像，并给出<strong
-					>完整度</strong
-				>与<strong>竞争力</strong>评分。联调接口示例：<code
-					class="rounded bg-[var(--btn-regular-bg)] px-1.5 py-0.5 text-xs"
-					>POST /api/resume/upload</code
-				>、<code class="rounded bg-[var(--btn-regular-bg)] px-1.5 py-0.5 text-xs"
-					>POST /api/profile</code
-				>。
-			</p>
-		</div>
+<Layout title="能力画像" description="学生就业能力画像分析，支持简历上传与表单录入。">
+  <section class="onload-animation space-y-8">
+    <div>
+      <h1 class="mb-2 text-2xl font-bold text-black dark:text-white">学生就业能力画像</h1>
+      <p class="max-w-3xl text-sm leading-relaxed text-75">
+        支持简历上传与表单录入；后端通过大模型拆解为结构化画像，并给出完整度与竞争力评分。
+      </p>
+    </div>
 
-		<div class="grid gap-8 lg:grid-cols-2">
-			<div class="space-y-4">
-				<h2 class="text-lg font-semibold text-black dark:text-white">简历接入</h2>
-				<ResumeDropZone client:visible />
-			</div>
-			<div class="space-y-4">
-				<h2 class="text-lg font-semibold text-black dark:text-white">能力雷达</h2>
-				<SkillRadarDemo client:visible />
-			</div>
-		</div>
-	</section>
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+      <!-- 左侧：简历上传区 -->
+      <div class="rounded-2xl border bg-background p-6 shadow-sm lg:col-span-1">
+        <h2 class="mb-4 text-lg font-semibold text-black dark:text-white">简历接入</h2>
+        <div class="space-y-4">
+          <div>
+            <label class="mb-1 block font-medium text-black dark:text-white">姓名</label>
+            <input type="text" id="nameInput" required class="w-full rounded-lg border bg-background px-3 py-2 text-sm text-black dark:border-gray-700 dark:bg-gray-800 dark:text-white" placeholder="请输入姓名" />
+          </div>
+          <div>
+            <label class="mb-1 block font-medium text-black dark:text-white">专业</label>
+            <input type="text" id="majorInput" required class="w-full rounded-lg border bg-background px-3 py-2 text-sm text-black dark:border-gray-700 dark:bg-gray-800 dark:text-white" placeholder="请输入专业" />
+          </div>
+          <div>
+            <label class="mb-1 block font-medium text-black dark:text-white">上传简历（图片/PDF）</label>
+            <input
+              type="file"
+              id="resumeInput"
+              required
+              class="w-full rounded-lg border bg-background px-3 py-2 text-sm text-black dark:border-gray-700 dark:bg-gray-800 dark:text-white"
+              accept=".jpg,.jpeg,.png,.pdf"
+            />
+          </div>
+          <button id="submitBtn" type="button" class="w-full rounded-lg bg-[var(--primary)] px-4 py-3 text-center text-sm font-medium text-white hover:bg-[var(--primary)]/90 focus:outline-none focus:ring-2 focus:ring-[var(--primary)]/50">
+            生成能力画像
+          </button>
+        </div>
+      </div>
+
+      <!-- 中间：能力雷达图 -->
+      <div class="rounded-2xl border bg-background p-6 shadow-sm lg:col-span-1">
+        <h2 class="mb-4 text-lg font-semibold text-black dark:text-white">能力雷达</h2>
+        <RadarChart client:load />
+
+        <div class="mt-6 grid grid-cols-2 gap-2 text-sm">
+          <div class="rounded bg-gray-50 p-2 text-center text-black dark:bg-gray-800 dark:text-white">专业理论知识：<span id="score_theory">0</span></div>
+          <div class="rounded bg-gray-50 p-2 text-center text-black dark:bg-gray-800 dark:text-white">交叉学科广度：<span id="score_cross">0</span></div>
+          <div class="rounded bg-gray-50 p-2 text-center text-black dark:bg-gray-800 dark:text-white">专业实践技能：<span id="score_practice">0</span></div>
+          <div class="rounded bg-gray-50 p-2 text-center text-black dark:bg-gray-800 dark:text-white">数字素养技能：<span id="score_digital">0</span></div>
+          <div class="rounded bg-gray-50 p-2 text-center text-black dark:bg-gray-800 dark:text-white">创新创业能力：<span id="score_innovation">0</span></div>
+          <div class="rounded bg-gray-50 p-2 text-center text-black dark:bg-gray-800 dark:text-white">团队协作能力：<span id="score_teamwork">0</span></div>
+          <div class="rounded bg-gray-50 p-2 text-center text-black dark:bg-gray-800 dark:text-white">社会实践网络：<span id="score_social">0</span></div>
+          <div class="rounded bg-gray-50 p-2 text-center text-black dark:bg-gray-800 dark:text-white">学习与发展潜力：<span id="score_growth">0</span></div>
+        </div>
+      </div>
+
+      <!-- 右侧：完整度和竞争度分析 -->
+      <div class="rounded-2xl border bg-background p-6 shadow-sm lg:col-span-1">
+        <h2 class="mb-4 text-lg font-semibold text-black dark:text-white">能力评估</h2>
+        
+        <!-- 完整度和竞争度分数 -->
+        <div class="grid grid-cols-2 gap-4 mb-6">
+          <div class="rounded-lg border bg-blue-50 p-4 text-center dark:border-blue-900/30 dark:bg-blue-900/10">
+            <h3 class="text-sm font-medium text-blue-800 dark:text-blue-300 mb-2">能力完整度</h3>
+            <div class="text-3xl font-bold text-blue-600 dark:text-blue-400" id="completeness_score">0</div>
+            <div class="mt-2 h-2 bg-blue-200 rounded-full dark:bg-blue-800/50">
+              <div class="h-2 bg-blue-600 rounded-full dark:bg-blue-400" style="width: 0%" id="completeness_bar"></div>
+            </div>
+          </div>
+          <div class="rounded-lg border bg-green-50 p-4 text-center dark:border-green-900/30 dark:bg-green-900/10">
+            <h3 class="text-sm font-medium text-green-800 dark:text-green-300 mb-2">就业竞争力</h3>
+            <div class="text-3xl font-bold text-green-600 dark:text-green-400" id="competitiveness_score">0</div>
+            <div class="mt-2 h-2 bg-green-200 rounded-full dark:bg-green-800/50">
+              <div class="h-2 bg-green-600 rounded-full dark:bg-green-400" style="width: 0%" id="competitiveness_bar"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 分析结果 -->
+        <div class="space-y-4">
+          <div class="rounded-lg border bg-gray-50 p-4 dark:border-gray-700 dark:bg-gray-800/50">
+            <h3 class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">完整度分析</h3>
+            <p class="text-sm text-gray-600 dark:text-gray-400" id="completeness_analysis">请上传简历以获取分析结果</p>
+          </div>
+          <div class="rounded-lg border bg-gray-50 p-4 dark:border-gray-700 dark:bg-gray-800/50">
+            <h3 class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">竞争力分析</h3>
+            <p class="text-sm text-gray-600 dark:text-gray-400" id="competitiveness_analysis">请上传简历以获取分析结果</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
 </Layout>
+
+<script>
+  import { uploadResume } from '../../lib/profile';
+
+  function generateCompletenessAnalysis(completeness, scores) {
+    if (completeness >= 90) {
+      return '您的能力覆盖非常全面，各维度发展均衡，展现了良好的综合能力素质。建议继续保持各维度的发展，同时可以尝试在特定领域进行深度拓展。';
+    } else if (completeness >= 70) {
+      return '您的能力覆盖较为全面，大部分维度发展良好。建议关注发展相对薄弱的维度，如' + getWeakDimensions(scores) + '，以提升整体能力的完整性。';
+    } else if (completeness >= 50) {
+      return '您的能力覆盖存在一定的不平衡，部分维度发展较好，但其他维度相对薄弱。建议重点加强' + getWeakDimensions(scores) + '等维度的培养，以提高能力的整体完整性。';
+    } else {
+      return '您的能力覆盖较为有限，多个维度发展不足。建议系统性地提升各维度能力，特别是' + getWeakDimensions(scores) + '等核心维度，以建立更加完整的能力体系。';
+    }
+  }
+
+  function generateCompetitivenessAnalysis(competitiveness, scores) {
+    if (competitiveness >= 90) {
+      return '您的就业竞争力非常强，在各维度都展现出了突出的能力。建议保持优势，同时关注行业最新发展趋势，持续提升专业技能，以保持竞争力。';
+    } else if (competitiveness >= 70) {
+      return '您的就业竞争力较强，在多个维度表现良好。建议强化' + getStrongDimensions(scores) + '等优势维度，同时提升' + getWeakDimensions(scores) + '等薄弱环节，以进一步增强竞争力。';
+    } else if (competitiveness >= 50) {
+      return '您的就业竞争力处于中等水平，有一定的优势但也存在明显的不足。建议重点提升' + getWeakDimensions(scores) + '等维度，同时加强实践经验和项目经历的积累。';
+    } else {
+      return '您的就业竞争力相对较弱，需要全面提升各维度能力。建议从' + getWeakDimensions(scores) + '等基础维度入手，逐步建立核心竞争力，同时积累相关实践经验。';
+    }
+  }
+
+  function getWeakDimensions(scores) {
+    const dimensions = [
+      { name: '专业理论知识', value: scores.cap_req_theory },
+      { name: '交叉学科广度', value: scores.cap_req_cross },
+      { name: '专业实践技能', value: scores.cap_req_practice },
+      { name: '数字素养技能', value: scores.cap_req_digital },
+      { name: '创新创业能力', value: scores.cap_req_innovation },
+      { name: '团队协作能力', value: scores.cap_req_teamwork },
+      { name: '社会实践网络', value: scores.cap_req_social },
+      { name: '学习与发展潜力', value: scores.cap_req_growth }
+    ];
+    return dimensions
+      .sort((a, b) => a.value - b.value)
+      .slice(0, 2)
+      .map(d => d.name)
+      .join('、');
+  }
+
+  function getStrongDimensions(scores) {
+    const dimensions = [
+      { name: '专业理论知识', value: scores.cap_req_theory },
+      { name: '交叉学科广度', value: scores.cap_req_cross },
+      { name: '专业实践技能', value: scores.cap_req_practice },
+      { name: '数字素养技能', value: scores.cap_req_digital },
+      { name: '创新创业能力', value: scores.cap_req_innovation },
+      { name: '团队协作能力', value: scores.cap_req_teamwork },
+      { name: '社会实践网络', value: scores.cap_req_social },
+      { name: '学习与发展潜力', value: scores.cap_req_growth }
+    ];
+    return dimensions
+      .sort((a, b) => b.value - a.value)
+      .slice(0, 2)
+      .map(d => d.name)
+      .join('、');
+  }
+
+  document.addEventListener('DOMContentLoaded', () => {
+    const submitBtn = document.getElementById('submitBtn');
+    const nameInput = document.getElementById('nameInput');
+    const majorInput = document.getElementById('majorInput');
+    const resumeInput = document.getElementById('resumeInput');
+
+    submitBtn.addEventListener('click', async () => {
+      if (!nameInput.value || !majorInput.value || !resumeInput.files?.length) {
+        alert('请填写完整信息并上传简历');
+        return;
+      }
+
+      const formData = new FormData();
+      formData.append('name', nameInput.value);
+      formData.append('major', majorInput.value);
+      formData.append('resume', resumeInput.files[0]);
+      formData.append('user_id', localStorage.getItem('user_id') || '1');
+
+      submitBtn.disabled = true;
+      submitBtn.textContent = '分析中...';
+
+      try {
+        const result = await uploadResume(formData);
+        const scores = result.scores;
+        const completeness = result.completeness;
+        const competitiveness = result.competitiveness;
+
+        // 更新分数文本
+        document.getElementById('score_theory').textContent = scores.cap_req_theory;
+        document.getElementById('score_cross').textContent = scores.cap_req_cross;
+        document.getElementById('score_practice').textContent = scores.cap_req_practice;
+        document.getElementById('score_digital').textContent = scores.cap_req_digital;
+        document.getElementById('score_innovation').textContent = scores.cap_req_innovation;
+        document.getElementById('score_teamwork').textContent = scores.cap_req_teamwork;
+        document.getElementById('score_social').textContent = scores.cap_req_social;
+        document.getElementById('score_growth').textContent = scores.cap_req_growth;
+
+        // 更新完整度和竞争度
+        document.getElementById('completeness_score').textContent = completeness;
+        document.getElementById('competitiveness_score').textContent = competitiveness;
+        document.getElementById('completeness_bar').style.width = `${completeness}%`;
+        document.getElementById('competitiveness_bar').style.width = `${competitiveness}%`;
+
+        // 生成完整度分析
+        const completenessAnalysis = generateCompletenessAnalysis(completeness, scores);
+        document.getElementById('completeness_analysis').textContent = completenessAnalysis;
+
+        // 生成竞争力分析
+        const competitivenessAnalysis = generateCompetitivenessAnalysis(competitiveness, scores);
+        document.getElementById('competitiveness_analysis').textContent = competitivenessAnalysis;
+
+        // 触发雷达图更新事件
+        window.dispatchEvent(new CustomEvent('updateRadarScores', {
+          detail: {
+            theory: scores.cap_req_theory,
+            cross: scores.cap_req_cross,
+            practice: scores.cap_req_practice,
+            digital: scores.cap_req_digital,
+            innovation: scores.cap_req_innovation,
+            teamwork: scores.cap_req_teamwork,
+            social: scores.cap_req_social,
+            growth: scores.cap_req_growth
+          }
+        }));
+
+        // 显示测试数据以验证雷达图是否正常工作
+        console.log('雷达图数据:', {
+          theory: scores.cap_req_theory,
+          cross: scores.cap_req_cross,
+          practice: scores.cap_req_practice,
+          digital: scores.cap_req_digital,
+          innovation: scores.cap_req_innovation,
+          teamwork: scores.cap_req_teamwork,
+          social: scores.cap_req_social,
+          growth: scores.cap_req_growth
+        });
+
+        alert('✅ 分析完成！能力画像已生成');
+      } catch (err) {
+        console.error(err);
+        alert('❌ 上传失败：' + (err instanceof Error ? err.message : '未知错误'));
+      } finally {
+        submitBtn.disabled = false;
+        submitBtn.textContent = '生成能力画像';
+      }
+    });
+  });
+</script>

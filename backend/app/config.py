@@ -28,3 +28,9 @@ class Config:
     AI_LLM_TIMEOUT_SECONDS = int(os.getenv("AI_LLM_TIMEOUT_SECONDS", "90"))
 
     FRONTEND_ORIGIN = os.getenv("FRONTEND_ORIGIN", "http://localhost:4321")
+    # 在Config类中添加以下配置
+    OCR_APP_ID = os.getenv("OCR_APP_ID")
+    OCR_API_KEY = os.getenv("OCR_API_KEY")
+    OCR_SECRET_KEY = os.getenv("OCR_SECRET_KEY")
+
+    DASHSCOPE_API_KEY = os.getenv("DASHSCOPE_API_KEY")
