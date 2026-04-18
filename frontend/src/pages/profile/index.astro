@@ -44,7 +44,7 @@ import RadarChart from '../../components/profile/RadarChart.svelte';
       <!-- 中间：能力雷达图 -->
       <div class="rounded-2xl border bg-background p-6 shadow-sm lg:col-span-1">
         <h2 class="mb-4 text-lg font-semibold text-black dark:text-white">能力雷达</h2>
-        <RadarChart client:load />
+        <RadarChart client:only="svelte" />
 
         <div class="mt-6 grid grid-cols-2 gap-2 text-sm">
           <div class="rounded bg-gray-50 p-2 text-center text-black dark:bg-gray-800 dark:text-white">专业理论知识：<span id="score_theory">0</span></div>

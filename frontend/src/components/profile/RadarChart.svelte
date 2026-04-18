@@ -1,6 +1,5 @@
 <script lang="ts">
 	import { onMount, onDestroy } from "svelte";
-	import type { Chart as ChartType } from "chart.js";
 
 	let scores = {
 		theory: 0,
@@ -14,18 +13,25 @@
 	};
 
 	let canvasEl: HTMLCanvasElement;
-	let chart: ChartType<"radar", number[], string> | null = null;
-	let ChartCtor: (typeof import("chart.js"))["Chart"] | null = null;
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any -- Chart 实例仅浏览器动态加载
+	let chart: any = null;
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	let ChartCtor: any = null;
 	let themeObserver: MutationObserver | null = null;
 	let themeRaf = 0;
 
+	function isBrowser(): boolean {
+		return typeof window !== "undefined" && typeof document !== "undefined";
+	}
+
 	function cssVar(name: string, fallback: string): string {
-		if (typeof window === "undefined") return fallback;
+		if (!isBrowser()) return fallback;
 		const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 		return v || fallback;
 	}
 
 	function primaryFillRgba(primaryCss: string): string {
+		if (!isBrowser()) return "rgba(59, 130, 246, 0.22)";
 		try {
 			const tmp = document.createElement("span");
 			tmp.style.color = primaryCss;
@@ -78,7 +84,7 @@
 	}
 
 	function renderChart() {
-		if (!canvasEl || typeof window === "undefined" || !ChartCtor) return;
+		if (!canvasEl || !isBrowser() || !ChartCtor) return;
 
 		const primary = cssVar("--primary", "rgb(59, 130, 246)");
 		const fill = primaryFillRgba(primary);
@@ -127,6 +133,7 @@
 	}
 
 	function scheduleThemeRerender() {
+		if (!isBrowser()) return;
 		cancelAnimationFrame(themeRaf);
 		themeRaf = requestAnimationFrame(() => {
 			renderChart();
@@ -139,6 +146,7 @@
 	}
 
 	onMount(async () => {
+		if (!isBrowser()) return;
 		const { Chart, registerables } = await import("chart.js");
 		Chart.register(...registerables);
 		ChartCtor = Chart;
@@ -153,10 +161,14 @@
 	});
 
 	onDestroy(() => {
-		window.removeEventListener("updateRadarScores", handleUpdateScores as EventListener);
+		if (isBrowser()) {
+			window.removeEventListener("updateRadarScores", handleUpdateScores as EventListener);
+		}
 		themeObserver?.disconnect();
 		themeObserver = null;
-		cancelAnimationFrame(themeRaf);
+		if (isBrowser()) {
+			cancelAnimationFrame(themeRaf);
+		}
 		if (chart) {
 			chart.destroy();
 			chart = null;
