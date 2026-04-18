@@ -16,7 +16,10 @@ def create_app() -> Flask:
         resources={r"/api/*": {"origins": [app.config["FRONTEND_ORIGIN"]]}},
         supports_credentials=False,
     )
-
+    from .profile import portrait_bp
+    app.register_blueprint(portrait_bp)
+    from .personality import personality_bp
+    app.register_blueprint(personality_bp)
     @app.get("/")
     def index():
         return jsonify(
@@ -30,6 +33,8 @@ def create_app() -> Flask:
                     "POST /api/auth/register",
                     "POST /api/auth/login",
                     "GET /api/auth/me",
+                    "GET /api/personality/questions",
+                    "POST /api/personality/submit",
                 ],
             }
         )

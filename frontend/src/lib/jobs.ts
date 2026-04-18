@@ -189,6 +189,10 @@ function authHeaders(): HeadersInit {
 	};
 }
 
+export function isLoggedIn(): boolean {
+	return !!getToken();
+}
+
 export async function chatJobsAssistant(input: {
 	message: string;
 	sessionId?: number;

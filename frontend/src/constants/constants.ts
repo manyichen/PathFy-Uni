@@ -9,3 +9,5 @@ export const PAGE_WIDTH = 90;
 export const BANNER_HEIGHT = 35;
 export const BANNER_HEIGHT_EXTEND = 30;
 export const BANNER_HEIGHT_HOME = BANNER_HEIGHT + BANNER_HEIGHT_EXTEND;
+export const ROUTE_PORTRAIT = "/portrait";
+export const ROUTE_PORTRAIT_RESULT = "/portrait/[id]";
