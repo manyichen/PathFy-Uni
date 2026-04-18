@@ -210,22 +210,7 @@ import RadarChart from '../../components/profile/RadarChart.svelte';
         const competitivenessAnalysis = generateCompetitivenessAnalysis(competitiveness, scores);
         document.getElementById('competitiveness_analysis').textContent = competitivenessAnalysis;
 
-        // 触发雷达图更新事件
-        window.dispatchEvent(new CustomEvent('updateRadarScores', {
-          detail: {
-            theory: scores.cap_req_theory,
-            cross: scores.cap_req_cross,
-            practice: scores.cap_req_practice,
-            digital: scores.cap_req_digital,
-            innovation: scores.cap_req_innovation,
-            teamwork: scores.cap_req_teamwork,
-            social: scores.cap_req_social,
-            growth: scores.cap_req_growth
-          }
-        }));
-
-        // 显示测试数据以验证雷达图是否正常工作
-        console.log('雷达图数据:', {
+        const radarDetail = {
           theory: scores.cap_req_theory,
           cross: scores.cap_req_cross,
           practice: scores.cap_req_practice,
@@ -234,9 +219,13 @@ import RadarChart from '../../components/profile/RadarChart.svelte';
           teamwork: scores.cap_req_teamwork,
           social: scores.cap_req_social,
           growth: scores.cap_req_growth
-        });
+        };
+        window.dispatchEvent(new CustomEvent('updateRadarScores', { detail: radarDetail }));
 
         alert('✅ 分析完成！能力画像已生成');
+
+        // 同步阻塞的 alert 返回后再派发一次，避免与 Svelte 水合时机竞态导致漏绘
+        window.dispatchEvent(new CustomEvent('updateRadarScores', { detail: radarDetail }));
       } catch (err) {
         console.error(err);
         alert('❌ 上传失败：' + (err instanceof Error ? err.message : '未知错误'));

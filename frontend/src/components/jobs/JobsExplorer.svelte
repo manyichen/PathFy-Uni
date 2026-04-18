@@ -12,26 +12,38 @@
 		type JobCardItem,
 		type JobDetailItem,
 	} from "@/lib/jobs";
-
-	const DIMENSIONS: { key: keyof JobCardItem["scores"]; label: string; full: string }[] = [
-		{ key: "cap_req_theory", label: "理论知识", full: "专业理论知识" },
-		{ key: "cap_req_cross", label: "交叉广度", full: "交叉学科广度" },
-		{ key: "cap_req_practice", label: "实践技能", full: "专业实践技能" },
-		{ key: "cap_req_digital", label: "数字素养", full: "数字素养技能" },
-		{ key: "cap_req_innovation", label: "创新创业", full: "创新创业能力" },
-		{ key: "cap_req_teamwork", label: "团队协作", full: "团队协作能力" },
-		{ key: "cap_req_social", label: "社会实践", full: "社会实践网络" },
-		{ key: "cap_req_growth", label: "学习发展", full: "学习与发展潜力" },
-	];
-	const RADAR_TIERS = [0.25, 0.5, 0.75, 1];
-	const RADAR_CX = 140;
-	const RADAR_CY = 120;
-	const RADAR_MAX_R = 88;
-	const RADAR_LABEL_R = 110;
+	import {
+		RADAR_DIMENSIONS as DIMENSIONS,
+		RADAR_TIERS,
+		RADAR_CX,
+		RADAR_CY,
+		calcRadarPolygonPoints as calcPoints,
+		calcRadarGridPolygon as calcGridPointsByTier,
+		radarAxisEnd as axisEnd,
+		radarLabelPos as labelPos,
+	} from "@/lib/radar-geometry";
 	const ROWS_PER_PAGE = 20;
 	const CARDS_PER_ROW = 2;
 	const PAGE_SIZE = ROWS_PER_PAGE * CARDS_PER_ROW;
 	const AI_LOADING_PLACEHOLDER = "__AI_LOADING__";
+	/** 用户点了「新对话」后刷新仍应保持空白会话，避免再自动打开列表里第一条历史 */
+	const NEW_CHAT_DRAFT_LS_KEY = "jobsExplorerAiNewChatDraft";
+	const NEW_CHAT_DRAFT_VALUE = "1";
+
+	function markNewChatDraft(): void {
+		if (typeof localStorage === "undefined") return;
+		localStorage.setItem(NEW_CHAT_DRAFT_LS_KEY, NEW_CHAT_DRAFT_VALUE);
+	}
+
+	function clearNewChatDraft(): void {
+		if (typeof localStorage === "undefined") return;
+		localStorage.removeItem(NEW_CHAT_DRAFT_LS_KEY);
+	}
+
+	function isNewChatDraftPreferred(): boolean {
+		if (typeof localStorage === "undefined") return false;
+		return localStorage.getItem(NEW_CHAT_DRAFT_LS_KEY) === NEW_CHAT_DRAFT_VALUE;
+	}
 
 	let loading = $state(true);
 	let q = $state("");
@@ -58,56 +70,6 @@
 
 	let totalPages = $derived(Math.max(1, totalPagesState));
 	let pageInfoText = $derived(`第 ${currentPage} / ${totalPages} 页 · 共 ${totalCount} 条`);
-
-	function point(angleIndex: number, value: number) {
-		const angle = (-Math.PI / 2 + (angleIndex * 2 * Math.PI) / DIMENSIONS.length) % (2 * Math.PI);
-		const r = (Math.max(0, Math.min(100, value)) / 100) * RADAR_MAX_R;
-		return { x: RADAR_CX + r * Math.cos(angle), y: RADAR_CY + r * Math.sin(angle) };
-	}
-
-	function pointByRadius(angleIndex: number, radius: number) {
-		const angle = (-Math.PI / 2 + (angleIndex * 2 * Math.PI) / DIMENSIONS.length) % (2 * Math.PI);
-		return {
-			x: RADAR_CX + radius * Math.cos(angle),
-			y: RADAR_CY + radius * Math.sin(angle),
-		};
-	}
-
-	function calcPoints(job: JobCardItem): string {
-		const points = DIMENSIONS.map((d, idx) => {
-			const p = point(idx, job.scores[d.key]);
-			const x = p.x;
-			const y = p.y;
-			return `${x.toFixed(2)},${y.toFixed(2)}`;
-		});
-		return points.join(" ");
-	}
-
-	function calcGridPointsByTier(tier: number): string {
-		const points = DIMENSIONS.map((_, idx) => {
-			const p = point(idx, 100 * tier);
-			const x = p.x;
-			const y = p.y;
-			return `${x.toFixed(2)},${y.toFixed(2)}`;
-		});
-		return points.join(" ");
-	}
-
-	function axisEnd(idx: number) {
-		const p = point(idx, 100);
-		return {
-			x: p.x,
-			y: p.y,
-		};
-	}
-
-	function labelPos(idx: number) {
-		const p = pointByRadius(idx, RADAR_LABEL_R);
-		return {
-			x: p.x,
-			y: p.y,
-		};
-	}
 
 	function goToPage(page: number): void {
 		if (page < 1 || page > totalPages || page === currentPage || loading) return;
@@ -196,6 +158,7 @@
 		assistantError = "";
 		try {
 			const detail = await getAssistantSessionDetail(sessionId);
+			clearNewChatDraft();
 			currentSessionId = detail.session.id;
 			historyPickerOpen = false;
 			messages = detail.messages;
@@ -218,6 +181,11 @@
 		assistantError = "";
 		try {
 			sessions = await listAssistantSessions();
+			if (isNewChatDraftPreferred()) {
+				currentSessionId = null;
+				messages = [];
+				return;
+			}
 			if (sessions.length > 0) {
 				await loadSessionDetail(sessions[0].id);
 			} else {
@@ -273,6 +241,7 @@
 				sessionId: currentSessionId ?? undefined,
 			});
 			currentSessionId = res.session_id;
+			clearNewChatDraft();
 			messages = messages.map((item) => {
 				if (item.id === optimisticUserId) {
 					return {
@@ -334,6 +303,7 @@
 		messages = [];
 		assistantInput = "";
 		assistantError = "";
+		markNewChatDraft();
 		void loadJobs(q, 1);
 	}
 
