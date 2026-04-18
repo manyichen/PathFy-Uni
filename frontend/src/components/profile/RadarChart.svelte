@@ -1,6 +1,18 @@
 <script lang="ts">
 	import { onMount, onDestroy } from "svelte";
 
+	/** 演示模式固定配色（与全局亮/暗主题解耦） */
+	const DEMO_FRAME_BG = "#EBF1F5";
+	const DEMO_CARD_BG = "#FFFFFF";
+	const DEMO_GRID = "rgba(0, 0, 0, 0.08)";
+	const DEMO_LABEL = "#5C6670";
+	const DEMO_LEGEND = "#4B5563";
+	const DEMO_ACCENT = "#00AEEF";
+	const DEMO_FILL = "rgba(0, 174, 239, 0.42)";
+
+	/** 无上传数据时展示的示例多边形（与演示稿一致：专业理论顶轴拉满） */
+	const DEMO_VALUES = [100, 88, 92, 86, 84, 90, 82, 87] as const;
+
 	let scores = {
 		theory: 0,
 		cross: 0,
@@ -13,44 +25,32 @@
 	};
 
 	let canvasEl: HTMLCanvasElement;
-	// eslint-disable-next-line @typescript-eslint/no-explicit-any -- Chart 实例仅浏览器动态加载
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
 	let chart: any = null;
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any
 	let ChartCtor: any = null;
-	let themeObserver: MutationObserver | null = null;
-	let themeRaf = 0;
 
 	function isBrowser(): boolean {
 		return typeof window !== "undefined" && typeof document !== "undefined";
 	}
 
-	function cssVar(name: string, fallback: string): string {
-		if (!isBrowser()) return fallback;
-		const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
-		return v || fallback;
-	}
-
-	function primaryFillRgba(primaryCss: string): string {
-		if (!isBrowser()) return "rgba(59, 130, 246, 0.22)";
-		try {
-			const tmp = document.createElement("span");
-			tmp.style.color = primaryCss;
-			document.body.appendChild(tmp);
-			const rgb = getComputedStyle(tmp).color;
-			document.body.removeChild(tmp);
-			if (rgb && rgb !== "rgba(0, 0, 0, 0)") {
-				return rgb.replace(")", ", 0.22)").replace("rgb", "rgba");
-			}
-		} catch {
-			/* ignore */
-		}
-		return "rgba(59, 130, 246, 0.22)";
+	function effectiveSeries(): number[] {
+		const arr = [
+			scores.theory,
+			scores.cross,
+			scores.practice,
+			scores.digital,
+			scores.innovation,
+			scores.teamwork,
+			scores.social,
+			scores.growth,
+		];
+		const allZero = arr.every((v) => v === 0 || v === null || v === undefined);
+		if (allZero) return [...DEMO_VALUES];
+		return arr.map((v) => Number(v) || 0);
 	}
 
 	function radarOptions() {
-		const text = cssVar("--content-meta", "rgba(0,0,0,0.65)");
-		const grid = cssVar("--line-color", "rgba(0,0,0,0.12)");
-
 		return {
 			responsive: true,
 			maintainAspectRatio: false,
@@ -59,24 +59,25 @@
 					beginAtZero: true,
 					max: 100,
 					ticks: {
-						color: text,
+						color: DEMO_LABEL,
 						backdropColor: "transparent",
 						showLabelBackdrop: false,
 						stepSize: 20,
 					},
-					grid: { color: grid },
-					angleLines: { color: grid },
+					grid: { color: DEMO_GRID },
+					angleLines: { color: DEMO_GRID },
 					pointLabels: {
-						color: text,
-						font: { size: 11 },
+						color: DEMO_LABEL,
+						font: { size: 11, family: "system-ui, sans-serif" },
 					},
 				},
 			},
 			plugins: {
 				legend: {
 					labels: {
-						color: text,
+						color: DEMO_LEGEND,
 						boxWidth: 14,
+						usePointStyle: false,
 					},
 				},
 			},
@@ -86,8 +87,7 @@
 	function renderChart() {
 		if (!canvasEl || !isBrowser() || !ChartCtor) return;
 
-		const primary = cssVar("--primary", "rgb(59, 130, 246)");
-		const fill = primaryFillRgba(primary);
+		const series = effectiveSeries();
 
 		if (chart) {
 			chart.destroy();
@@ -110,33 +110,19 @@
 				datasets: [
 					{
 						label: "能力画像",
-						data: [
-							scores.theory,
-							scores.cross,
-							scores.practice,
-							scores.digital,
-							scores.innovation,
-							scores.teamwork,
-							scores.social,
-							scores.growth,
-						],
-						backgroundColor: fill,
-						borderColor: primary,
+						data: series,
+						backgroundColor: DEMO_FILL,
+						borderColor: DEMO_ACCENT,
 						borderWidth: 2,
-						pointBackgroundColor: primary,
-						pointBorderColor: primary,
+						pointBackgroundColor: DEMO_ACCENT,
+						pointBorderColor: "#FFFFFF",
+						pointBorderWidth: 2,
+						pointRadius: 4,
+						pointHoverRadius: 5,
 					},
 				],
 			},
 			options: { ...radarOptions() },
-		});
-	}
-
-	function scheduleThemeRerender() {
-		if (!isBrowser()) return;
-		cancelAnimationFrame(themeRaf);
-		themeRaf = requestAnimationFrame(() => {
-			renderChart();
 		});
 	}
 
@@ -152,22 +138,11 @@
 		ChartCtor = Chart;
 		renderChart();
 		window.addEventListener("updateRadarScores", handleUpdateScores as EventListener);
-
-		themeObserver = new MutationObserver(() => scheduleThemeRerender());
-		themeObserver.observe(document.documentElement, {
-			attributes: true,
-			attributeFilter: ["class"],
-		});
 	});
 
 	onDestroy(() => {
 		if (isBrowser()) {
 			window.removeEventListener("updateRadarScores", handleUpdateScores as EventListener);
-		}
-		themeObserver?.disconnect();
-		themeObserver = null;
-		if (isBrowser()) {
-			cancelAnimationFrame(themeRaf);
 		}
 		if (chart) {
 			chart.destroy();
@@ -177,6 +152,15 @@
 	});
 </script>
 
-<div class="h-96 w-full rounded-lg border border-black/10 bg-[var(--card-bg)] p-4 shadow-sm dark:border-white/10">
-	<canvas bind:this={canvasEl}></canvas>
+<!-- 演示模式固定外层：浅灰蓝底 + 白卡片，不随站点 dark 变化 -->
+<div
+	class="rounded-2xl p-4 shadow-sm"
+	style="background-color: {DEMO_FRAME_BG};"
+>
+	<div
+		class="h-96 w-full rounded-xl p-4 shadow-[0_1px_3px_rgba(0,0,0,0.06)]"
+		style="background-color: {DEMO_CARD_BG};"
+	>
+		<canvas bind:this={canvasEl}></canvas>
+	</div>
 </div>
