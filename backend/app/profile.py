@@ -7,8 +7,12 @@ from app.config import Config
 from app.utils import ocr_image, pdf_to_image, score_resume, create_radar_chart
 
 portrait_bp = Blueprint('profile', __name__, url_prefix='/api/profile')
+<<<<<<< HEAD
 print("千问API Key:", Config.DASHSCOPE_API_KEY)
 print("OCR App ID:", Config.OCR_APP_ID)
+=======
+
+>>>>>>> 611cca2f9c6cc9375bf962e7b7681f1eb64cdd90
 
 def get_db():
     """自己实现数据库连接，不依赖项目db.py，零冲突"""

@@ -9,7 +9,6 @@ from app.config import Config
 
 personality_bp = Blueprint('personality', __name__, url_prefix='/api/personality')
 
-print("千问API Key:", Config.DASHSCOPE_API_KEY)
 
 def get_db():
     """自己实现数据库连接，不依赖项目db.py，零冲突"""

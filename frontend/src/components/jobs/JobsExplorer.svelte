@@ -13,6 +13,7 @@
 		type JobCardItem,
 		type JobDetailItem,
 	} from "@/lib/jobs";
+<<<<<<< HEAD
 	import { getToken } from "@/lib/auth";
 
 	const DIMENSIONS: { key: keyof JobCardItem["scores"]; label: string; full: string }[] = [
@@ -30,10 +31,40 @@
 	const RADAR_CY = 120;
 	const RADAR_MAX_R = 88;
 	const RADAR_LABEL_R = 110;
+=======
+	import {
+		RADAR_DIMENSIONS as DIMENSIONS,
+		RADAR_TIERS,
+		RADAR_CX,
+		RADAR_CY,
+		calcRadarPolygonPoints as calcPoints,
+		calcRadarGridPolygon as calcGridPointsByTier,
+		radarAxisEnd as axisEnd,
+		radarLabelPos as labelPos,
+	} from "@/lib/radar-geometry";
+>>>>>>> 611cca2f9c6cc9375bf962e7b7681f1eb64cdd90
 	const ROWS_PER_PAGE = 20;
 	const CARDS_PER_ROW = 2;
 	const PAGE_SIZE = ROWS_PER_PAGE * CARDS_PER_ROW;
 	const AI_LOADING_PLACEHOLDER = "__AI_LOADING__";
+	/** 用户点了「新对话」后刷新仍应保持空白会话，避免再自动打开列表里第一条历史 */
+	const NEW_CHAT_DRAFT_LS_KEY = "jobsExplorerAiNewChatDraft";
+	const NEW_CHAT_DRAFT_VALUE = "1";
+
+	function markNewChatDraft(): void {
+		if (typeof localStorage === "undefined") return;
+		localStorage.setItem(NEW_CHAT_DRAFT_LS_KEY, NEW_CHAT_DRAFT_VALUE);
+	}
+
+	function clearNewChatDraft(): void {
+		if (typeof localStorage === "undefined") return;
+		localStorage.removeItem(NEW_CHAT_DRAFT_LS_KEY);
+	}
+
+	function isNewChatDraftPreferred(): boolean {
+		if (typeof localStorage === "undefined") return false;
+		return localStorage.getItem(NEW_CHAT_DRAFT_LS_KEY) === NEW_CHAT_DRAFT_VALUE;
+	}
 
 	let loading = $state(true);
 	let q = $state("");
@@ -60,56 +91,6 @@
 
 	let totalPages = $derived(Math.max(1, totalPagesState));
 	let pageInfoText = $derived(`第 ${currentPage} / ${totalPages} 页 · 共 ${totalCount} 条`);
-
-	function point(angleIndex: number, value: number) {
-		const angle = (-Math.PI / 2 + (angleIndex * 2 * Math.PI) / DIMENSIONS.length) % (2 * Math.PI);
-		const r = (Math.max(0, Math.min(100, value)) / 100) * RADAR_MAX_R;
-		return { x: RADAR_CX + r * Math.cos(angle), y: RADAR_CY + r * Math.sin(angle) };
-	}
-
-	function pointByRadius(angleIndex: number, radius: number) {
-		const angle = (-Math.PI / 2 + (angleIndex * 2 * Math.PI) / DIMENSIONS.length) % (2 * Math.PI);
-		return {
-			x: RADAR_CX + radius * Math.cos(angle),
-			y: RADAR_CY + radius * Math.sin(angle),
-		};
-	}
-
-	function calcPoints(job: JobCardItem): string {
-		const points = DIMENSIONS.map((d, idx) => {
-			const p = point(idx, job.scores[d.key]);
-			const x = p.x;
-			const y = p.y;
-			return `${x.toFixed(2)},${y.toFixed(2)}`;
-		});
-		return points.join(" ");
-	}
-
-	function calcGridPointsByTier(tier: number): string {
-		const points = DIMENSIONS.map((_, idx) => {
-			const p = point(idx, 100 * tier);
-			const x = p.x;
-			const y = p.y;
-			return `${x.toFixed(2)},${y.toFixed(2)}`;
-		});
-		return points.join(" ");
-	}
-
-	function axisEnd(idx: number) {
-		const p = point(idx, 100);
-		return {
-			x: p.x,
-			y: p.y,
-		};
-	}
-
-	function labelPos(idx: number) {
-		const p = pointByRadius(idx, RADAR_LABEL_R);
-		return {
-			x: p.x,
-			y: p.y,
-		};
-	}
 
 	function goToPage(page: number): void {
 		if (page < 1 || page > totalPages || page === currentPage || loading) return;
@@ -210,8 +191,12 @@
 			console.log("会话ID:", sessionId);
 			
 			const detail = await getAssistantSessionDetail(sessionId);
+<<<<<<< HEAD
 			console.log("会话详情加载成功:", detail);
 			
+=======
+			clearNewChatDraft();
+>>>>>>> 611cca2f9c6cc9375bf962e7b7681f1eb64cdd90
 			currentSessionId = detail.session.id;
 			historyPickerOpen = false;
 			messages = detail.messages;
@@ -247,8 +232,16 @@
 			
 			console.log("开始加载会话...");
 			sessions = await listAssistantSessions();
+<<<<<<< HEAD
 			console.log("会话加载成功:", sessions);
 			
+=======
+			if (isNewChatDraftPreferred()) {
+				currentSessionId = null;
+				messages = [];
+				return;
+			}
+>>>>>>> 611cca2f9c6cc9375bf962e7b7681f1eb64cdd90
 			if (sessions.length > 0) {
 				await loadSessionDetail(sessions[0].id);
 			} else {
@@ -331,6 +324,7 @@
 			console.log("消息发送成功:", res);
 			
 			currentSessionId = res.session_id;
+			clearNewChatDraft();
 			messages = messages.map((item) => {
 				if (item.id === optimisticUserId) {
 					return {
@@ -409,6 +403,7 @@
 		messages = [];
 		assistantInput = "";
 		assistantError = "";
+		markNewChatDraft();
 		void loadJobs(q, 1);
 	}
 
