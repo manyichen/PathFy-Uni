@@ -720,6 +720,7 @@ MBTI_JOB_RECOMMENDATIONS = {
     }
 }
 
+
 def calculate_mbti(answers):
     """根据答案计算MBTI类型"""
     dimensions = {

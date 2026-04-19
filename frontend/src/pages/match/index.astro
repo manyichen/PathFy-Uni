@@ -3,17 +3,12 @@ import PersonJobMatchPanel from "@components/match/PersonJobMatchPanel.svelte";
 import Layout from "@layouts/Layout.astro";
 ---
 
-<Layout title="人岗匹配" description="八维缺口粗排与可选 DeepSeek 精排。">
+<Layout title="人岗匹配" description="根据能力画像与岗位需求，查看匹配岗位与智能分析。">
 	<section class="onload-animation space-y-8">
 		<div>
 			<h1 class="mb-2 text-2xl font-bold text-black dark:text-white">人岗匹配</h1>
 			<p class="max-w-3xl text-sm leading-relaxed text-75">
-				选择测试画像、设置岗位筛选，调用后端 <code
-					class="rounded bg-[var(--btn-regular-bg)] px-1.5 py-0.5 text-xs"
-					>POST /api/match/preview</code
-				>：Neo4j 扫描岗位做八维加权缺口粗排；勾选「LLM 精排」时需配置 <code
-					class="rounded bg-[var(--btn-regular-bg)] px-1.5 py-0.5 text-xs">DEEPSEEK_API_KEY</code
-				>。
+				选择左侧画像与筛选条件后点击「开始匹配」，系统将结合岗位信息给出推荐排序；可选开启智能精排，获得更细的匹配说明。
 			</p>
 		</div>
 		<PersonJobMatchPanel client:visible />

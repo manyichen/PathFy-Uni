@@ -94,8 +94,18 @@ import RadarChart from '../../components/profile/RadarChart.svelte';
       </div>
     </div>
 
-    <!-- 详细分析报告区域 -->
+    <!-- 详细分析报告：未分析前仅提示；分析完成后展示下方各卡片 -->
     <div id="detailed_analysis_section" class="space-y-6">
+      <div
+        id="profile_detailed_explore_hint"
+        class="rounded-2xl border bg-background p-8 text-center shadow-sm"
+      >
+        <p class="mx-auto max-w-lg text-sm leading-relaxed text-75">
+          请上传简历并完成分析，下面的区域以后再来探索吧~
+        </p>
+      </div>
+
+      <div id="profile_detailed_cards" class="hidden space-y-6">
       <!-- 整体评价 -->
       <div class="rounded-2xl border bg-background p-6 shadow-sm">
         <h2 class="mb-4 text-lg font-semibold text-black dark:text-white">📊 整体评价</h2>
@@ -180,12 +190,43 @@ import RadarChart from '../../components/profile/RadarChart.svelte';
           </div>
         </div>
       </div>
+      </div>
     </div>
   </section>
 </Layout>
 
 <script>
-  import { uploadResume } from '../../lib/profile';
+  import { getToken, getUser } from '../../lib/auth';
+  import { fetchMyResumes } from '../../lib/match';
+  import { fetchResumePortraitResult, uploadResume } from '../../lib/profile';
+  import {
+    emitProfileRadarScores,
+    loadPortraitLocalCache,
+    paintProfilePortraitPage,
+    savePortraitLocalCache,
+  } from '../../lib/profile-portrait-ui';
+
+  function hasPortraitDetailedAnalysis(d: unknown): boolean {
+    if (!d || typeof d !== 'object') return false;
+    const o = d as Record<string, unknown>;
+    const oe = o.overall_evaluation;
+    if (typeof oe === 'string' && oe.trim().length > 0) return true;
+    const dim = o.dimension_analysis;
+    return Array.isArray(dim) && dim.length > 0;
+  }
+
+  function setPortraitLowerInsightsMode(mode: 'explore' | 'detailed') {
+    const hint = document.getElementById('profile_detailed_explore_hint');
+    const cards = document.getElementById('profile_detailed_cards');
+    if (!hint || !cards) return;
+    if (mode === 'explore') {
+      hint.classList.remove('hidden');
+      cards.classList.add('hidden');
+    } else {
+      hint.classList.add('hidden');
+      cards.classList.remove('hidden');
+    }
+  }
 
   function generateCompletenessAnalysis(completeness, scores) {
     if (completeness >= 90) {
@@ -247,12 +288,17 @@ import RadarChart from '../../components/profile/RadarChart.svelte';
       .join('、');
   }
 
-  function renderDetailedAnalysis(analysisData) {
-    // 整体评价
-    document.getElementById('overall_evaluation').textContent = analysisData.overall_evaluation || '上传简历后获取详细分析';
+  function renderDetailedAnalysis(analysisData: Record<string, unknown>) {
+    const overallEl = document.getElementById('overall_evaluation');
+    if (overallEl) {
+      overallEl.textContent =
+        typeof analysisData.overall_evaluation === 'string'
+          ? analysisData.overall_evaluation
+          : '';
+    }
 
-    // 优势维度
     const advantageContainer = document.getElementById('advantage_dimensions');
+    if (!advantageContainer) return;
     advantageContainer.innerHTML = '';
     if (analysisData.advantage_dimensions && analysisData.advantage_dimensions.length > 0) {
       analysisData.advantage_dimensions.forEach(item => {
@@ -264,11 +310,11 @@ import RadarChart from '../../components/profile/RadarChart.svelte';
         `;
       });
     } else {
-      advantageContainer.innerHTML = '<p class="text-sm text-gray-500 dark:text-gray-400">上传简历后查看优势维度</p>';
+      advantageContainer.innerHTML = '<p class="text-sm text-75">暂无优势维度数据</p>';
     }
 
-    // 劣势维度
     const weaknessContainer = document.getElementById('劣势_dimensions');
+    if (!weaknessContainer) return;
     weaknessContainer.innerHTML = '';
     if (analysisData.劣势_dimensions && analysisData.劣势_dimensions.length > 0) {
       analysisData.劣势_dimensions.forEach(item => {
@@ -280,11 +326,11 @@ import RadarChart from '../../components/profile/RadarChart.svelte';
         `;
       });
     } else {
-      weaknessContainer.innerHTML = '<p class="text-sm text-gray-500 dark:text-gray-400">上传简历后查看待提升维度</p>';
+      weaknessContainer.innerHTML = '<p class="text-sm text-75">暂无待提升维度数据</p>';
     }
 
-    // 各维度详细分析
     const dimensionContainer = document.getElementById('dimension_analysis');
+    if (!dimensionContainer) return;
     dimensionContainer.innerHTML = '';
     if (analysisData.dimension_analysis && analysisData.dimension_analysis.length > 0) {
       analysisData.dimension_analysis.forEach(item => {
@@ -303,11 +349,11 @@ import RadarChart from '../../components/profile/RadarChart.svelte';
         `;
       });
     } else {
-      dimensionContainer.innerHTML = '<p class="text-sm text-gray-500 dark:text-gray-400">上传简历后获取各维度详细分析</p>';
+      dimensionContainer.innerHTML = '<p class="text-sm text-75">暂无各维度详细分析</p>';
     }
 
-    // 短期提升计划
     const shortTermContainer = document.getElementById('short_term_plan');
+    if (!shortTermContainer) return;
     shortTermContainer.innerHTML = '';
     if (analysisData.short_term_plan && analysisData.short_term_plan.length > 0) {
       analysisData.short_term_plan.forEach(item => {
@@ -324,11 +370,11 @@ import RadarChart from '../../components/profile/RadarChart.svelte';
         `;
       });
     } else {
-      shortTermContainer.innerHTML = '<p class="text-sm text-gray-500 dark:text-gray-400">上传简历后获取短期提升计划</p>';
+      shortTermContainer.innerHTML = '<p class="text-sm text-75">暂无短期提升计划</p>';
     }
 
-    // 长期发展目标
     const longTermContainer = document.getElementById('long_term_goals');
+    if (!longTermContainer) return;
     longTermContainer.innerHTML = '';
     if (analysisData.long_term_goals && analysisData.long_term_goals.length > 0) {
       analysisData.long_term_goals.forEach(item => {
@@ -347,11 +393,11 @@ import RadarChart from '../../components/profile/RadarChart.svelte';
         `;
       });
     } else {
-      longTermContainer.innerHTML = '<p class="text-sm text-gray-500 dark:text-gray-400">上传简历后获取长期发展目标</p>';
+      longTermContainer.innerHTML = '<p class="text-sm text-75">暂无长期发展目标</p>';
     }
 
-    // 行业适配性分析
     const industryContainer = document.getElementById('industry_match');
+    if (!industryContainer) return;
     industryContainer.innerHTML = '';
     if (analysisData.industry_match && analysisData.industry_match.length > 0) {
       analysisData.industry_match.slice(0, 4).forEach(item => {
@@ -367,23 +413,30 @@ import RadarChart from '../../components/profile/RadarChart.svelte';
         `;
       });
     } else {
-      industryContainer.innerHTML = '<p class="text-sm text-gray-500 dark:text-gray-400">上传简历后获取行业适配性分析</p>';
+      industryContainer.innerHTML = '<p class="text-sm text-75">暂无行业适配性分析</p>';
     }
 
-    // 简历关键词分析
-    if (analysisData.resume_analysis && Object.keys(analysisData.resume_analysis).length > 0) {
-      document.getElementById('resume_analysis_section').classList.remove('hidden');
-      
-      const resumeAnalysis = analysisData.resume_analysis;
-      document.getElementById('skill_density').textContent = resumeAnalysis.skill_density + '%';
-      document.getElementById('skill_density_bar').style.width = resumeAnalysis.skill_density + '%';
+    const resumeSection = document.getElementById('resume_analysis_section');
+    const skillDensityEl = document.getElementById('skill_density');
+    const skillDensityBar = document.getElementById('skill_density_bar') as HTMLElement | null;
+    const keywordsContainer = document.getElementById('found_keywords');
+    const suggestionsContainer = document.getElementById('keyword_suggestions');
+    if (!resumeSection || !skillDensityEl || !skillDensityBar || !keywordsContainer || !suggestionsContainer) return;
 
-      // 关键词分类展示
-      const keywordsContainer = document.getElementById('found_keywords');
+    resumeSection.classList.remove('hidden');
+
+    const resumeAnalysis = analysisData.resume_analysis as Record<string, unknown> | undefined;
+    if (resumeAnalysis && typeof resumeAnalysis === 'object' && Object.keys(resumeAnalysis).length > 0) {
+      const densityRaw = resumeAnalysis.skill_density;
+      const density =
+        typeof densityRaw === 'number' ? densityRaw : Number.parseInt(String(densityRaw ?? 0), 10) || 0;
+      skillDensityEl.textContent = `${density}%`;
+      skillDensityBar.style.width = `${density}%`;
+
       keywordsContainer.innerHTML = '';
-      const foundKeywords = resumeAnalysis.found_keywords || {};
+      const foundKeywords = (resumeAnalysis.found_keywords || {}) as Record<string, string[]>;
       for (const [category, keywords] of Object.entries(foundKeywords)) {
-        if (keywords.length > 0) {
+        if (keywords && keywords.length > 0) {
           keywordsContainer.innerHTML += `
             <div class="rounded-lg border border-gray-200 bg-gray-50 p-3 dark:border-gray-700 dark:bg-gray-800/50">
               <h4 class="text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">${category}</h4>
@@ -395,29 +448,86 @@ import RadarChart from '../../components/profile/RadarChart.svelte';
         }
       }
 
-      // 优化建议
-      const suggestionsContainer = document.getElementById('keyword_suggestions');
       suggestionsContainer.innerHTML = '';
-      (resumeAnalysis.suggestions || []).forEach(suggestion => {
-        suggestionsContainer.innerHTML += `<li>• ${suggestion}</li>`;
-      });
+      const sugg = resumeAnalysis.suggestions;
+      if (Array.isArray(sugg)) {
+        sugg.forEach((suggestion: string) => {
+          suggestionsContainer.innerHTML += `<li>• ${suggestion}</li>`;
+        });
+      }
     } else {
-      document.getElementById('resume_analysis_section').classList.remove('hidden');
-      document.getElementById('skill_density').textContent = '0%';
-      document.getElementById('skill_density_bar').style.width = '0%';
-      document.getElementById('found_keywords').innerHTML = '<p class="text-sm text-gray-500 dark:text-gray-400">上传简历后获取关键词分析</p>';
-      document.getElementById('keyword_suggestions').innerHTML = '<li>• 上传简历后获取优化建议</li>';
+      skillDensityEl.textContent = '0%';
+      skillDensityBar.style.width = '0%';
+      keywordsContainer.innerHTML = '<p class="text-sm text-75">暂无关键词分析数据</p>';
+      suggestionsContainer.innerHTML = '';
     }
   }
 
-  document.addEventListener('DOMContentLoaded', () => {
-    const submitBtn = document.getElementById('submitBtn');
-    const nameInput = document.getElementById('nameInput');
-    const majorInput = document.getElementById('majorInput');
-    const resumeInput = document.getElementById('resumeInput');
-    
-    // 初始化详细分析区域
-    renderDetailedAnalysis({});
+  document.addEventListener('DOMContentLoaded', async () => {
+    const submitBtn = document.getElementById('submitBtn') as HTMLButtonElement | null;
+    const nameInput = document.getElementById('nameInput') as HTMLInputElement | null;
+    const majorInput = document.getElementById('majorInput') as HTMLInputElement | null;
+    const resumeInput = document.getElementById('resumeInput') as HTMLInputElement | null;
+    if (!submitBtn || !nameInput || !majorInput || !resumeInput) return;
+
+    const token = getToken();
+    const user = getUser();
+    let detailedUnlocked = false;
+
+    if (token && user?.id) {
+      try {
+        const resumes = await fetchMyResumes();
+        if (resumes.length > 0) {
+          const r = resumes[0];
+          const completeness = typeof r.completeness === 'number' ? r.completeness : 0;
+          const competitiveness = typeof r.competitiveness === 'number' ? r.competitiveness : 0;
+          paintProfilePortraitPage({
+            scores: { ...r.scores },
+            completeness,
+            competitiveness,
+            name: r.name,
+            major: r.major,
+          });
+          setTimeout(() => emitProfileRadarScores({ ...r.scores }), 200);
+
+          const row = await fetchResumePortraitResult(r.id);
+          const da = row?.detailed_analysis;
+          if (hasPortraitDetailedAnalysis(da)) {
+            renderDetailedAnalysis(da as Record<string, unknown>);
+            setPortraitLowerInsightsMode('detailed');
+            detailedUnlocked = true;
+          }
+        } else {
+          const cached = loadPortraitLocalCache(user.id);
+          if (cached) {
+            paintProfilePortraitPage({
+              scores: cached.scores,
+              completeness: cached.completeness,
+              competitiveness: cached.competitiveness,
+              name: cached.name,
+              major: cached.major,
+            });
+            setTimeout(() => emitProfileRadarScores(cached.scores), 200);
+          }
+        }
+      } catch {
+        const cached = user?.id ? loadPortraitLocalCache(user.id) : null;
+        if (cached) {
+          paintProfilePortraitPage({
+            scores: cached.scores,
+            completeness: cached.completeness,
+            competitiveness: cached.competitiveness,
+            name: cached.name,
+            major: cached.major,
+          });
+          setTimeout(() => emitProfileRadarScores(cached.scores), 200);
+        }
+      }
+    }
+
+    if (!detailedUnlocked) {
+      setPortraitLowerInsightsMode('explore');
+    }
 
     submitBtn.addEventListener('click', async () => {
       if (!nameInput.value || !majorInput.value || !resumeInput.files?.length) {
@@ -425,11 +535,17 @@ import RadarChart from '../../components/profile/RadarChart.svelte';
         return;
       }
 
+      const u = getUser();
+      if (!u?.id) {
+        alert('请先登录后再生成能力画像');
+        return;
+      }
+
       const formData = new FormData();
       formData.append('name', nameInput.value);
       formData.append('major', majorInput.value);
       formData.append('resume', resumeInput.files[0]);
-      formData.append('user_id', localStorage.getItem('user_id') || '1');
+      formData.append('user_id', String(u.id));
 
       submitBtn.disabled = true;
       submitBtn.textContent = '分析中...';
@@ -439,53 +555,31 @@ import RadarChart from '../../components/profile/RadarChart.svelte';
         const scores = result.scores;
         const completeness = result.completeness;
         const competitiveness = result.competitiveness;
-        const detailedAnalysis = result.detailed_analysis || {};
 
-        // 更新分数文本
-        document.getElementById('score_theory').textContent = scores.cap_req_theory;
-        document.getElementById('score_cross').textContent = scores.cap_req_cross;
-        document.getElementById('score_practice').textContent = scores.cap_req_practice;
-        document.getElementById('score_digital').textContent = scores.cap_req_digital;
-        document.getElementById('score_innovation').textContent = scores.cap_req_innovation;
-        document.getElementById('score_teamwork').textContent = scores.cap_req_teamwork;
-        document.getElementById('score_social').textContent = scores.cap_req_social;
-        document.getElementById('score_growth').textContent = scores.cap_req_growth;
-
-        // 更新完整度和竞争度
-        document.getElementById('completeness_score').textContent = completeness;
-        document.getElementById('competitiveness_score').textContent = competitiveness;
-        document.getElementById('completeness_bar').style.width = `${completeness}%`;
-        document.getElementById('competitiveness_bar').style.width = `${competitiveness}%`;
-
-        // 生成详细分析报告
-        const completenessAnalysis = generateCompletenessAnalysis(completeness, scores);
-        document.getElementById('completeness_analysis').textContent = completenessAnalysis;
-
-        // 生成竞争力分析
-        const competitivenessAnalysis = generateCompetitivenessAnalysis(competitiveness, scores);
-        document.getElementById('competitiveness_analysis').textContent = competitivenessAnalysis;
-
-        // 渲染详细分析
-        const analysisData = result.detailed_analysis || {};
-        renderDetailedAnalysis(analysisData);
-
-        // 触发雷达图更新事件
-        const radarDetail = {
-          theory: scores.cap_req_theory,
-          cross: scores.cap_req_cross,
-          practice: scores.cap_req_practice,
-          digital: scores.cap_req_digital,
-          innovation: scores.cap_req_innovation,
-          teamwork: scores.cap_req_teamwork,
-          social: scores.cap_req_social,
-          growth: scores.cap_req_growth
-        };
-        window.dispatchEvent(new CustomEvent('updateRadarScores', { detail: radarDetail }));
+        const da = result.detailed_analysis;
+        if (hasPortraitDetailedAnalysis(da)) {
+          renderDetailedAnalysis((da || {}) as Record<string, unknown>);
+          setPortraitLowerInsightsMode('detailed');
+        } else {
+          setPortraitLowerInsightsMode('explore');
+        }
+        paintProfilePortraitPage({
+          scores,
+          completeness,
+          competitiveness,
+          name: nameInput.value,
+          major: majorInput.value,
+        });
+        savePortraitLocalCache(u.id, {
+          scores,
+          completeness,
+          competitiveness,
+          name: nameInput.value,
+          major: majorInput.value,
+        });
 
         alert('✅ 分析完成！能力画像已生成');
-
-        // 同步阻塞的 alert 返回后再派发一次，避免与 Svelte 水合时机竞态导致漏绘
-        window.dispatchEvent(new CustomEvent('updateRadarScores', { detail: radarDetail }));
+        setTimeout(() => emitProfileRadarScores(scores), 200);
       } catch (err) {
         console.error(err);
         alert('❌ 上传失败：' + (err instanceof Error ? err.message : '未知错误'));

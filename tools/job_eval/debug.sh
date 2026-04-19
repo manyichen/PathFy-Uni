@@ -5,10 +5,10 @@ pip install -r requirements.txt
 deactivate
 
 
-cd e:\Suilli10086\suilli_mizi\backend
 python -m venv .venv
-.\.venv\Scripts\Activate.ps1
 pip install -r requirements.txt
+cd e:\Suilli10086\suilli_mizi\backend
+.\.venv\Scripts\Activate.ps1
 python run.py
 deactivate
 

@@ -8,11 +8,12 @@ import PersonalityTest from '../../components/personality/PersonalityTest.svelte
     <div>
       <h1 class="mb-2 text-2xl font-bold text-black dark:text-white">职业性格测试</h1>
       <p class="max-w-3xl text-sm leading-relaxed text-75">
-        通过MBTI性格测试，了解你的职业性格类型，获取个性化的职业建议和发展方向。
+        通过 MBTI 性格测试，了解你的职业性格类型，获取个性化的职业建议和发展方向。
       </p>
     </div>
 
-    <div class="rounded-2xl border bg-background p-6 shadow-sm">
+    <!-- 与能力画像、人岗匹配等页一致：主内容置于主题卡片内（随 .dark / 变量切换） -->
+    <div class="rounded-2xl border border-black/10 bg-background p-6 shadow-sm dark:border-white/10 md:p-8">
       <PersonalityTest client:load />
     </div>
   </section>

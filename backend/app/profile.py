@@ -1,14 +1,27 @@
+from decimal import Decimal
+
 from flask import Blueprint, request, jsonify, current_app
 import os
 import json
 import pymysql
 
+from app.auth import get_bearer_user_id
 from app.config import Config
 from app.utils import ocr_image, pdf_to_image, score_resume, create_radar_chart
 
-portrait_bp = Blueprint('profile', __name__, url_prefix='/api/profile')
-print("千问API Key:", Config.DASHSCOPE_API_KEY)
-print("OCR App ID:", Config.OCR_APP_ID)
+portrait_bp = Blueprint("profile", __name__, url_prefix="/api/profile")
+
+
+def _jsonable_row(row: dict | None) -> dict | None:
+    if not row:
+        return row
+    out: dict = {}
+    for k, v in row.items():
+        if isinstance(v, Decimal):
+            out[k] = float(v)
+        else:
+            out[k] = v
+    return out
 
 def get_db():
     """自己实现数据库连接，不依赖项目db.py，零冲突"""
@@ -455,117 +468,225 @@ def generate_overall_evaluation(scores, avg_score):
 
     return evaluation
 
-@portrait_bp.route('/upload', methods=['POST'])
+
+def _resolve_upload_user_id() -> tuple[int | None, str | None]:
+    jwt_uid = get_bearer_user_id()
+    raw = request.form.get("user_id")
+    if jwt_uid is not None:
+        return jwt_uid, None
+    if not raw:
+        return None, "未登录时请提供 user_id；已登录请携带 Authorization: Bearer"
+    try:
+        return int(raw), None
+    except (TypeError, ValueError):
+        return None, "user_id 格式无效"
+
+
+@portrait_bp.route("/resumes", methods=["GET"])
+def list_my_resumes():
+    """当前登录用户的能力画像（简历分析）列表，供人岗匹配选用。"""
+    uid = get_bearer_user_id()
+    if uid is None:
+        return jsonify({"code": 401, "msg": "需要登录（Authorization: Bearer）"}), 401
+
+    try:
+        conn = get_db()
+        cur = conn.cursor()
+        cur.execute(
+            """
+            SELECT id, name, major, create_time,
+              cap_req_theory, cap_req_cross, cap_req_practice, cap_req_digital,
+              cap_req_innovation, cap_req_teamwork, cap_req_social, cap_req_growth,
+              completeness, competitiveness
+            FROM student_resume
+            WHERE user_id = %s
+            ORDER BY id DESC
+            """,
+            (uid,),
+        )
+        rows = cur.fetchall()
+        conn.close()
+
+        out = []
+        for r in rows:
+            dims = [
+                r["cap_req_theory"],
+                r["cap_req_cross"],
+                r["cap_req_practice"],
+                r["cap_req_digital"],
+                r["cap_req_innovation"],
+                r["cap_req_teamwork"],
+                r["cap_req_social"],
+                r["cap_req_growth"],
+            ]
+            nums = [float(x) for x in dims if x is not None]
+            score_avg = round(sum(nums) / len(nums), 2) if nums else 0.0
+            scores = {
+                "cap_req_theory": int(r["cap_req_theory"] or 0),
+                "cap_req_cross": int(r["cap_req_cross"] or 0),
+                "cap_req_practice": int(r["cap_req_practice"] or 0),
+                "cap_req_digital": int(r["cap_req_digital"] or 0),
+                "cap_req_innovation": int(r["cap_req_innovation"] or 0),
+                "cap_req_teamwork": int(r["cap_req_teamwork"] or 0),
+                "cap_req_social": int(r["cap_req_social"] or 0),
+                "cap_req_growth": int(r["cap_req_growth"] or 0),
+            }
+            out.append(
+                {
+                    "id": r["id"],
+                    "name": r["name"],
+                    "major": r["major"],
+                    "create_time": str(r["create_time"]) if r.get("create_time") else None,
+                    "completeness": r.get("completeness"),
+                    "competitiveness": r.get("competitiveness"),
+                    "score_avg": score_avg,
+                    "scores": scores,
+                }
+            )
+
+        return jsonify({"code": 200, "msg": "success", "data": out})
+    except Exception as e:
+        return jsonify({"code": 500, "msg": f"服务器错误: {str(e)}"}), 500
+
+
+@portrait_bp.route("/upload", methods=["POST"])
 def upload_resume():
     try:
-        user_id = request.form.get('user_id')
-        name = request.form.get('name')
-        major = request.form.get('major')
-        file = request.files.get('resume')
+        uid, err = _resolve_upload_user_id()
+        if err or uid is None:
+            return jsonify({"code": 400, "msg": err or "无法确定用户"}), 400
 
-        if not all([user_id, name, major, file]):
+        name = request.form.get("name")
+        major = request.form.get("major")
+        file = request.files.get("resume")
+
+        if not all([name, major, file]):
             return jsonify({"code": 400, "msg": "参数不全"}), 400
 
-        upload_dir = os.path.join(current_app.static_folder, 'uploads')
+        upload_dir = os.path.join(current_app.static_folder, "uploads")
         os.makedirs(upload_dir, exist_ok=True)
         file_path = os.path.join(upload_dir, file.filename)
         file.save(file_path)
 
-        if file.filename.lower().endswith('.pdf'):
+        if file.filename.lower().endswith(".pdf"):
             ocr_path = pdf_to_image(file_path)
         else:
             ocr_path = file_path
 
         resume_text = ocr_image(ocr_path)
-        scores = score_resume(resume_text)
+        scores, confidences = score_resume(resume_text)
         radar_html = create_radar_chart(scores)
 
-        # 生成详细分析报告
         detailed_analysis = generate_detailed_analysis(scores, resume_text)
 
         conn = get_db()
         cur = conn.cursor()
-        
-        # 检查表结构是否包含detailed_analysis字段
+
         cur.execute("SHOW COLUMNS FROM student_resume LIKE 'detailed_analysis'")
         has_detailed_analysis = cur.fetchone() is not None
-        
+
+        total = sum(scores.values())
+        completeness = total // 8
+        competitiveness = total // 8
+
+        row_vals = (
+            uid,
+            name,
+            major,
+            resume_text,
+            scores["cap_req_theory"],
+            scores["cap_req_cross"],
+            scores["cap_req_practice"],
+            scores["cap_req_digital"],
+            scores["cap_req_innovation"],
+            scores["cap_req_teamwork"],
+            scores["cap_req_social"],
+            scores["cap_req_growth"],
+            confidences["cap_conf_theory"],
+            confidences["cap_conf_cross"],
+            confidences["cap_conf_practice"],
+            confidences["cap_conf_digital"],
+            confidences["cap_conf_innovation"],
+            confidences["cap_conf_teamwork"],
+            confidences["cap_conf_social"],
+            confidences["cap_conf_growth"],
+            completeness,
+            competitiveness,
+            radar_html,
+        )
+
         if has_detailed_analysis:
             sql = """
             INSERT INTO student_resume
             (user_id, name, major, resume_text,
             cap_req_theory, cap_req_cross, cap_req_practice, cap_req_digital,
             cap_req_innovation, cap_req_teamwork, cap_req_social, cap_req_growth,
+            cap_conf_theory, cap_conf_cross, cap_conf_practice, cap_conf_digital,
+            cap_conf_innovation, cap_conf_teamwork, cap_conf_social, cap_conf_growth,
             completeness, competitiveness, radar_html, detailed_analysis)
-            VALUES (%s,%s,%s,%s, %s,%s,%s,%s, %s,%s,%s,%s, %s,%s,%s,%s)
+            VALUES (%s,%s,%s,%s, %s,%s,%s,%s, %s,%s,%s,%s, %s,%s,%s,%s, %s,%s,%s,%s, %s,%s,%s,%s)
             """
-            total = sum(scores.values())
-            completeness = total // 8
-            competitiveness = total // 8
-            cur.execute(sql, (
-                user_id, name, major, resume_text,
-                scores["cap_req_theory"], scores["cap_req_cross"],
-                scores["cap_req_practice"], scores["cap_req_digital"],
-                scores["cap_req_innovation"], scores["cap_req_teamwork"],
-                scores["cap_req_social"], scores["cap_req_growth"],
-                completeness, competitiveness, radar_html,
-                json.dumps(detailed_analysis, ensure_ascii=False, indent=2)
-            ))
+            cur.execute(
+                sql,
+                row_vals + (json.dumps(detailed_analysis, ensure_ascii=False, indent=2),),
+            )
         else:
-            # 如果没有detailed_analysis字段，使用旧的SQL语句
             sql = """
             INSERT INTO student_resume
             (user_id, name, major, resume_text,
             cap_req_theory, cap_req_cross, cap_req_practice, cap_req_digital,
             cap_req_innovation, cap_req_teamwork, cap_req_social, cap_req_growth,
+            cap_conf_theory, cap_conf_cross, cap_conf_practice, cap_conf_digital,
+            cap_conf_innovation, cap_conf_teamwork, cap_conf_social, cap_conf_growth,
             completeness, competitiveness, radar_html)
-            VALUES (%s,%s,%s,%s, %s,%s,%s,%s, %s,%s,%s,%s, %s,%s,%s)
+            VALUES (%s,%s,%s,%s, %s,%s,%s,%s, %s,%s,%s,%s, %s,%s,%s,%s, %s,%s,%s,%s, %s,%s,%s)
             """
-            total = sum(scores.values())
-            completeness = total // 8
-            competitiveness = total // 8
-            cur.execute(sql, (
-                user_id, name, major, resume_text,
-                scores["cap_req_theory"], scores["cap_req_cross"],
-                scores["cap_req_practice"], scores["cap_req_digital"],
-                scores["cap_req_innovation"], scores["cap_req_teamwork"],
-                scores["cap_req_social"], scores["cap_req_growth"],
-                completeness, competitiveness, radar_html
-            ))
+            cur.execute(sql, row_vals)
+
         conn.commit()
         resume_id = cur.lastrowid
         conn.close()
 
-        return jsonify({
-            "code": 200,
-            "msg": "success",
-            "data": {
-                "resume_id": resume_id,
-                "scores": scores,
-                "completeness": completeness,
-                "competitiveness": competitiveness,
-                "detailed_analysis": detailed_analysis
+        return jsonify(
+            {
+                "code": 200,
+                "msg": "success",
+                "data": {
+                    "resume_id": resume_id,
+                    "scores": scores,
+                    "confidences": confidences,
+                    "completeness": completeness,
+                    "competitiveness": competitiveness,
+                    "detailed_analysis": detailed_analysis,
+                },
             }
-        })
+        )
     except Exception as e:
         return jsonify({"code": 500, "msg": f"服务器错误: {str(e)}"}), 500
 
-@portrait_bp.route('/result/<int:resume_id>', methods=['GET'])
+
+@portrait_bp.route("/result/<int:resume_id>", methods=["GET"])
 def get_result(resume_id):
     try:
+        uid = get_bearer_user_id()
         conn = get_db()
         cur = conn.cursor()
-        cur.execute("SELECT * FROM student_resume WHERE id = %s", (resume_id,))
+        if uid is not None:
+            cur.execute(
+                "SELECT * FROM student_resume WHERE id = %s AND user_id = %s",
+                (resume_id, uid),
+            )
+        else:
+            cur.execute("SELECT * FROM student_resume WHERE id = %s", (resume_id,))
         result = cur.fetchone()
         conn.close()
         if not result:
-            return jsonify({"code": 404, "msg": "结果不存在"}), 404
+            return jsonify({"code": 404, "msg": "结果不存在或无权查看"}), 404
 
-        # 解析详细分析
-        if result.get('detailed_analysis') and isinstance(result['detailed_analysis'], str):
-            result['detailed_analysis'] = json.loads(result['detailed_analysis'])
+        if result.get("detailed_analysis") and isinstance(result["detailed_analysis"], str):
+            result["detailed_analysis"] = json.loads(result["detailed_analysis"])
 
-        return jsonify({"code": 200, "data": result})
+        return jsonify({"code": 200, "data": _jsonable_row(result)})
     except Exception as e:
         return jsonify({"code": 500, "msg": f"错误: {str(e)}"}), 500
 
@@ -576,13 +697,13 @@ def get_user_history(user_id):
         conn = get_db()
         cur = conn.cursor()
         cur.execute("""
-            SELECT id, name, major, created_at,
+            SELECT id, name, major, create_time,
             cap_req_theory, cap_req_cross, cap_req_practice, cap_req_digital,
             cap_req_innovation, cap_req_teamwork, cap_req_social, cap_req_growth,
             completeness, competitiveness
             FROM student_resume
             WHERE user_id = %s
-            ORDER BY created_at DESC
+            ORDER BY create_time DESC
         """, (user_id,))
         results = cur.fetchall()
         conn.close()
@@ -594,7 +715,7 @@ def get_user_history(user_id):
                 "id": r["id"],
                 "name": r["name"],
                 "major": r["major"],
-                "created_at": r["created_at"].isoformat() if r.get("created_at") else None,
+                "create_time": r["create_time"].isoformat() if r.get("create_time") else None,
                 "scores": {
                     "cap_req_theory": r["cap_req_theory"],
                     "cap_req_cross": r["cap_req_cross"],
@@ -620,13 +741,13 @@ def get_ability_trend(user_id):
         conn = get_db()
         cur = conn.cursor()
         cur.execute("""
-            SELECT id, created_at,
+            SELECT id, create_time,
             cap_req_theory, cap_req_cross, cap_req_practice, cap_req_digital,
             cap_req_innovation, cap_req_teamwork, cap_req_social, cap_req_growth,
             completeness, competitiveness
             FROM student_resume
             WHERE user_id = %s
-            ORDER BY created_at ASC
+            ORDER BY create_time ASC
         """, (user_id,))
         results = cur.fetchall()
         conn.close()
@@ -638,7 +759,7 @@ def get_ability_trend(user_id):
         for r in results:
             trend.append({
                 "id": r["id"],
-                "date": r["created_at"].isoformat() if r.get("created_at") else None,
+                "date": r["create_time"].isoformat() if r.get("create_time") else None,
                 "scores": {
                     "cap_req_theory": r["cap_req_theory"],
                     "cap_req_cross": r["cap_req_cross"],

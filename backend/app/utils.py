@@ -1,11 +1,15 @@
 import os
 import requests
 import json
+from typing import Dict, Tuple
+
 from aip import AipOcr
 from pyecharts.charts import Radar
 from pyecharts import options as opts
 import fitz
+
 from app.config import Config
+from app.jobs import CONF_KEYS, DIM_KEYS
 
 # 百度 OCR：未配置 OCR_* 时仍可启动应用，仅在调用 ocr_image 时初始化客户端
 _ocr_client = None
@@ -41,20 +45,50 @@ def pdf_to_image(pdf_path):
     pix.save(img_path)
     return img_path
 
-# ===================== 千问大模型评分（和队长统一）=====================
-def score_resume(resume_text):
-    api_key =Config.DASHSCOPE_API_KEY
+def _default_scores() -> Dict[str, int]:
+    return {k: 60 for k in DIM_KEYS}
+
+
+def _default_confidences() -> Dict[str, float]:
+    return {k: 0.55 for k in CONF_KEYS}
+
+
+def _clamp_score(v) -> int:
+    try:
+        x = int(round(float(v)))
+    except (TypeError, ValueError):
+        return 60
+    return max(0, min(100, x))
+
+
+def _clamp_conf(v) -> float:
+    try:
+        x = float(v)
+    except (TypeError, ValueError):
+        return 0.55
+    return round(max(0.0, min(1.0, x)), 4)
+
+
+# ===================== 千问大模型评分（八维分数 + 八维置信度，与人岗匹配口径一致）=====================
+def score_resume(resume_text: str) -> Tuple[Dict[str, int], Dict[str, float]]:
+    """
+    返回 (scores, confidences)。
+    scores 键为 cap_req_*（0–100）；confidences 键为 cap_conf_*（0–1），表示该维打分的证据强度。
+    """
+    api_key = Config.DASHSCOPE_API_KEY
     url = "https://dashscope.aliyuncs.com/api/v1/services/aigc/text-generation/generation"
 
     headers = {
         "Authorization": f"Bearer {api_key}",
-        "Content-Type": "application/json"
+        "Content-Type": "application/json",
     }
 
     prompt = f"""
-你是专业大学生就业能力评估师，严格按8个维度0-100分评分，只输出标准JSON，无其他内容。
+你是专业大学生就业能力评估师。根据简历文本，为 8 个能力维度给出 0–100 的供给分，
+并为每一维给出 0–1 的置信度（cap_conf_*）：表示你在该维上打分的证据充分程度
+（简历中该维相关经历越具体、可核验，置信度越高；越模糊或缺证据则越低）。
 
-8个维度：
+8 个分数维度（cap_req_*）：
 cap_req_theory: 专业理论知识
 cap_req_cross: 交叉学科广度
 cap_req_practice: 专业实践技能
@@ -64,26 +98,38 @@ cap_req_teamwork: 团队协作能力
 cap_req_social: 社会实践网络
 cap_req_growth: 学习与发展潜力
 
+8 个置信度（cap_conf_*，与上列一一对应）：
+cap_conf_theory, cap_conf_cross, cap_conf_practice, cap_conf_digital,
+cap_conf_innovation, cap_conf_teamwork, cap_conf_social, cap_conf_growth
+
 简历内容：
 {resume_text}
 
-输出格式：
+只输出一个标准 JSON 对象，不要其它文字。格式示例：
 {{
-    "cap_req_theory": 分数,
-    "cap_req_cross": 分数,
-    "cap_req_practice": 分数,
-    "cap_req_digital": 分数,
-    "cap_req_innovation": 分数,
-    "cap_req_teamwork": 分数,
-    "cap_req_social": 分数,
-    "cap_req_growth": 分数
+    "cap_req_theory": 72,
+    "cap_req_cross": 55,
+    "cap_req_practice": 68,
+    "cap_req_digital": 60,
+    "cap_req_innovation": 50,
+    "cap_req_teamwork": 65,
+    "cap_req_social": 48,
+    "cap_req_growth": 70,
+    "cap_conf_theory": 0.72,
+    "cap_conf_cross": 0.55,
+    "cap_conf_practice": 0.70,
+    "cap_conf_digital": 0.60,
+    "cap_conf_innovation": 0.45,
+    "cap_conf_teamwork": 0.65,
+    "cap_conf_social": 0.50,
+    "cap_conf_growth": 0.68
 }}
 """
 
     payload = {
         "model": "qwen-turbo",
         "input": {"messages": [{"role": "user", "content": prompt}]},
-        "parameters": {"temperature": 0.1, "result_format": "text"}
+        "parameters": {"temperature": 0.1, "result_format": "text"},
     }
 
     try:
@@ -91,24 +137,20 @@ cap_req_growth: 学习与发展潜力
         data = resp.json()
         content = data["output"]["text"].strip()
         content = content.replace("```json", "").replace("```", "").strip()
-        scores = json.loads(content)
+        parsed = json.loads(content)
 
-        keys = [
-            "cap_req_theory", "cap_req_cross", "cap_req_practice",
-            "cap_req_digital", "cap_req_innovation", "cap_req_teamwork",
-            "cap_req_social", "cap_req_growth"
-        ]
-        for k in keys:
-            if k not in scores:
-                scores[k] = 60
-        return scores
+        scores: Dict[str, int] = {}
+        for k in DIM_KEYS:
+            scores[k] = _clamp_score(parsed.get(k, 60))
+
+        confidences: Dict[str, float] = {}
+        for k in CONF_KEYS:
+            confidences[k] = _clamp_conf(parsed.get(k, 0.55))
+
+        return scores, confidences
     except Exception as e:
         print("千问调用失败:", e)
-        return {k: 60 for k in [
-            "cap_req_theory", "cap_req_cross", "cap_req_practice",
-            "cap_req_digital", "cap_req_innovation", "cap_req_teamwork",
-            "cap_req_social", "cap_req_growth"
-        ]}
+        return _default_scores(), _default_confidences()
 
 def create_radar_chart(scores):
     data = [[

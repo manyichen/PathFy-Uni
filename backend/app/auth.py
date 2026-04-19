@@ -8,6 +8,25 @@ from .db import db_cursor
 
 auth_bp = Blueprint("auth", __name__, url_prefix="/api/auth")
 EMAIL_RE = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
+
+
+def get_bearer_user_id() -> int | None:
+    """从当前请求的 ``Authorization: Bearer`` 解析用户 id；缺失或无效时返回 ``None``。"""
+    auth_header = request.headers.get("Authorization", "")
+    if not auth_header.startswith("Bearer "):
+        return None
+    token = auth_header.replace("Bearer ", "", 1)
+    try:
+        payload = jwt.decode(
+            token, current_app.config["SECRET_KEY"], algorithms=["HS256"]
+        )
+    except jwt.PyJWTError:
+        return None
+    sub = payload.get("sub")
+    try:
+        return int(sub) if sub is not None else None
+    except (TypeError, ValueError):
+        return None
 USERNAME_RE = re.compile(r"^[a-zA-Z0-9_]{2,32}$")
 
 def _create_token(user_id: int, username: str, email: str) -> str:

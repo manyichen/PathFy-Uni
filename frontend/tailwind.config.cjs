@@ -5,6 +5,10 @@ module.exports = {
 	darkMode: "class",
 	theme: {
 		extend: {
+			/** 与能力画像等页一致：卡片/表单底随 :root / .dark 变量切换 */
+			colors: {
+				background: "var(--card-bg)",
+			},
 			fontFamily: {
 				/** 与 suillilab 一致：Zen Maru Gothic + Noto Sans SC（由 Layout 内联 font-family 覆盖 body） */
 				sans: [

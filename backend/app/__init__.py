@@ -6,9 +6,6 @@ from .config import Config
 from .jobs import jobs_bp
 from .jobs_assistant import jobs_assistant_bp
 from .match_preview import match_bp
-from .mock_capability_profiles import mock_profile_bp
-
-
 def create_app() -> Flask:
     app = Flask(__name__)
     app.config.from_object(Config)
@@ -20,7 +17,6 @@ def create_app() -> Flask:
     )
     from .profile import portrait_bp
 
-    app.register_blueprint(mock_profile_bp)
     app.register_blueprint(portrait_bp)
     from .personality import personality_bp
     app.register_blueprint(personality_bp)
@@ -39,7 +35,7 @@ def create_app() -> Flask:
                     "GET /api/auth/me",
                     "GET /api/personality/questions",
                     "POST /api/personality/submit",
-                    "GET /api/profile/mocks",
+                    "GET /api/profile/resumes",
                     "POST /api/match/preview",
                 ],
             }

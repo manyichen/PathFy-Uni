@@ -40,6 +40,14 @@ class Config:
     MATCH_PREVIEW_MAX_SCAN_HARD = int(os.getenv("MATCH_PREVIEW_MAX_SCAN_HARD", "8000"))
     MATCH_TOP_K_RETURN = int(os.getenv("MATCH_TOP_K_RETURN", "30"))
     MATCH_LLM_POOL_K = int(os.getenv("MATCH_LLM_POOL_K", "40"))
+    # 粗排「形状 + 软缺口」：八维 Pearson 相关权重；岗位每维可高于学生 soft_margin 内不记缺口
+    MATCH_COARSE_SHAPE_WEIGHT = float(os.getenv("MATCH_COARSE_SHAPE_WEIGHT", "0.42"))
+    MATCH_GAP_SOFT_MARGIN_FIT = float(os.getenv("MATCH_GAP_SOFT_MARGIN_FIT", "6"))
+    MATCH_GAP_SOFT_MARGIN_STRETCH = float(os.getenv("MATCH_GAP_SOFT_MARGIN_STRETCH", "10"))
+    # 冲刺高质模式粗排：低于该 match_score 的岗位归入后段；权重和须与 match_preview._sort_ranked_for_goal 一致时可调
+    MATCH_STRETCH_MATCH_SCORE_FLOOR = float(os.getenv("MATCH_STRETCH_MATCH_SCORE_FLOOR", "38"))
+    MATCH_STRETCH_SORT_W_MATCH = float(os.getenv("MATCH_STRETCH_SORT_W_MATCH", "0.32"))
+    MATCH_STRETCH_SORT_W_JOB_AVG = float(os.getenv("MATCH_STRETCH_SORT_W_JOB_AVG", "0.68"))
     DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY", "")
     MATCH_DEEPSEEK_MODEL = os.getenv("MATCH_DEEPSEEK_MODEL", "deepseek-chat")
     MATCH_LLM_TIMEOUT_SECONDS = float(os.getenv("MATCH_LLM_TIMEOUT_SECONDS", "120"))
