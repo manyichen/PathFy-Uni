@@ -16,6 +16,7 @@ export interface PortraitResult {
   scores: PortraitScores;
   completeness: number;
   competitiveness: number;
+  detailed_analysis?: any;
 }
 
 export async function uploadResume(data: FormData) {

@@ -77,6 +77,18 @@ const items: Item[] = [
 		metricValue: "短/中期",
 		progress: 84,
 	},
+	{
+		href: "/personality/",
+		title: "性格测试",
+		desc: "MBTI · 职业适配性分析",
+		icon: "material-symbols:psychology-outline",
+		tone: "#f472b6",
+		tags: ["性格分析", "职业匹配", "行为洞察"],
+		highlight: "了解性格特点，发现最适合的职业方向",
+		metricLabel: "测试覆盖维度",
+		metricValue: "16型",
+		progress: 95,
+	},
 ];
 
 function tilt(e: MouseEvent & { currentTarget: HTMLAnchorElement }) {

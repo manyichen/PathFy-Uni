@@ -93,6 +93,94 @@ import RadarChart from '../../components/profile/RadarChart.svelte';
         </div>
       </div>
     </div>
+
+    <!-- 详细分析报告区域 -->
+    <div id="detailed_analysis_section" class="space-y-6">
+      <!-- 整体评价 -->
+      <div class="rounded-2xl border bg-background p-6 shadow-sm">
+        <h2 class="mb-4 text-lg font-semibold text-black dark:text-white">📊 整体评价</h2>
+        <div class="rounded-lg border bg-gradient-to-r from-blue-50 to-purple-50 p-4 dark:border-blue-900/30 dark:from-blue-900/10 dark:to-purple-900/10">
+          <p class="text-sm leading-relaxed text-gray-700 dark:text-gray-300" id="overall_evaluation">-</p>
+        </div>
+      </div>
+
+      <!-- 优势与劣势维度 -->
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <!-- 优势维度 -->
+        <div class="rounded-2xl border bg-background p-6 shadow-sm">
+          <h2 class="mb-4 text-lg font-semibold text-black dark:text-white">💪 优势维度</h2>
+          <div class="space-y-3" id="advantage_dimensions">
+            <!-- 动态填充 -->
+          </div>
+        </div>
+
+        <!-- 劣势维度 -->
+        <div class="rounded-2xl border bg-background p-6 shadow-sm">
+          <h2 class="mb-4 text-lg font-semibold text-black dark:text-white">📚 待提升维度</h2>
+          <div class="space-y-3" id="劣势_dimensions">
+            <!-- 动态填充 -->
+          </div>
+        </div>
+      </div>
+
+      <!-- 各维度详细分析 -->
+      <div class="rounded-2xl border bg-background p-6 shadow-sm">
+        <h2 class="mb-4 text-lg font-semibold text-black dark:text-white">🔍 各维度详细分析</h2>
+        <div class="space-y-4" id="dimension_analysis">
+          <!-- 动态填充 -->
+        </div>
+      </div>
+
+      <!-- 发展计划 -->
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <!-- 短期提升计划 -->
+        <div class="rounded-2xl border bg-background p-6 shadow-sm">
+          <h2 class="mb-4 text-lg font-semibold text-black dark:text-white">📅 短期提升计划（3-6个月）</h2>
+          <div class="space-y-4" id="short_term_plan">
+            <!-- 动态填充 -->
+          </div>
+        </div>
+
+        <!-- 长期发展目标 -->
+        <div class="rounded-2xl border bg-background p-6 shadow-sm">
+          <h2 class="mb-4 text-lg font-semibold text-black dark:text-white">🎯 长期发展目标（1-2年）</h2>
+          <div class="space-y-4" id="long_term_goals">
+            <!-- 动态填充 -->
+          </div>
+        </div>
+      </div>
+
+      <!-- 行业适配性分析 -->
+      <div class="rounded-2xl border bg-background p-6 shadow-sm">
+        <h2 class="mb-4 text-lg font-semibold text-black dark:text-white">🏢 行业适配性分析</h2>
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4" id="industry_match">
+          <!-- 动态填充 -->
+        </div>
+      </div>
+
+      <!-- 简历关键词分析 -->
+      <div class="rounded-2xl border bg-background p-6 shadow-sm" id="resume_analysis_section">
+        <h2 class="mb-4 text-lg font-semibold text-black dark:text-white">📝 简历关键词分析</h2>
+        <div class="space-y-4">
+          <div class="flex items-center justify-between">
+            <span class="text-sm text-gray-600 dark:text-gray-400">技能密度</span>
+            <span class="text-sm font-medium text-[var(--primary)]" id="skill_density">-</span>
+          </div>
+          <div class="h-2 bg-gray-200 rounded-full dark:bg-gray-700">
+            <div class="h-2 bg-[var(--primary)] rounded-full" style="width: 0%" id="skill_density_bar"></div>
+          </div>
+          <div class="grid grid-cols-2 md:grid-cols-4 gap-4" id="found_keywords">
+            <!-- 动态填充 -->
+          </div>
+          <div class="rounded-lg border bg-yellow-50 p-4 dark:border-yellow-900/30 dark:bg-yellow-900/10">
+            <h3 class="text-sm font-medium text-yellow-800 dark:text-yellow-300 mb-2">优化建议</h3>
+            <ul class="space-y-1 text-sm text-yellow-700 dark:text-yellow-400" id="keyword_suggestions">
+              <!-- 动态填充 -->
+            </ul>
+          </div>
+        </div>
+      </div>
+    </div>
   </section>
 </Layout>
 
@@ -159,11 +247,177 @@ import RadarChart from '../../components/profile/RadarChart.svelte';
       .join('、');
   }
 
+  function renderDetailedAnalysis(analysisData) {
+    // 整体评价
+    document.getElementById('overall_evaluation').textContent = analysisData.overall_evaluation || '上传简历后获取详细分析';
+
+    // 优势维度
+    const advantageContainer = document.getElementById('advantage_dimensions');
+    advantageContainer.innerHTML = '';
+    if (analysisData.advantage_dimensions && analysisData.advantage_dimensions.length > 0) {
+      analysisData.advantage_dimensions.forEach(item => {
+        advantageContainer.innerHTML += `
+          <div class="flex items-center justify-between rounded-lg border border-green-200 bg-green-50 p-3 dark:border-green-900/30 dark:bg-green-900/10">
+            <span class="text-sm font-medium text-green-800 dark:text-green-300">${item.dimension}</span>
+            <span class="text-sm font-bold text-green-600 dark:text-green-400">${item.score}分</span>
+          </div>
+        `;
+      });
+    } else {
+      advantageContainer.innerHTML = '<p class="text-sm text-gray-500 dark:text-gray-400">上传简历后查看优势维度</p>';
+    }
+
+    // 劣势维度
+    const weaknessContainer = document.getElementById('劣势_dimensions');
+    weaknessContainer.innerHTML = '';
+    if (analysisData.劣势_dimensions && analysisData.劣势_dimensions.length > 0) {
+      analysisData.劣势_dimensions.forEach(item => {
+        weaknessContainer.innerHTML += `
+          <div class="flex items-center justify-between rounded-lg border border-orange-200 bg-orange-50 p-3 dark:border-orange-900/30 dark:bg-orange-900/10">
+            <span class="text-sm font-medium text-orange-800 dark:text-orange-300">${item.dimension}</span>
+            <span class="text-sm font-bold text-orange-600 dark:text-orange-400">${item.score}分</span>
+          </div>
+        `;
+      });
+    } else {
+      weaknessContainer.innerHTML = '<p class="text-sm text-gray-500 dark:text-gray-400">上传简历后查看待提升维度</p>';
+    }
+
+    // 各维度详细分析
+    const dimensionContainer = document.getElementById('dimension_analysis');
+    dimensionContainer.innerHTML = '';
+    if (analysisData.dimension_analysis && analysisData.dimension_analysis.length > 0) {
+      analysisData.dimension_analysis.forEach(item => {
+        const levelColor = item.level === '高' ? 'green' : (item.level === '中' ? 'blue' : 'orange');
+        dimensionContainer.innerHTML += `
+          <div class="rounded-lg border border-gray-200 bg-gray-50 p-4 dark:border-gray-700 dark:bg-gray-800/50">
+            <div class="flex items-center justify-between mb-2">
+              <h3 class="text-sm font-semibold text-gray-800 dark:text-gray-200">${item.dimension}</h3>
+              <div class="flex items-center gap-2">
+                <span class="text-lg font-bold text-${levelColor}-600 dark:text-${levelColor}-400">${item.score}分</span>
+                <span class="rounded-full px-2 py-0.5 text-xs font-medium bg-${levelColor}-100 text-${levelColor}-800 dark:bg-${levelColor}-900/30 dark:text-${levelColor}-300">${item.level}</span>
+              </div>
+            </div>
+            <p class="text-sm text-gray-600 dark:text-gray-400 leading-relaxed">${item.interpretation}</p>
+          </div>
+        `;
+      });
+    } else {
+      dimensionContainer.innerHTML = '<p class="text-sm text-gray-500 dark:text-gray-400">上传简历后获取各维度详细分析</p>';
+    }
+
+    // 短期提升计划
+    const shortTermContainer = document.getElementById('short_term_plan');
+    shortTermContainer.innerHTML = '';
+    if (analysisData.short_term_plan && analysisData.short_term_plan.length > 0) {
+      analysisData.short_term_plan.forEach(item => {
+        shortTermContainer.innerHTML += `
+          <div class="rounded-lg border border-blue-200 bg-blue-50 p-4 dark:border-blue-900/30 dark:bg-blue-900/10">
+            <div class="flex items-center justify-between mb-2">
+              <h3 class="text-sm font-semibold text-blue-800 dark:text-blue-300">${item.dimension}</h3>
+              <span class="text-sm text-blue-600 dark:text-blue-400">当前：${item.current_score}分</span>
+            </div>
+            <ul class="space-y-1">
+              ${(item.suggestions || []).map(s => `<li class="text-sm text-blue-700 dark:text-blue-400">• ${s}</li>`).join('')}
+            </ul>
+          </div>
+        `;
+      });
+    } else {
+      shortTermContainer.innerHTML = '<p class="text-sm text-gray-500 dark:text-gray-400">上传简历后获取短期提升计划</p>';
+    }
+
+    // 长期发展目标
+    const longTermContainer = document.getElementById('long_term_goals');
+    longTermContainer.innerHTML = '';
+    if (analysisData.long_term_goals && analysisData.long_term_goals.length > 0) {
+      analysisData.long_term_goals.forEach(item => {
+        const goalTypeColor = item.goal_type === '重点培养' ? 'orange' : 'green';
+        longTermContainer.innerHTML += `
+          <div class="rounded-lg border border-${goalTypeColor}-200 bg-${goalTypeColor}-50 p-4 dark:border-${goalTypeColor}-900/30 dark:bg-${goalTypeColor}-900/10">
+            <div class="flex items-center justify-between mb-2">
+              <h3 class="text-sm font-semibold text-${goalTypeColor}-800 dark:text-${goalTypeColor}-300">${item.dimension}</h3>
+              <span class="rounded-full px-2 py-0.5 text-xs font-medium bg-${goalTypeColor}-100 text-${goalTypeColor}-800 dark:bg-${goalTypeColor}-900/30 dark:text-${goalTypeColor}-300">${item.goal_type}</span>
+            </div>
+            <p class="text-sm text-${goalTypeColor}-700 dark:text-${goalTypeColor}-400 mb-2">当前水平：${item.current_score}分</p>
+            <ul class="space-y-1">
+              ${(item.suggestions || []).map(s => `<li class="text-sm text-${goalTypeColor}-700 dark:text-${goalTypeColor}-400">• ${s}</li>`).join('')}
+            </ul>
+          </div>
+        `;
+      });
+    } else {
+      longTermContainer.innerHTML = '<p class="text-sm text-gray-500 dark:text-gray-400">上传简历后获取长期发展目标</p>';
+    }
+
+    // 行业适配性分析
+    const industryContainer = document.getElementById('industry_match');
+    industryContainer.innerHTML = '';
+    if (analysisData.industry_match && analysisData.industry_match.length > 0) {
+      analysisData.industry_match.slice(0, 4).forEach(item => {
+        industryContainer.innerHTML += `
+          <div class="rounded-lg border border-purple-200 bg-purple-50 p-4 dark:border-purple-900/30 dark:bg-purple-900/10">
+            <div class="flex items-center justify-between mb-2">
+              <h3 class="text-sm font-semibold text-purple-800 dark:text-purple-300">${item.industry}</h3>
+              <span class="text-lg font-bold text-purple-600 dark:text-purple-400">${item.match_score}</span>
+            </div>
+            <p class="text-xs text-purple-700 dark:text-purple-400 mb-2">核心能力：${item.core_abilities.join('、')}</p>
+            <p class="text-xs text-purple-600 dark:text-purple-500">${item.description}</p>
+          </div>
+        `;
+      });
+    } else {
+      industryContainer.innerHTML = '<p class="text-sm text-gray-500 dark:text-gray-400">上传简历后获取行业适配性分析</p>';
+    }
+
+    // 简历关键词分析
+    if (analysisData.resume_analysis && Object.keys(analysisData.resume_analysis).length > 0) {
+      document.getElementById('resume_analysis_section').classList.remove('hidden');
+      
+      const resumeAnalysis = analysisData.resume_analysis;
+      document.getElementById('skill_density').textContent = resumeAnalysis.skill_density + '%';
+      document.getElementById('skill_density_bar').style.width = resumeAnalysis.skill_density + '%';
+
+      // 关键词分类展示
+      const keywordsContainer = document.getElementById('found_keywords');
+      keywordsContainer.innerHTML = '';
+      const foundKeywords = resumeAnalysis.found_keywords || {};
+      for (const [category, keywords] of Object.entries(foundKeywords)) {
+        if (keywords.length > 0) {
+          keywordsContainer.innerHTML += `
+            <div class="rounded-lg border border-gray-200 bg-gray-50 p-3 dark:border-gray-700 dark:bg-gray-800/50">
+              <h4 class="text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">${category}</h4>
+              <div class="flex flex-wrap gap-1">
+                ${keywords.map(k => `<span class="rounded bg-blue-100 px-1.5 py-0.5 text-xs text-blue-800 dark:bg-blue-900/30 dark:text-blue-300">${k}</span>`).join('')}
+              </div>
+            </div>
+          `;
+        }
+      }
+
+      // 优化建议
+      const suggestionsContainer = document.getElementById('keyword_suggestions');
+      suggestionsContainer.innerHTML = '';
+      (resumeAnalysis.suggestions || []).forEach(suggestion => {
+        suggestionsContainer.innerHTML += `<li>• ${suggestion}</li>`;
+      });
+    } else {
+      document.getElementById('resume_analysis_section').classList.remove('hidden');
+      document.getElementById('skill_density').textContent = '0%';
+      document.getElementById('skill_density_bar').style.width = '0%';
+      document.getElementById('found_keywords').innerHTML = '<p class="text-sm text-gray-500 dark:text-gray-400">上传简历后获取关键词分析</p>';
+      document.getElementById('keyword_suggestions').innerHTML = '<li>• 上传简历后获取优化建议</li>';
+    }
+  }
+
   document.addEventListener('DOMContentLoaded', () => {
     const submitBtn = document.getElementById('submitBtn');
     const nameInput = document.getElementById('nameInput');
     const majorInput = document.getElementById('majorInput');
     const resumeInput = document.getElementById('resumeInput');
+    
+    // 初始化详细分析区域
+    renderDetailedAnalysis({});
 
     submitBtn.addEventListener('click', async () => {
       if (!nameInput.value || !majorInput.value || !resumeInput.files?.length) {
@@ -185,6 +439,7 @@ import RadarChart from '../../components/profile/RadarChart.svelte';
         const scores = result.scores;
         const completeness = result.completeness;
         const competitiveness = result.competitiveness;
+        const detailedAnalysis = result.detailed_analysis || {};
 
         // 更新分数文本
         document.getElementById('score_theory').textContent = scores.cap_req_theory;
@@ -202,13 +457,17 @@ import RadarChart from '../../components/profile/RadarChart.svelte';
         document.getElementById('completeness_bar').style.width = `${completeness}%`;
         document.getElementById('competitiveness_bar').style.width = `${competitiveness}%`;
 
-        // 生成完整度分析
+        // 生成详细分析报告
         const completenessAnalysis = generateCompletenessAnalysis(completeness, scores);
         document.getElementById('completeness_analysis').textContent = completenessAnalysis;
 
         // 生成竞争力分析
         const competitivenessAnalysis = generateCompetitivenessAnalysis(competitiveness, scores);
         document.getElementById('competitiveness_analysis').textContent = competitivenessAnalysis;
+
+        // 渲染详细分析
+        const analysisData = result.detailed_analysis || {};
+        renderDetailedAnalysis(analysisData);
 
         // 触发雷达图更新事件
         window.dispatchEvent(new CustomEvent('updateRadarScores', {
@@ -223,18 +482,6 @@ import RadarChart from '../../components/profile/RadarChart.svelte';
             growth: scores.cap_req_growth
           }
         }));
-
-        // 显示测试数据以验证雷达图是否正常工作
-        console.log('雷达图数据:', {
-          theory: scores.cap_req_theory,
-          cross: scores.cap_req_cross,
-          practice: scores.cap_req_practice,
-          digital: scores.cap_req_digital,
-          innovation: scores.cap_req_innovation,
-          teamwork: scores.cap_req_teamwork,
-          social: scores.cap_req_social,
-          growth: scores.cap_req_growth
-        });
 
         alert('✅ 分析完成！能力画像已生成');
       } catch (err) {

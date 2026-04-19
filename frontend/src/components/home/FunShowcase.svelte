@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { onMount, onDestroy } from "svelte";
+
 	type Scene = {
 		name: string;
 		tagline: string;
@@ -45,6 +47,29 @@
 
 	let activeIndex = $state(0);
 	const activeScene = $derived(scenes[activeIndex]);
+	let intervalId: number | null = null;
+
+	function startAutoPlay() {
+		if (intervalId) clearInterval(intervalId);
+		intervalId = window.setInterval(() => {
+			activeIndex = (activeIndex + 1) % scenes.length;
+		}, 4000);
+	}
+
+	function stopAutoPlay() {
+		if (intervalId) {
+			clearInterval(intervalId);
+			intervalId = null;
+		}
+	}
+
+	onMount(() => {
+		startAutoPlay();
+	});
+
+	onDestroy(() => {
+		stopAutoPlay();
+	});
 </script>
 
 <section class="fun-wrap rounded-2xl border border-black/10 bg-[var(--card-bg)] p-6 dark:border-white/10 md:p-7">
@@ -65,7 +90,10 @@
 					type="button"
 					class="scene-btn w-full rounded-xl border px-4 py-3 text-left transition"
 					class:active={i === activeIndex}
-					onclick={() => (activeIndex = i)}
+					onclick={() => {
+						activeIndex = i;
+						startAutoPlay();
+					}}
 				>
 					<div class="flex items-center justify-between gap-3">
 						<div>

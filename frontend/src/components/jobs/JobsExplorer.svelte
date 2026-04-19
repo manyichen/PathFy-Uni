@@ -5,6 +5,7 @@
 		fetchJobDetail,
 		fetchJobs,
 		getAssistantSessionDetail,
+		isLoggedIn,
 		listAssistantSessions,
 		saveAssistantMessage,
 		type AssistantMessageItem,
@@ -12,6 +13,7 @@
 		type JobCardItem,
 		type JobDetailItem,
 	} from "@/lib/jobs";
+	import { getToken } from "@/lib/auth";
 
 	const DIMENSIONS: { key: keyof JobCardItem["scores"]; label: string; full: string }[] = [
 		{ key: "cap_req_theory", label: "理论知识", full: "专业理论知识" },
@@ -195,7 +197,21 @@
 	async function loadSessionDetail(sessionId: number): Promise<void> {
 		assistantError = "";
 		try {
+			console.log("检查登录状态...");
+			console.log("是否登录:", isLoggedIn());
+			console.log("令牌:", getToken());
+			
+			if (!isLoggedIn()) {
+				assistantError = "请先登录后再使用 AI 助手";
+				return;
+			}
+			
+			console.log("开始加载会话详情...");
+			console.log("会话ID:", sessionId);
+			
 			const detail = await getAssistantSessionDetail(sessionId);
+			console.log("会话详情加载成功:", detail);
+			
 			currentSessionId = detail.session.id;
 			historyPickerOpen = false;
 			messages = detail.messages;
@@ -209,6 +225,7 @@
 				item.id === sessionId ? detail.session : item,
 			);
 		} catch (e) {
+			console.error("加载历史会话失败:", e);
 			assistantError = e instanceof Error ? e.message : "加载历史会话失败";
 		}
 	}
@@ -217,7 +234,21 @@
 		assistantLoading = true;
 		assistantError = "";
 		try {
+			console.log("检查登录状态...");
+			console.log("是否登录:", isLoggedIn());
+			console.log("令牌:", getToken());
+			
+			if (!isLoggedIn()) {
+				assistantError = "请先登录后再使用 AI 助手";
+				currentSessionId = null;
+				messages = [];
+				return;
+			}
+			
+			console.log("开始加载会话...");
 			sessions = await listAssistantSessions();
+			console.log("会话加载成功:", sessions);
+			
 			if (sessions.length > 0) {
 				await loadSessionDetail(sessions[0].id);
 			} else {
@@ -225,6 +256,7 @@
 				messages = [];
 			}
 		} catch (e) {
+			console.error("加载 AI 会话失败:", e);
 			assistantError = e instanceof Error ? e.message : "加载 AI 会话失败";
 		} finally {
 			assistantLoading = false;
@@ -232,9 +264,19 @@
 	}
 
 	async function refreshSessionsListOnly(): Promise<void> {
+		console.log("检查登录状态...");
+		console.log("是否登录:", isLoggedIn());
+		console.log("令牌:", getToken());
+		
+		if (!isLoggedIn()) {
+			return;
+		}
 		try {
+			console.log("开始刷新会话列表...");
 			sessions = await listAssistantSessions();
-		} catch {
+			console.log("会话列表刷新成功:", sessions);
+		} catch (e) {
+			console.error("刷新会话列表失败:", e);
 			// 不阻塞主流程，保留当前界面状态
 		}
 	}
@@ -243,6 +285,16 @@
 		e.preventDefault();
 		const message = assistantInput.trim();
 		if (!message || assistantSending) return;
+		
+		console.log("检查登录状态...");
+		console.log("是否登录:", isLoggedIn());
+		console.log("令牌:", getToken());
+		
+		if (!isLoggedIn()) {
+			assistantError = "请先登录后再使用 AI 助手";
+			return;
+		}
+		
 		assistantSending = true;
 		assistantError = "";
 		const optimisticUserId = -Date.now();
@@ -268,10 +320,16 @@
 			},
 		];
 		try {
+			console.log("开始发送消息...");
+			console.log("消息内容:", message);
+			console.log("会话ID:", currentSessionId);
+			
 			const res = await chatJobsAssistant({
 				message,
 				sessionId: currentSessionId ?? undefined,
 			});
+			console.log("消息发送成功:", res);
+			
 			currentSessionId = res.session_id;
 			messages = messages.map((item) => {
 				if (item.id === optimisticUserId) {
@@ -298,6 +356,7 @@
 			currentPage = 1;
 			await refreshSessionsListOnly();
 		} catch (e) {
+			console.error("发送消息失败:", e);
 			assistantError = e instanceof Error ? e.message : "发送消息失败";
 			messages = messages.map((item) => {
 				if (item.id === optimisticAssistantId) {
@@ -315,14 +374,30 @@
 
 	async function onSaveAssistantMessage(messageId: number): Promise<void> {
 		if (saveMessageState[messageId] === "saving") return;
+		
+		console.log("检查登录状态...");
+		console.log("是否登录:", isLoggedIn());
+		console.log("令牌:", getToken());
+		
+		if (!isLoggedIn()) {
+			assistantError = "请先登录后再使用 AI 助手";
+			return;
+		}
+		
 		saveMessageState = { ...saveMessageState, [messageId]: "saving" };
 		try {
+			console.log("开始保存消息...");
+			console.log("消息ID:", messageId);
+			
 			await saveAssistantMessage(messageId);
+			console.log("消息保存成功:", messageId);
+			
 			saveMessageState = { ...saveMessageState, [messageId]: "saved" };
 			messages = messages.map((item) =>
 				item.id === messageId ? { ...item, is_saved: true } : item,
 			);
-		} catch {
+		} catch (e) {
+			console.error("保存回答失败:", e);
 			saveMessageState = { ...saveMessageState, [messageId]: "idle" };
 			assistantError = "保存回答失败，请稍后重试";
 		}
