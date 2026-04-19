@@ -13,25 +13,7 @@
 		type JobCardItem,
 		type JobDetailItem,
 	} from "@/lib/jobs";
-<<<<<<< HEAD
 	import { getToken } from "@/lib/auth";
-
-	const DIMENSIONS: { key: keyof JobCardItem["scores"]; label: string; full: string }[] = [
-		{ key: "cap_req_theory", label: "理论知识", full: "专业理论知识" },
-		{ key: "cap_req_cross", label: "交叉广度", full: "交叉学科广度" },
-		{ key: "cap_req_practice", label: "实践技能", full: "专业实践技能" },
-		{ key: "cap_req_digital", label: "数字素养", full: "数字素养技能" },
-		{ key: "cap_req_innovation", label: "创新创业", full: "创新创业能力" },
-		{ key: "cap_req_teamwork", label: "团队协作", full: "团队协作能力" },
-		{ key: "cap_req_social", label: "社会实践", full: "社会实践网络" },
-		{ key: "cap_req_growth", label: "学习发展", full: "学习与发展潜力" },
-	];
-	const RADAR_TIERS = [0.25, 0.5, 0.75, 1];
-	const RADAR_CX = 140;
-	const RADAR_CY = 120;
-	const RADAR_MAX_R = 88;
-	const RADAR_LABEL_R = 110;
-=======
 	import {
 		RADAR_DIMENSIONS as DIMENSIONS,
 		RADAR_TIERS,
@@ -42,7 +24,6 @@
 		radarAxisEnd as axisEnd,
 		radarLabelPos as labelPos,
 	} from "@/lib/radar-geometry";
->>>>>>> 611cca2f9c6cc9375bf962e7b7681f1eb64cdd90
 	const ROWS_PER_PAGE = 20;
 	const CARDS_PER_ROW = 2;
 	const PAGE_SIZE = ROWS_PER_PAGE * CARDS_PER_ROW;
@@ -191,12 +172,8 @@
 			console.log("会话ID:", sessionId);
 			
 			const detail = await getAssistantSessionDetail(sessionId);
-<<<<<<< HEAD
 			console.log("会话详情加载成功:", detail);
-			
-=======
 			clearNewChatDraft();
->>>>>>> 611cca2f9c6cc9375bf962e7b7681f1eb64cdd90
 			currentSessionId = detail.session.id;
 			historyPickerOpen = false;
 			messages = detail.messages;
@@ -232,16 +209,12 @@
 			
 			console.log("开始加载会话...");
 			sessions = await listAssistantSessions();
-<<<<<<< HEAD
 			console.log("会话加载成功:", sessions);
-			
-=======
 			if (isNewChatDraftPreferred()) {
 				currentSessionId = null;
 				messages = [];
 				return;
 			}
->>>>>>> 611cca2f9c6cc9375bf962e7b7681f1eb64cdd90
 			if (sessions.length > 0) {
 				await loadSessionDetail(sessions[0].id);
 			} else {
