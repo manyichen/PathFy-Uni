@@ -2,10 +2,6 @@
 import { Icon } from "astro-icon/components";
 import DisplaySettings from "@components/DisplaySettings.svelte";
 import LightDarkSwitch from "@components/LightDarkSwitch.svelte";
-import {
-	BANNER_HEIGHT,
-	BANNER_HEIGHT_HOME,
-} from "@constants/constants";
 import { siteConfig } from "@/config";
 import { url } from "@utils/url-utils";
 
@@ -31,10 +27,11 @@ const titleIcon =
 <div
 	id="navbar-wrapper"
 	class="pointer-events-auto sticky top-0 z-50"
+	transition:persist="site-navbar"
 >
 	<div
 		id="navbar"
-		class="relative onload-animation px-2 pt-0 md:px-4"
+		class="relative px-2 pt-0 md:px-4"
 		data-transparent-mode={navbarTransparentMode}
 		data-is-home={isHomePage}
 	>
@@ -235,23 +232,43 @@ const titleIcon =
 		}
 	}
 
-	function setupAuthGuard() {
+	/** 文档级委托，避免 ClientRouter 换页后重复绑定 */
+	document.addEventListener(
+		"click",
+		(e) => {
+			const link = (e.target as HTMLElement | null)?.closest?.(
+				'a[data-protected="true"]',
+			) as HTMLAnchorElement | null;
+			if (!link) return;
+			if (isLoggedIn()) return;
+			e.preventDefault();
+			toLogin();
+		},
+		true,
+	);
+
+	function checkProtectedRouteOrRedirect() {
 		const currentPath = window.location.pathname;
 		if (!isPublicPath(currentPath) && !isLoggedIn()) {
 			toLogin();
-			return;
+			return false;
 		}
+		return true;
+	}
 
-		const protectedLinks = document.querySelectorAll(
-			'a[data-protected="true"]',
-		);
-		protectedLinks.forEach((link) => {
-			link.addEventListener("click", (e) => {
-				if (isLoggedIn()) return;
-				e.preventDefault();
-				toLogin();
-			});
-		});
+	function syncNavbarRouteContext() {
+		const navInner = document.getElementById("navbar");
+		if (!navInner) return;
+		const p = window.location.pathname;
+		const isHome = p === "/" || p === "";
+		navInner.setAttribute("data-is-home", isHome ? "true" : "false");
+	}
+
+	function onPageEnter() {
+		if (!checkProtectedRouteOrRedirect()) return;
+		syncNavbarRouteContext();
+		setupAuthEntry();
+		scrollNavbar();
 	}
 
 	function setupNav() {
@@ -348,9 +365,8 @@ const titleIcon =
 	const onScroll = throttle(scrollNavbar, 16);
 
 	setupNav();
-	setupAuthEntry();
-	setupAuthGuard();
-	scrollNavbar();
+	document.addEventListener("astro:page-load", onPageEnter);
+	onPageEnter();
 	window.addEventListener("scroll", onScroll, { passive: true });
 	window.addEventListener("resize", scrollNavbar, { passive: true });
 </script>

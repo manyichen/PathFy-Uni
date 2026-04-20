@@ -51,3 +51,30 @@ class Config:
     DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY", "")
     MATCH_DEEPSEEK_MODEL = os.getenv("MATCH_DEEPSEEK_MODEL", "deepseek-chat")
     MATCH_LLM_TIMEOUT_SECONDS = float(os.getenv("MATCH_LLM_TIMEOUT_SECONDS", "120"))
+
+    # 生涯报告：多模型编排与调用开关
+    CAREER_PRIMARY_PROVIDER = os.getenv("CAREER_PRIMARY_PROVIDER", "deepseek")
+    CAREER_SECONDARY_PROVIDER = os.getenv("CAREER_SECONDARY_PROVIDER", "qwen")
+    CAREER_COPYWRITER_PROVIDER = os.getenv("CAREER_COPYWRITER_PROVIDER", "doubao")
+    CAREER_DEEPSEEK_MODEL = os.getenv("CAREER_DEEPSEEK_MODEL", "deepseek-chat")
+    CAREER_QWEN_MODEL = os.getenv("CAREER_QWEN_MODEL", "qwen-plus")
+    CAREER_ARK_MODEL = os.getenv("CAREER_ARK_MODEL", "doubao-seed-2-0-lite-260215")
+    CAREER_LLM_TIMEOUT_SECONDS = float(os.getenv("CAREER_LLM_TIMEOUT_SECONDS", "120"))
+    CAREER_LLM_MAX_RETRIES = int(os.getenv("CAREER_LLM_MAX_RETRIES", "2"))
+    # M3 复盘指标抽取：略提高随机性，减轻「全是 5 的倍数」的凑整倾向（0~2，默认 0.55）
+    CAREER_REVIEW_EXTRACT_TEMPERATURE = float(os.getenv("CAREER_REVIEW_EXTRACT_TEMPERATURE", "0.55"))
+    CAREER_ENABLE_COPYWRITER = str(os.getenv("CAREER_ENABLE_COPYWRITER", "true")).strip().lower() in (
+        "1",
+        "true",
+        "yes",
+        "on",
+    )
+    CAREER_ENABLE_REPLAN_LLM = str(os.getenv("CAREER_ENABLE_REPLAN_LLM", "true")).strip().lower() in (
+        "1",
+        "true",
+        "yes",
+        "on",
+    )
+    CAREER_ENABLE_TREND_AUGMENT = str(
+        os.getenv("CAREER_ENABLE_TREND_AUGMENT", "true")
+    ).strip().lower() in ("1", "true", "yes", "on")

@@ -463,12 +463,14 @@ import RadarChart from '../../components/profile/RadarChart.svelte';
     }
   }
 
-  document.addEventListener('DOMContentLoaded', async () => {
+  async function initProfilePage() {
     const submitBtn = document.getElementById('submitBtn') as HTMLButtonElement | null;
     const nameInput = document.getElementById('nameInput') as HTMLInputElement | null;
     const majorInput = document.getElementById('majorInput') as HTMLInputElement | null;
     const resumeInput = document.getElementById('resumeInput') as HTMLInputElement | null;
     if (!submitBtn || !nameInput || !majorInput || !resumeInput) return;
+    if (submitBtn.dataset.bound === '1') return;
+    submitBtn.dataset.bound = '1';
 
     const token = getToken();
     const user = getUser();
@@ -491,7 +493,16 @@ import RadarChart from '../../components/profile/RadarChart.svelte';
           setTimeout(() => emitProfileRadarScores({ ...r.scores }), 200);
 
           const row = await fetchResumePortraitResult(r.id);
-          const da = row?.detailed_analysis;
+          let da = row?.detailed_analysis;
+          if (!hasPortraitDetailedAnalysis(da)) {
+            const cached = loadPortraitLocalCache(user.id);
+            if (
+              cached?.resume_id === r.id &&
+              hasPortraitDetailedAnalysis(cached.detailed_analysis)
+            ) {
+              da = cached.detailed_analysis;
+            }
+          }
           if (hasPortraitDetailedAnalysis(da)) {
             renderDetailedAnalysis(da as Record<string, unknown>);
             setPortraitLowerInsightsMode('detailed');
@@ -508,6 +519,11 @@ import RadarChart from '../../components/profile/RadarChart.svelte';
               major: cached.major,
             });
             setTimeout(() => emitProfileRadarScores(cached.scores), 200);
+            if (hasPortraitDetailedAnalysis(cached.detailed_analysis)) {
+              renderDetailedAnalysis(cached.detailed_analysis as Record<string, unknown>);
+              setPortraitLowerInsightsMode('detailed');
+              detailedUnlocked = true;
+            }
           }
         }
       } catch {
@@ -521,6 +537,11 @@ import RadarChart from '../../components/profile/RadarChart.svelte';
             major: cached.major,
           });
           setTimeout(() => emitProfileRadarScores(cached.scores), 200);
+          if (hasPortraitDetailedAnalysis(cached.detailed_analysis)) {
+            renderDetailedAnalysis(cached.detailed_analysis as Record<string, unknown>);
+            setPortraitLowerInsightsMode('detailed');
+            detailedUnlocked = true;
+          }
         }
       }
     }
@@ -576,6 +597,8 @@ import RadarChart from '../../components/profile/RadarChart.svelte';
           competitiveness,
           name: nameInput.value,
           major: majorInput.value,
+          resume_id: result.resume_id,
+          detailed_analysis: da,
         });
 
         alert('✅ 分析完成！能力画像已生成');
@@ -588,5 +611,18 @@ import RadarChart from '../../components/profile/RadarChart.svelte';
         submitBtn.textContent = '生成能力画像';
       }
     });
+  }
+
+  // 首次整页加载
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', () => {
+      void initProfilePage();
+    });
+  } else {
+    void initProfilePage();
+  }
+  // Astro ClientRouter 切页后再次初始化（解决“点击无反应”）
+  document.addEventListener('astro:page-load', () => {
+    void initProfilePage();
   });
 </script>

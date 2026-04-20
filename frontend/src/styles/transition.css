@@ -40,3 +40,42 @@
 .onload-animation:nth-child(5) {
 	animation-delay: 200ms;
 }
+
+/*
+ * ClientRouter 换页后，新文档里的 .onload-animation 不应再从 opacity:0 播一遍，
+ * 否则会与 View Transition 叠成「闪一下再浮上来」的抖动。
+ */
+html.astro-client-nav .onload-animation {
+	opacity: 1;
+	animation: none;
+	transform: none;
+}
+
+/* 仅过渡主内容区：关闭 root 默认动画，避免与 page-main 双层淡入打架 */
+@supports (view-transition-name: none) {
+	::view-transition-old(root),
+	::view-transition-new(root) {
+		animation: none;
+	}
+
+	::view-transition-old(page-main),
+	::view-transition-new(page-main) {
+		animation-duration: 380ms;
+		animation-timing-function: cubic-bezier(0.33, 1, 0.68, 1);
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	html.astro-client-nav .onload-animation {
+		opacity: 1;
+		animation: none;
+		transform: none;
+	}
+
+	@supports (view-transition-name: none) {
+		::view-transition-old(page-main),
+		::view-transition-new(page-main) {
+			animation-duration: 1ms;
+		}
+	}
+}

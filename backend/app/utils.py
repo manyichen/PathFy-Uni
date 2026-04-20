@@ -73,7 +73,7 @@ def _clamp_conf(v) -> float:
 def score_resume(resume_text: str) -> Tuple[Dict[str, int], Dict[str, float]]:
     """
     返回 (scores, confidences)。
-    scores 键为 cap_req_*（0–100）；confidences 键为 cap_conf_*（0–1），表示该维打分的证据强度。
+    scores 键为 cap_req_*(0~100):confidences 键为 cap_conf_*(0~1)，表示该维打分的证据强度。
     """
     api_key = Config.DASHSCOPE_API_KEY
     url = "https://dashscope.aliyuncs.com/api/v1/services/aigc/text-generation/generation"
@@ -85,10 +85,10 @@ def score_resume(resume_text: str) -> Tuple[Dict[str, int], Dict[str, float]]:
 
     prompt = f"""
 你是专业大学生就业能力评估师。根据简历文本，为 8 个能力维度给出 0–100 的供给分，
-并为每一维给出 0–1 的置信度（cap_conf_*）：表示你在该维上打分的证据充分程度
+并为每一维给出 0~1 的置信度(cap_conf_*)：表示你在该维上打分的证据充分程度
 （简历中该维相关经历越具体、可核验，置信度越高；越模糊或缺证据则越低）。
 
-8 个分数维度（cap_req_*）：
+8 个分数维度(cap_req_*):
 cap_req_theory: 专业理论知识
 cap_req_cross: 交叉学科广度
 cap_req_practice: 专业实践技能
@@ -98,7 +98,7 @@ cap_req_teamwork: 团队协作能力
 cap_req_social: 社会实践网络
 cap_req_growth: 学习与发展潜力
 
-8 个置信度（cap_conf_*，与上列一一对应）：
+8 个置信度(cap_conf_*，与上列一一对应):
 cap_conf_theory, cap_conf_cross, cap_conf_practice, cap_conf_digital,
 cap_conf_innovation, cap_conf_teamwork, cap_conf_social, cap_conf_growth
 

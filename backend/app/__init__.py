@@ -6,6 +6,7 @@ from .config import Config
 from .jobs import jobs_bp
 from .jobs_assistant import jobs_assistant_bp
 from .match_preview import match_bp
+from .career_report import career_report_bp
 def create_app() -> Flask:
     app = Flask(__name__)
     app.config.from_object(Config)
@@ -37,6 +38,13 @@ def create_app() -> Flask:
                     "POST /api/personality/submit",
                     "GET /api/profile/resumes",
                     "POST /api/match/preview",
+                    "POST /api/report/targets/import-from-match",
+                    "POST /api/report/targets/manual-search",
+                    "POST /api/report/generate",
+                    "GET /api/report/my/list",
+                    "GET /api/report/:id",
+                    "GET /api/report/:id/reviews",
+                    "POST /api/report/review-cycle",
                 ],
             }
         )
@@ -49,4 +57,5 @@ def create_app() -> Flask:
     app.register_blueprint(jobs_bp)
     app.register_blueprint(jobs_assistant_bp)
     app.register_blueprint(match_bp)
+    app.register_blueprint(career_report_bp)
     return app

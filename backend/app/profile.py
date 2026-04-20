@@ -24,7 +24,7 @@ def _jsonable_row(row: dict | None) -> dict | None:
     return out
 
 def get_db():
-    """自己实现数据库连接，不依赖项目db.py，零冲突"""
+    """自己实现数据库连接,不依赖项目db.py,零冲突"""
     return pymysql.connect(
         host=Config.MYSQL_HOST,
         user=Config.MYSQL_USER,

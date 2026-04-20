@@ -6,6 +6,7 @@ Neo4j 使用 NEO4J_*；DeepSeek 使用 DEEPSEEK_API_KEY（可与 tools/job_eval/
 
 from __future__ import annotations
 
+import json
 import math
 from typing import Any, Dict, List, Tuple
 
@@ -20,6 +21,126 @@ from .capability_profile_serialize import serialize_capability_profile
 match_bp = Blueprint("match", __name__, url_prefix="/api/match")
 
 _DIM_TO_CONF: Dict[str, str] = {d: c for d, c in zip(DIM_KEYS, CONF_KEYS)}
+
+
+def _json_dumps(obj: Any) -> str:
+    return json.dumps(obj, ensure_ascii=False)
+
+
+def _safe_int_or_none(v: Any) -> int | None:
+    try:
+        return int(v)
+    except (TypeError, ValueError):
+        return None
+
+
+def _ensure_match_snapshot_tables() -> None:
+    with db_cursor() as (_, cur):
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS match_runs (
+              id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+              user_id BIGINT UNSIGNED NOT NULL,
+              resume_id BIGINT UNSIGNED NOT NULL,
+              match_goal VARCHAR(16) NOT NULL DEFAULT 'fit',
+              q VARCHAR(191) NULL,
+              location_q VARCHAR(191) NULL,
+              refine_with_llm TINYINT(1) NOT NULL DEFAULT 0,
+              student_json LONGTEXT NULL,
+              stats_json JSON NULL,
+              llm_json LONGTEXT NULL,
+              created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+              PRIMARY KEY (id),
+              KEY idx_match_runs_user_resume_created (user_id, resume_id, created_at DESC),
+              KEY idx_match_runs_user_goal_created (user_id, match_goal, created_at DESC),
+              CONSTRAINT fk_match_runs_user_id
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+            """
+        )
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS match_run_items (
+              id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+              run_id BIGINT UNSIGNED NOT NULL,
+              rank_index INT NOT NULL DEFAULT 0,
+              job_id VARCHAR(191) NOT NULL,
+              is_llm_top5 TINYINT(1) NOT NULL DEFAULT 0,
+              job_json LONGTEXT NOT NULL,
+              created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+              PRIMARY KEY (id),
+              UNIQUE KEY uk_match_run_items_run_rank (run_id, rank_index),
+              KEY idx_match_run_items_run_id (run_id),
+              KEY idx_match_run_items_job_id (job_id),
+              CONSTRAINT fk_match_run_items_run_id
+                FOREIGN KEY (run_id) REFERENCES match_runs(id) ON DELETE CASCADE
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+            """
+        )
+
+
+def _persist_match_snapshot(
+    *,
+    jwt_user_id: int | None,
+    resume_id: int | None,
+    data_out: Dict[str, Any],
+    refine_with_llm: bool,
+) -> None:
+    if jwt_user_id is None or resume_id is None:
+        return
+    jobs = data_out.get("jobs") or []
+    if not isinstance(jobs, list) or not jobs:
+        return
+
+    _ensure_match_snapshot_tables()
+    filters = data_out.get("filters") or {}
+    stats = data_out.get("stats") or {}
+    llm = data_out.get("llm") or {}
+    llm_top_ids = set()
+    if isinstance(llm, dict) and llm.get("ok"):
+        for it in (llm.get("top5") or []):
+            if isinstance(it, dict) and it.get("job_id"):
+                llm_top_ids.add(str(it.get("job_id")))
+
+    with db_cursor() as (_, cur):
+        cur.execute(
+            """
+            INSERT INTO match_runs (
+              user_id, resume_id, match_goal, q, location_q, refine_with_llm, student_json, stats_json, llm_json
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+            """,
+            (
+                jwt_user_id,
+                resume_id,
+                str(filters.get("match_goal") or "fit")[:16],
+                str(filters.get("q") or "")[:191] or None,
+                str(filters.get("location_q") or "")[:191] or None,
+                1 if refine_with_llm else 0,
+                _json_dumps(data_out.get("student") or {}),
+                _json_dumps(stats if isinstance(stats, dict) else {}),
+                _json_dumps(llm if isinstance(llm, dict) else {}),
+            ),
+        )
+        run_id = int(cur.lastrowid)
+        for idx, card in enumerate(jobs):
+            if not isinstance(card, dict):
+                continue
+            job_id = str(card.get("id") or "").strip()
+            if not job_id:
+                continue
+            cur.execute(
+                """
+                INSERT INTO match_run_items (run_id, rank_index, job_id, is_llm_top5, job_json)
+                VALUES (%s, %s, %s, %s, %s)
+                """,
+                (
+                    run_id,
+                    idx + 1,
+                    job_id[:191],
+                    1 if job_id in llm_top_ids else 0,
+                    _json_dumps(card),
+                ),
+            )
 
 
 def _pearson_across_dims(
@@ -270,7 +391,8 @@ def match_preview():
         return jsonify({"ok": False, "message": "缺少 NEO4J_PASSWORD，无法查询岗位"}), 500
 
     body = request.get_json(silent=True) or {}
-    profile, err = _resolve_student_profile(body, get_bearer_user_id())
+    jwt_user_id = get_bearer_user_id()
+    profile, err = _resolve_student_profile(body, jwt_user_id)
     if err or not profile:
         return jsonify({"ok": False, "message": err or "画像解析失败"}), 400
 
@@ -372,7 +494,8 @@ def match_preview():
         "jobs": top,
     }
 
-    if _truthy_refine_llm(body):
+    refine_with_llm = _truthy_refine_llm(body)
+    if refine_with_llm:
         api_key = str(current_app.config.get("DEEPSEEK_API_KEY") or "").strip()
         if not api_key:
             data_out["llm"] = {
@@ -403,5 +526,17 @@ def match_preview():
                     "top5": llm_payload.get("top5") or [],
                     "raw_snippet": llm_payload.get("raw_snippet"),
                 }
+
+    # 自动落库：保存本次匹配快照（用于报告页优先复用）
+    try:
+        _persist_match_snapshot(
+            jwt_user_id=jwt_user_id,
+            resume_id=_safe_int_or_none(body.get("resume_id")),
+            data_out=data_out,
+            refine_with_llm=refine_with_llm,
+        )
+    except Exception as exc:  # noqa: BLE001
+        # 不影响主流程返回，错误仅透出到 llm block 旁注
+        data_out["snapshot_warning"] = f"match_snapshot_persist_failed:{exc}"
 
     return jsonify({"ok": True, "data": data_out})

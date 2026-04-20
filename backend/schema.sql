@@ -73,6 +73,7 @@ CREATE TABLE IF NOT EXISTS student_resume (
     completeness TINYINT DEFAULT 0,
     competitiveness TINYINT DEFAULT 0,
     radar_html TEXT,
+    detailed_analysis LONGTEXT NULL COMMENT '能力画像详细分析报告 JSON',
     create_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT fk_student_resume_user_id
       FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
@@ -171,3 +172,87 @@ SELECT q, a, b, d, ta, tb FROM (
   UNION ALL SELECT '你更倾向于哪个', '决定', '冲动', 'JP', 'J', 'P'
 ) AS seed
 WHERE (SELECT COUNT(*) FROM personality_test_questions) = 0;
+
+-- 生涯报告 M1：报告快照 / 目标职业 / 评估记录
+CREATE TABLE IF NOT EXISTS career_reports (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  user_id BIGINT UNSIGNED NOT NULL,
+  resume_id BIGINT UNSIGNED NOT NULL,
+  title VARCHAR(160) NOT NULL,
+  primary_job_id VARCHAR(191) NULL,
+  target_job_ids_json JSON NOT NULL,
+  report_json LONGTEXT NOT NULL,
+  meta_json JSON NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  KEY idx_career_reports_user_id_created_at (user_id, created_at DESC),
+  CONSTRAINT fk_career_reports_user_id
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS career_report_targets (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  report_id BIGINT UNSIGNED NOT NULL,
+  job_id VARCHAR(191) NOT NULL,
+  title VARCHAR(191) NULL,
+  is_primary TINYINT(1) NOT NULL DEFAULT 0,
+  target_order INT NOT NULL DEFAULT 0,
+  source VARCHAR(32) NOT NULL DEFAULT 'manual',
+  meta_json JSON NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  UNIQUE KEY uk_report_job (report_id, job_id),
+  KEY idx_career_report_targets_report_id_order (report_id, target_order),
+  CONSTRAINT fk_career_report_targets_report_id
+    FOREIGN KEY (report_id) REFERENCES career_reports(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS career_report_reviews (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  report_id BIGINT UNSIGNED NOT NULL,
+  review_cycle VARCHAR(32) NOT NULL DEFAULT 'biweekly',
+  metrics_json JSON NOT NULL,
+  adjustment_json JSON NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  KEY idx_career_report_reviews_report_id_created_at (report_id, created_at DESC),
+  CONSTRAINT fk_career_report_reviews_report_id
+    FOREIGN KEY (report_id) REFERENCES career_reports(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- 人岗匹配快照（报告页可复用最近匹配结果）
+CREATE TABLE IF NOT EXISTS match_runs (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  user_id BIGINT UNSIGNED NOT NULL,
+  resume_id BIGINT UNSIGNED NOT NULL,
+  match_goal VARCHAR(16) NOT NULL DEFAULT 'fit',
+  q VARCHAR(191) NULL,
+  location_q VARCHAR(191) NULL,
+  refine_with_llm TINYINT(1) NOT NULL DEFAULT 0,
+  student_json LONGTEXT NULL,
+  stats_json JSON NULL,
+  llm_json LONGTEXT NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  KEY idx_match_runs_user_resume_created (user_id, resume_id, created_at DESC),
+  KEY idx_match_runs_user_goal_created (user_id, match_goal, created_at DESC),
+  CONSTRAINT fk_match_runs_user_id
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS match_run_items (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  run_id BIGINT UNSIGNED NOT NULL,
+  rank_index INT NOT NULL DEFAULT 0,
+  job_id VARCHAR(191) NOT NULL,
+  is_llm_top5 TINYINT(1) NOT NULL DEFAULT 0,
+  job_json LONGTEXT NOT NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  UNIQUE KEY uk_match_run_items_run_rank (run_id, rank_index),
+  KEY idx_match_run_items_run_id (run_id),
+  KEY idx_match_run_items_job_id (job_id),
+  CONSTRAINT fk_match_run_items_run_id
+    FOREIGN KEY (run_id) REFERENCES match_runs(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

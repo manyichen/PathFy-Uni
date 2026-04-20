@@ -142,22 +142,33 @@ export function paintProfilePortraitPage(opts: {
 export const PROFILE_PORTRAIT_LOCAL_KEY = (userId: number) => `career_profile_portrait_v1_${userId}`;
 
 export type PortraitLocalCache = {
-	v: 1;
+	/** v2：含 resume_id / detailed_analysis，刷新后可在库无列时恢复下方报告区 */
+	v: 1 | 2;
 	scores: PortraitScoresShape;
 	completeness: number;
 	competitiveness: number;
 	name: string;
 	major: string;
 	savedAt: string;
+	resume_id?: number;
+	detailed_analysis?: unknown;
 };
 
-export function savePortraitLocalCache(userId: number, data: Omit<PortraitLocalCache, "v" | "savedAt">): void {
+export type PortraitLocalCacheSaveInput = Omit<PortraitLocalCache, "v" | "savedAt">;
+
+export function savePortraitLocalCache(userId: number, data: PortraitLocalCacheSaveInput): void {
 	try {
 		const payload: PortraitLocalCache = {
-			v: 1,
-			...data,
+			v: 2,
+			scores: data.scores,
+			completeness: data.completeness,
+			competitiveness: data.competitiveness,
+			name: data.name,
+			major: data.major,
 			savedAt: new Date().toISOString(),
 		};
+		if (typeof data.resume_id === "number") payload.resume_id = data.resume_id;
+		if (data.detailed_analysis !== undefined) payload.detailed_analysis = data.detailed_analysis;
 		localStorage.setItem(PROFILE_PORTRAIT_LOCAL_KEY(userId), JSON.stringify(payload));
 	} catch {
 		/* ignore quota */
@@ -169,7 +180,7 @@ export function loadPortraitLocalCache(userId: number): PortraitLocalCache | nul
 		const raw = localStorage.getItem(PROFILE_PORTRAIT_LOCAL_KEY(userId));
 		if (!raw) return null;
 		const o = JSON.parse(raw) as PortraitLocalCache;
-		if (o?.v !== 1 || !o.scores || typeof o.scores.cap_req_theory !== "number") return null;
+		if ((o?.v !== 1 && o?.v !== 2) || !o.scores || typeof o.scores.cap_req_theory !== "number") return null;
 		return o;
 	} catch {
 		return null;
