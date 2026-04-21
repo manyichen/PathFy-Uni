@@ -143,6 +143,12 @@ export type DevelopmentLines = {
 		created_at?: string;
 		month?: number;
 		progress?: number;
+		/** 本条安排对应的执行目标月（1–12） */
+		plan_month?: number;
+		/** 触发本条安排的复盘锚点月（0 表示报告起点） */
+		anchor_review_month?: number;
+		kind?: "initial_plan" | "replan";
+		execution_hints?: string[];
 	}>;
 };
 

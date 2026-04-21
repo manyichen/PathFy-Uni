@@ -623,21 +623,36 @@ def _apply_auto_adjustment_to_report(
             if aid in existing_adjust_ids:
                 continue
             if review_anchor_month is not None:
-                am = float(min(12.0, max(0.0, float(review_anchor_month))))
-                adj_month = round(min(12.0, am + float(ai) * 0.22 + float(li) * 0.06), 2)
+                am_int = int(min(12, max(0, int(round(float(review_anchor_month))))))
+                # 刚结束第 am_int 月复盘：重规划节点落在「下一执行月」，与折线横轴语义一致
+                release_m = float(min(12.0, float(am_int + 1)))
+                adj_month = round(min(12.0, release_m + float(ai) * 0.12 + float(li) * 0.03), 2)
+                plan_m = int(min(12, am_int + 1))
+                anchor_m = float(am_int)
             else:
-                adj_month = round(8.55 + float(ai) * 0.38 + float(li) * 0.08, 2)
+                adj_month = round(min(12.0, 1.0 + float(ai) * 0.12 + float(li) * 0.03), 2)
+                plan_m = 1
+                anchor_m = 0.0
+            # 与进步曲线同量级：在复盘进步度附近小幅抬升，避免菱形漂在曲线上方
+            prog_marker = round(
+                min(100.0, max(0.5, base_p + 2.0 + float(ai) * 1.4 + float(li) * 0.35)),
+                2,
+            )
             adjustments.append(
                 {
                     "id": aid,
                     "line_id": line_id,
-                    "stage": "mid_term",
+                    "stage": "short_term",
                     "label": action,
                     "focus_label": focus_labels[ai % len(focus_labels)] if focus_labels else "能力补齐",
                     "priority": li + 1,
                     "created_at": stamp,
                     "month": adj_month,
-                    "progress": round(max(9.0, base_p - 6.5 - float(ai) * 2.6), 2),
+                    "progress": prog_marker,
+                    "anchor_review_month": anchor_m,
+                    "plan_month": plan_m,
+                    "kind": "replan",
+                    "execution_hints": _execution_hints_for_replan_action(action),
                 }
             )
 
@@ -870,6 +885,92 @@ def _review_point_progress(
     blended = pr * 100.0 * 0.5 + evidence * 0.5
     blended += (line_idx * 1.25) + (ms_t - 55.0) * 0.08
     return max(7.0, min(100.0, blended))
+
+
+def _execution_hints_for_replan_action(action: str) -> List[str]:
+    a = str(action or "").strip()
+    if not a:
+        return []
+    return [
+        f"下一执行月优先事项：{a}",
+        "拆解落地：把上面这一条拆成 2–4 个可勾选子任务，按周排进日程；每条任务写清「产出物」与「截止时间」。",
+        "与评估对齐：对照本月四项量化指标（缺口收敛、项目完成、匹配变化、成果），复盘时逐条打勾并估算完成度。",
+    ]
+
+
+def _execution_hints_for_initial_item(item: Dict[str, Any]) -> List[str]:
+    ms = str(item.get("milestone") or "").strip()
+    lp = item.get("learning_path") or []
+    pp = item.get("practice_plan") or []
+    lines: List[str] = []
+    if ms:
+        lines.append(f"从第 1 个月起优先推进：{ms}")
+    if isinstance(lp, list) and lp:
+        chunk = "；".join(str(x).strip() for x in lp[:4] if str(x).strip())
+        if chunk:
+            lines.append(f"学习侧：{chunk}")
+    if isinstance(pp, list) and pp:
+        chunk2 = "；".join(str(x).strip() for x in pp[:3] if str(x).strip())
+        if chunk2:
+            lines.append(f"实践侧：{chunk2}")
+    lines.append(
+        "节奏说明：第 0 月在画布上固定本方向起点；进入第 1 月提交复盘后，系统会把量化结果写回曲线并刷新下一月安排。"
+    )
+    return lines
+
+
+def _seed_month_zero_adjustments(report_obj: Dict[str, Any], *, stamp: str) -> None:
+    """报告刚生成时，为每条发展线写入第 0 月可见的「起步执行」菱形节点。"""
+    dev_lines = report_obj.get("development_lines")
+    if not isinstance(dev_lines, dict):
+        return
+    lines = dev_lines.get("lines")
+    if not isinstance(lines, list):
+        return
+    adjustments = dev_lines.get("adjustments")
+    if not isinstance(adjustments, list):
+        adjustments = []
+        dev_lines["adjustments"] = adjustments
+    growth = report_obj.get("growth_plan") or {}
+    short_term = growth.get("short_term") if isinstance(growth.get("short_term"), list) else []
+    items = [x for x in short_term if isinstance(x, dict)][:3]
+    if not items:
+        return
+    existing_ids = {str(x.get("id") or "") for x in adjustments if isinstance(x, dict)}
+    for li, line in enumerate(lines):
+        if not isinstance(line, dict):
+            continue
+        line_id = str(line.get("line_id") or "").strip()
+        if not line_id:
+            continue
+        for ai, item in enumerate(items):
+            milestone = str(item.get("milestone") or "").strip()
+            focus_label = str(item.get("focus_label") or "短期补齐").strip()
+            learning = item.get("learning_path") or []
+            lp0 = str(learning[0]).strip() if isinstance(learning, list) and learning else ""
+            label_text = (lp0 or milestone or focus_label)[:200]
+            aid = f"adj_init0_{stamp}_{line_id}_{ai + 1}"
+            if aid in existing_ids:
+                continue
+            existing_ids.add(aid)
+            hints = _execution_hints_for_initial_item(item)
+            adjustments.append(
+                {
+                    "id": aid,
+                    "line_id": line_id,
+                    "stage": "short_term",
+                    "label": label_text,
+                    "focus_label": focus_label,
+                    "priority": ai + 1,
+                    "created_at": stamp,
+                    "month": round(0.0 + float(ai) * 0.07 + float(li) * 0.02, 2),
+                    "progress": round(2.5 + float(ai) * 2.2 + float(li) * 0.5, 2),
+                    "anchor_review_month": 0.0,
+                    "plan_month": 1,
+                    "kind": "initial_plan",
+                    "execution_hints": hints,
+                }
+            )
 
 
 def _build_development_lines(
@@ -1708,6 +1809,7 @@ def generate_report():
     }
 
     now = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+    stamp_compact = datetime.utcnow().strftime("%Y%m%d%H%M%S")
     report_obj = {
         "generated_at": now,
         "student": {
@@ -1733,6 +1835,7 @@ def generate_report():
         "narrative": llm_summary,
         "trend_meta": trend_meta,
     }
+    _seed_month_zero_adjustments(report_obj, stamp=stamp_compact)
 
     _ensure_report_tables()
     title = str(body.get("title") or "").strip() or f"生涯报告-{now[:10]}"

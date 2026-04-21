@@ -217,7 +217,14 @@
 	);
 
 	const adjustmentsForActiveLine = $derived.by(() =>
-		adjustmentNodes.filter((x) => x.line_id === activeLineId),
+		adjustmentNodes
+			.filter((x) => x.line_id === activeLineId)
+			.slice()
+			.sort(
+				(a, b) =>
+					(Number(a.month) || 0) - (Number(b.month) || 0) ||
+					(Number(a.priority) || 0) - (Number(b.priority) || 0),
+			),
 	);
 
 	function adjChartPoint(adj: (typeof adjustmentNodes)[number]): { x: number; y: number } {
@@ -254,32 +261,6 @@
 			failed_rows: relatedRows,
 			review_created_at: latestReview?.created_at || "",
 		};
-	});
-
-	const laneRows = $derived.by(() => {
-		if (!generatedReport) return [];
-		const short = generatedReport.growth_plan.short_term || [];
-		const mid = generatedReport.growth_plan.mid_term || [];
-		const rows: Record<
-			string,
-			{
-				key: string;
-				label: string;
-				short: string[];
-				mid: string[];
-			}
-		> = {};
-		for (const item of short) {
-			const key = item.focus_dimension;
-			rows[key] = rows[key] || { key, label: item.focus_label, short: [], mid: [] };
-			rows[key].short.push(item.milestone);
-		}
-		for (const item of mid) {
-			const key = item.focus_dimension;
-			rows[key] = rows[key] || { key, label: item.focus_label, short: [], mid: [] };
-			rows[key].mid.push(item.milestone);
-		}
-		return Object.values(rows).slice(0, 4);
 	});
 
 	const narrativeBlocks = $derived.by(() => {
@@ -823,7 +804,7 @@ function metricDisplayLabel(metric: { code?: string; label?: string }): string {
 						</section>
 
 						<section class="plan-block">
-							<h5>中期（3-12个月）</h5>
+							<h5>中后期（3-12个月）</h5>
 							{#if midPlanItems.length}
 								<div class="plan-items">
 									{#each midPlanItems as item (`mp-${item.order}-${item.focus_dimension}`)}
@@ -1055,38 +1036,56 @@ function metricDisplayLabel(metric: { code?: string; label?: string }): string {
 					</div>
 				{/if}
 
-				<div class="lane-chart">
-					<div class="lane-head">
-						<h4>阶段任务分布（12 个月）</h4>
-						<p>短期 0-3 月，中期 3-12 月</p>
-					</div>
-					{#each laneRows as row (row.key)}
-						<div class="lane-row">
-							<div class="lane-label">{row.label}</div>
-							<div class="lane-track">
-								<div class="segment short" style="left:0%; width:25%;"></div>
-								<div class="segment mid" style="left:25%; width:75%;"></div>
+				{#if selectedAdjustmentDetail}
+					<div class="canvas-side-cards">
+						<article class="insight-mini-card insight-mini-card--adjust">
+							<h4 class="insight-mini-card-title">
+								{selectedAdjustmentDetail.kind === "initial_plan"
+									? "起步执行安排（第 0 月）"
+									: "下一月执行安排"}
+							</h4>
+							<div class="adjustment-detail">
+								<p class="title">{selectedAdjustmentDetail.focus_label || "能力补齐"} · {selectedAdjustmentDetail.label}</p>
+								<p>所属发展线：{selectedAdjustmentDetail.line_name}</p>
+								<p>
+									时间定位：目标执行<strong
+										>第 {selectedAdjustmentDetail.plan_month ??
+											Math.max(1, Math.round(Number(selectedAdjustmentDetail.month) || 1))} 月</strong>
+									{#if selectedAdjustmentDetail.anchor_review_month != null && selectedAdjustmentDetail.anchor_review_month !== undefined}
+										（复盘锚点：第 {Math.round(Number(selectedAdjustmentDetail.anchor_review_month))} 月）
+									{/if}
+									· 阶段 {STAGE_LABELS[selectedAdjustmentDetail.stage] ?? selectedAdjustmentDetail.stage}
+								</p>
+								{#if selectedAdjustmentDetail.execution_hints?.length}
+									<p class="subhead">细化落地</p>
+									<ul class="adjustment-hint-list">
+										{#each selectedAdjustmentDetail.execution_hints as hint, hi (`h-${hi}`)}
+											<li>{hint}</li>
+										{/each}
+									</ul>
+								{/if}
+								{#if selectedAdjustmentDetail.created_at}
+									<p>触发时间：{selectedAdjustmentDetail.created_at}</p>
+								{/if}
+								{#if selectedAdjustmentDetail.failed_rows?.length}
+									<p class="subhead">关联未达标指标</p>
+									<ul>
+										{#each selectedAdjustmentDetail.failed_rows as r (r.code)}
+											<li>
+												<button type="button" class="metric-link" onclick={() => focusMetric(r.code)}>
+													{r.label}：实际 {r.actual_value} / 目标 {r.target_raw}
+												</button>
+											</li>
+										{/each}
+									</ul>
+								{:else if selectedAdjustmentDetail.kind !== "initial_plan"}
+									<p class="hint">暂无可关联的指标失败记录，可能来自更早一次自动调整。</p>
+								{/if}
+								{#if selectedAdjustmentDetail.review_created_at}
+									<p class="hint">最近评估时间：{selectedAdjustmentDetail.review_created_at}</p>
+								{/if}
 							</div>
-						</div>
-					{/each}
-				</div>
-
-				{#if adjustmentsForActiveLine.length}
-					<div class="adjustment-panel">
-						<h4>自动重规划插入节点（当前岗位）</h4>
-						<div class="adjustment-list">
-							{#each adjustmentsForActiveLine as adj (adj.id)}
-								<button
-									type="button"
-									class="adjustment-item"
-									class:selected={selectedAdjustmentId === adj.id}
-									onclick={() => selectAdjustment(adj.id)}
-								>
-									<p>{adj.focus_label || "能力补齐"} · {adj.label}</p>
-									<p class="meta">线 {adj.line_id} · 阶段 {STAGE_LABELS[adj.stage]}</p>
-								</button>
-							{/each}
-						</div>
+						</article>
 					</div>
 				{/if}
 			{:else}
@@ -1247,40 +1246,6 @@ function metricDisplayLabel(metric: { code?: string; label?: string }): string {
 							</div>
 						{/if}
 					</div>
-				{/if}
-
-				{#if selectedAdjustmentDetail}
-					<div class="mini-title">调整节点详情</div>
-					<div class="adjustment-detail">
-						<p class="title">{selectedAdjustmentDetail.focus_label || "能力补齐"} · {selectedAdjustmentDetail.label}</p>
-						<p>所属发展线：{selectedAdjustmentDetail.line_name}</p>
-						<p>所处阶段：{STAGE_LABELS[selectedAdjustmentDetail.stage]}</p>
-						{#if selectedAdjustmentDetail.created_at}
-							<p>触发时间：{selectedAdjustmentDetail.created_at}</p>
-						{/if}
-						{#if selectedAdjustmentDetail.failed_rows?.length}
-							<p class="subhead">关联未达标指标</p>
-							<ul>
-								{#each selectedAdjustmentDetail.failed_rows as r (r.code)}
-									<li>
-										<button type="button" class="metric-link" onclick={() => focusMetric(r.code)}>
-											{r.label}：实际 {r.actual_value} / 目标 {r.target_raw}
-										</button>
-									</li>
-								{/each}
-							</ul>
-						{:else}
-							<p class="hint">暂无可关联的指标失败记录，可能来自更早一次自动调整。</p>
-						{/if}
-						{#if selectedAdjustmentDetail.review_created_at}
-							<p class="hint">最近评估时间：{selectedAdjustmentDetail.review_created_at}</p>
-						{/if}
-					</div>
-				{/if}
-
-				{#if generatedReport.narrative?.text}
-					<div class="mini-title">模型建议</div>
-					<div class="narrative">{generatedReport.narrative.text}</div>
 				{/if}
 			{:else}
 				<div class="empty-side">
@@ -1596,6 +1561,27 @@ function metricDisplayLabel(metric: { code?: string; label?: string }): string {
 		height: auto;
 		display: block;
 	}
+	.canvas-side-cards {
+		margin-top: 0.85rem;
+		display: grid;
+		gap: 0.65rem;
+		grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr));
+		align-items: start;
+	}
+	.insight-mini-card {
+		min-width: 0;
+		border: 1px solid color-mix(in oklch, currentColor 12%, transparent);
+		border-radius: 0.85rem;
+		padding: 0.65rem 0.72rem;
+		background: color-mix(in oklch, var(--card-bg) 96%, transparent);
+		display: grid;
+		gap: 0.45rem;
+	}
+	.insight-mini-card-title {
+		margin: 0;
+		font-size: 0.84rem;
+		font-weight: 700;
+	}
 	.grid-line {
 		stroke: color-mix(in oklch, currentColor 10%, transparent);
 		stroke-width: 1;
@@ -1621,48 +1607,6 @@ function metricDisplayLabel(metric: { code?: string; label?: string }): string {
 		font-size: 9px;
 		fill: color-mix(in oklch, currentColor 48%, transparent);
 	}
-	.lane-chart {
-		margin-top: 0.9rem;
-		padding-top: 0.75rem;
-		border-top: 1px dashed color-mix(in oklch, currentColor 16%, transparent);
-		display: grid;
-		gap: 0.48rem;
-	}
-	.adjustment-panel {
-		margin-top: 0.8rem;
-		padding-top: 0.65rem;
-		border-top: 1px dashed color-mix(in oklch, currentColor 16%, transparent);
-		display: grid;
-		gap: 0.45rem;
-	}
-	.adjustment-panel h4 {
-		font-size: 0.82rem;
-		font-weight: 700;
-	}
-	.adjustment-list {
-		display: grid;
-		gap: 0.35rem;
-	}
-	.adjustment-item {
-		width: 100%;
-		text-align: left;
-		border-left: 3px solid #f59e0b;
-		background: color-mix(in oklch, #f59e0b 10%, transparent);
-		padding: 0.35rem 0.45rem;
-		border-radius: 0.45rem;
-	}
-	.adjustment-item.selected {
-		border-left-color: #d97706;
-		background: color-mix(in oklch, #f59e0b 22%, transparent);
-		outline: 1px solid color-mix(in oklch, #d97706 60%, transparent);
-	}
-	.adjustment-item p {
-		font-size: 0.73rem;
-	}
-	.adjustment-item .meta {
-		font-size: 0.66rem;
-		color: color-mix(in oklch, currentColor 58%, transparent);
-	}
 	.adjust-node {
 		cursor: pointer;
 	}
@@ -1686,6 +1630,9 @@ function metricDisplayLabel(metric: { code?: string; label?: string }): string {
 		list-style: disc;
 		padding-left: 1rem;
 	}
+	.adjustment-hint-list li {
+		margin-bottom: 0.25rem;
+	}
 	.metric-link {
 		text-align: left;
 		font-size: 0.74rem;
@@ -1697,42 +1644,6 @@ function metricDisplayLabel(metric: { code?: string; label?: string }): string {
 	.adjustment-detail .hint {
 		font-size: 0.68rem;
 		color: color-mix(in oklch, currentColor 58%, transparent);
-	}
-	.lane-head h4 {
-		font-size: 0.82rem;
-		font-weight: 700;
-	}
-	.lane-head p {
-		font-size: 0.72rem;
-		color: color-mix(in oklch, currentColor 55%, transparent);
-	}
-	.lane-row {
-		display: grid;
-		grid-template-columns: 4rem minmax(0, 1fr);
-		gap: 0.5rem;
-		align-items: center;
-	}
-	.lane-label {
-		font-size: 0.74rem;
-		color: color-mix(in oklch, currentColor 62%, transparent);
-	}
-	.lane-track {
-		position: relative;
-		height: 0.7rem;
-		border-radius: 999px;
-		background: color-mix(in oklch, currentColor 9%, transparent);
-		overflow: hidden;
-	}
-	.segment {
-		position: absolute;
-		top: 0;
-		bottom: 0;
-	}
-	.segment.short {
-		background: color-mix(in oklch, #10b981 72%, white);
-	}
-	.segment.mid {
-		background: color-mix(in oklch, #3b82f6 75%, white);
 	}
 	.mini-title {
 		margin-top: 0.7rem;
@@ -1865,14 +1776,6 @@ function metricDisplayLabel(metric: { code?: string; label?: string }): string {
 	.metric-item .meta {
 		font-size: 0.68rem;
 		color: color-mix(in oklch, currentColor 55%, transparent);
-	}
-	.narrative {
-		margin-top: 0.2rem;
-		border-left: 3px solid color-mix(in oklch, var(--primary) 65%, white);
-		padding-left: 0.55rem;
-		font-size: 0.78rem;
-		white-space: pre-wrap;
-		line-height: 1.6;
 	}
 	.review-form {
 		display: grid;
