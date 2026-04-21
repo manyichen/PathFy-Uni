@@ -33,6 +33,7 @@ __pycache__/
 *.so
 .pytest_cache/
 .idea/
+backend/app/static
 
 # --- 编辑器 / 系统 ---
 .vscode/

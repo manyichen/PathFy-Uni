@@ -6,6 +6,28 @@ import {
 import { siteConfig } from "@/config";
 import type { LIGHT_DARK_MODE } from "@/types/config";
 
+type StorageLike = Pick<Storage, "getItem" | "setItem">;
+
+function getSafeLocalStorage(): StorageLike | null {
+	if (typeof globalThis === "undefined") {
+		return null;
+	}
+
+	const storage = (globalThis as { localStorage?: unknown }).localStorage;
+	if (!storage || typeof storage !== "object") {
+		return null;
+	}
+
+	if (
+		typeof (storage as StorageLike).getItem !== "function" ||
+		typeof (storage as StorageLike).setItem !== "function"
+	) {
+		return null;
+	}
+
+	return storage as StorageLike;
+}
+
 export function getDefaultHue(): number {
 	if (typeof document === "undefined") {
 		return siteConfig.themeColor.hue;
@@ -18,16 +40,18 @@ export function getDefaultHue(): number {
 }
 
 export function getHue(): number {
-	if (typeof localStorage === "undefined") {
+	const storage = getSafeLocalStorage();
+	if (!storage) {
 		return siteConfig.themeColor.hue;
 	}
-	const stored = localStorage.getItem("hue");
+	const stored = storage.getItem("hue");
 	return stored ? Number.parseInt(stored, 10) : getDefaultHue();
 }
 
 export function setHue(hue: number): void {
-	if (typeof localStorage !== "undefined") {
-		localStorage.setItem("hue", String(hue));
+	const storage = getSafeLocalStorage();
+	if (storage) {
+		storage.setItem("hue", String(hue));
 	}
 	if (typeof document === "undefined") {
 		return;
@@ -113,13 +137,20 @@ export function applyThemeToDocument(theme: LIGHT_DARK_MODE) {
 }
 
 export function setTheme(theme: LIGHT_DARK_MODE): void {
-	localStorage.setItem("theme", theme);
+	const storage = getSafeLocalStorage();
+	if (storage) {
+		storage.setItem("theme", theme);
+	}
+	if (typeof document === "undefined") {
+		return;
+	}
 	applyThemeToDocument(theme);
 }
 
 export function getStoredTheme(): LIGHT_DARK_MODE {
-	if (typeof localStorage === "undefined") {
+	const storage = getSafeLocalStorage();
+	if (!storage) {
 		return DEFAULT_THEME;
 	}
-	return (localStorage.getItem("theme") as LIGHT_DARK_MODE) || DEFAULT_THEME;
+	return (storage.getItem("theme") as LIGHT_DARK_MODE) || DEFAULT_THEME;
 }
