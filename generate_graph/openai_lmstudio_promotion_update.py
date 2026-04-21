@@ -2,6 +2,7 @@ import argparse
 import json
 import os
 import re
+from datetime import datetime
 from collections import defaultdict
 from dataclasses import dataclass
 from typing import Dict, Iterable, List, Optional, Tuple
@@ -59,6 +60,18 @@ class PromotionEdge:
     confidence: float
 
 
+def promotion_edge_to_dict(edge: PromotionEdge) -> Dict[str, object]:
+    return {
+        "from_id": edge.from_id,
+        "to_id": edge.to_id,
+        "company": edge.company,
+        "from_title": edge.from_title,
+        "to_title": edge.to_title,
+        "reason": edge.reason,
+        "confidence": edge.confidence,
+    }
+
+
 def normalize_text(value: object) -> str:
     if value is None:
         return ""
@@ -99,6 +112,23 @@ def parse_json_object(text: str) -> Dict[str, object]:
         if start >= 0 and end > start:
             return json.loads(raw[start : end + 1])
         raise
+
+
+def backup_edges_json(
+    backup_dir: str,
+    edges: List[PromotionEdge],
+    metadata: Dict[str, object],
+) -> str:
+    os.makedirs(backup_dir, exist_ok=True)
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    file_path = os.path.join(backup_dir, f"promotion_edges_backup_{timestamp}.json")
+    payload = {
+        "metadata": metadata,
+        "edges": [promotion_edge_to_dict(edge) for edge in edges],
+    }
+    with open(file_path, "w", encoding="utf-8") as handle:
+        json.dump(payload, handle, ensure_ascii=False, indent=2)
+    return file_path
 
 
 def fetch_jobs(graph: Graph, include_inferred: bool) -> List[JobProfile]:
@@ -333,6 +363,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--max-jobs-per-company", type=int, default=10000)
     parser.add_argument("--max-companies", type=int, default=10000)
     parser.add_argument("--min-confidence", type=float, default=0.55)
+    parser.add_argument("--backup-dir", default=os.getenv("PROMOTION_BACKUP_DIR", "promotion_backups"))
 
     parser.add_argument("--include-inferred", action="store_true")
     parser.add_argument("--clear-existing", action="store_true")
@@ -390,6 +421,20 @@ def main() -> None:
 
     print(f"[INFO] 可分析公司数: {checked_companies}")
     print(f"[INFO] 晋升关系候选总数: {len(all_edges)}")
+
+    backup_file = backup_edges_json(
+        backup_dir=args.backup_dir,
+        edges=all_edges,
+        metadata={
+            "source_tag": SOURCE_TAG,
+            "model": args.model,
+            "openai_base_url": args.openai_base_url,
+            "neo4j_uri": args.neo4j_uri,
+            "checked_companies": checked_companies,
+            "candidate_count": len(all_edges),
+        },
+    )
+    print(f"[INFO] 已本地备份 JSON: {backup_file}")
 
     if args.dry_run:
         for edge in all_edges[:30]:
