@@ -5,6 +5,7 @@
 		fetchCareerReportDetail,
 		fetchMyCareerReports,
 		fetchReportReviews,
+		exportCareerReportPdf,
 		generateCareerReport,
 		importTargetsFromMatch,
 		manualSearchTargets,
@@ -87,6 +88,7 @@
 	let reviewError = $state("");
 	let reviewInfo = $state("");
 	let reviewText = $state("");
+	let exportingPdf = $state(false);
 
 	const focusTarget = $derived.by(() => {
 		if (!generatedReport?.targets?.length) return null;
@@ -596,6 +598,24 @@ function metricDisplayLabel(metric: { code?: string; label?: string }): string {
 		}
 	}
 
+	async function exportPdf(): Promise<void> {
+		if (!generatedReportId) {
+			error = "请先生成或加载报告。";
+			return;
+		}
+		error = "";
+		info = "";
+		exportingPdf = true;
+		try {
+			await exportCareerReportPdf(generatedReportId);
+			info = `报告 #${generatedReportId} PDF 导出成功。`;
+		} catch (e) {
+			error = e instanceof Error ? e.message : "导出 PDF 失败";
+		} finally {
+			exportingPdf = false;
+		}
+	}
+
 	function applyReviewTemplate(): void {
 		const t = REVIEW_TEMPLATE.trim();
 		if (!reviewText.trim()) {
@@ -754,6 +774,16 @@ function metricDisplayLabel(metric: { code?: string; label?: string }): string {
 						先在上排卡片选择要看的岗位。横轴为<strong>第 n 月</strong>（每月一次复盘），纵轴为进步度（0–100）。未提交前只有起点 (0,0)；每月提交后在该月横坐标处新增一点并连线。点击<strong>蓝色复盘圆点</strong>可展开本次输入与量化结果；橙色菱形为自动重规划插入点。
 					</p>
 				</div>
+				{#if generatedReportId}
+					<button
+						type="button"
+						class="ghost"
+						disabled={exportingPdf}
+						onclick={() => void exportPdf()}
+					>
+						{exportingPdf ? "导出中..." : "导出 PDF"}
+					</button>
+				{/if}
 			</div>
 
 			{#if generatedReport}
