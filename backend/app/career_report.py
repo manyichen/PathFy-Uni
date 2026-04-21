@@ -9,13 +9,15 @@ from __future__ import annotations
 
 import json
 import re
+from html import escape
+from urllib.parse import quote
 from collections import defaultdict
 from datetime import datetime
 from statistics import pstdev
 from typing import Any, Dict, List, Tuple
 
 import requests
-from flask import Blueprint, current_app, jsonify, request
+from flask import Blueprint, current_app, jsonify, make_response, request
 from openai import OpenAI
 
 from .auth import get_bearer_user_id
@@ -66,6 +68,199 @@ MID_TERM_ACTIONS: Dict[str, List[str]] = {
     "cap_req_social": ["建立稳定行业导师/前辈反馈机制", "完成 3 次目标岗位深度访谈"],
     "cap_req_growth": ["形成年度成长路线图并季度修订", "将学习成果固化为公开作品或分享"],
 }
+
+
+def _safe_text(v: Any, default: str = "") -> str:
+        s = str(v if v is not None else default).strip()
+        return escape(s if s else default)
+
+
+def _build_report_export_html(report_id: int, title: str, report_obj: Dict[str, Any]) -> str:
+        student = report_obj.get("student") or {}
+        targets = report_obj.get("targets") or []
+        growth = report_obj.get("growth_plan") or {}
+        short_term = growth.get("short_term") or []
+        mid_term = growth.get("mid_term") or []
+        evaluation = report_obj.get("evaluation") or {}
+        metrics = evaluation.get("metrics") or []
+        narrative = (report_obj.get("narrative") or {}).get("text") or ""
+
+        target_rows = "".join(
+                [
+                        (
+                                "<tr>"
+                                f"<td>{idx + 1}</td>"
+                                f"<td>{_safe_text(t.get('title'), '未命名岗位')}</td>"
+                                f"<td>{_safe_text(t.get('company'), '未知公司')}</td>"
+                                f"<td>{_safe_text((t.get('match_preview') or {}).get('match_score'), '0')}</td>"
+                                "</tr>"
+                        )
+                        for idx, t in enumerate(targets[:30])
+                ]
+        )
+        if not target_rows:
+                target_rows = '<tr><td colspan="4">暂无目标职业数据</td></tr>'
+
+        def _plan_items(items: List[Dict[str, Any]]) -> str:
+                rows = []
+                for item in items[:20]:
+                        rows.append(
+                                "<li>"
+                                f"<strong>{_safe_text(item.get('focus_label'), '重点能力')}</strong>："
+                                f"{_safe_text(item.get('milestone'), '里程碑待补充')}"
+                                "</li>"
+                        )
+                if not rows:
+                        rows.append("<li>暂无</li>")
+                return "".join(rows)
+
+        metric_rows = "".join(
+                [
+                        (
+                                "<tr>"
+                                f"<td>{_safe_text(m.get('label') or m.get('code'), '指标')}</td>"
+                                f"<td>{_safe_text(m.get('cycle'), '-')}</td>"
+                                f"<td>{_safe_text(m.get('target'), '-')}</td>"
+                                "</tr>"
+                        )
+                        for m in metrics[:30]
+                        if isinstance(m, dict)
+                ]
+        )
+        if not metric_rows:
+                metric_rows = '<tr><td colspan="3">暂无评估指标</td></tr>'
+
+        return f"""
+<!doctype html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>career_report_{report_id}</title>
+    <style>
+        @page {{
+            size: A4;
+            margin: 16mm 12mm 18mm;
+        }}
+        :root {{
+            --fg: #1f2937;
+            --muted: #6b7280;
+            --brand: #1d4ed8;
+            --line: #dbe3f0;
+            --soft: #f5f8ff;
+        }}
+        * {{ box-sizing: border-box; }}
+        body {{
+            margin: 0;
+            color: var(--fg);
+            font-family: "PingFang SC", "Hiragino Sans GB", "Noto Sans CJK SC", "Microsoft YaHei", sans-serif;
+            font-size: 13px;
+            line-height: 1.65;
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
+        }}
+        .sheet {{ width: 100%; }}
+        .header {{ border-bottom: 2px solid var(--brand); padding-bottom: 8px; margin-bottom: 14px; }}
+        .title {{ margin: 0; font-size: 22px; color: #0f2f72; letter-spacing: 0.5px; }}
+        .sub {{ margin-top: 6px; color: var(--muted); font-size: 12px; }}
+        .section {{ margin-top: 14px; break-inside: avoid; }}
+        .section-title {{
+            background: linear-gradient(90deg, #e8f0ff, #f7faff);
+            border-left: 4px solid var(--brand);
+            padding: 6px 10px;
+            font-size: 14px;
+            font-weight: 700;
+            color: #1e3a8a;
+            margin: 0 0 8px;
+        }}
+        .kv {{ display: grid; grid-template-columns: 1fr 1fr; gap: 8px 16px; }}
+        .chip {{ background: var(--soft); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; }}
+        table {{ width: 100%; border-collapse: collapse; table-layout: fixed; }}
+        th, td {{ border: 1px solid var(--line); padding: 7px 8px; vertical-align: top; word-break: break-word; }}
+        th {{ background: #eff4ff; text-align: left; }}
+        ul {{ margin: 6px 0 0; padding-left: 18px; }}
+        li {{ margin: 4px 0; }}
+        .narrative {{ white-space: pre-wrap; background: #fafcff; border: 1px solid var(--line); border-radius: 8px; padding: 10px; }}
+        .footer-note {{ margin-top: 16px; color: var(--muted); font-size: 11px; }}
+    </style>
+</head>
+<body>
+    <div class="sheet">
+        <header class="header">
+            <h1 class="title">PathFy 生涯发展报告</h1>
+            <div class="sub">报告编号：#{report_id} ｜ 导出时间：{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</div>
+            <div class="sub">报告标题：{_safe_text(title, '未命名报告')}</div>
+        </header>
+
+        <section class="section">
+            <h2 class="section-title">一、学生画像</h2>
+            <div class="kv">
+                <div class="chip">姓名：{_safe_text(student.get('display_name'), '未知')}</div>
+                <div class="chip">画像均分：{_safe_text(student.get('score_avg'), '0')}</div>
+                <div class="chip" style="grid-column: 1 / -1;">教育背景：{_safe_text(student.get('education'), '未提供')}</div>
+            </div>
+        </section>
+
+        <section class="section">
+            <h2 class="section-title">二、目标职业</h2>
+            <table>
+                <thead><tr><th style="width:56px">序号</th><th>岗位</th><th style="width:160px">公司</th><th style="width:90px">匹配分</th></tr></thead>
+                <tbody>{target_rows}</tbody>
+            </table>
+        </section>
+
+        <section class="section">
+            <h2 class="section-title">三、成长计划</h2>
+            <div class="chip"><strong>短期计划（0-3个月）</strong><ul>{_plan_items(short_term)}</ul></div>
+            <div style="height:8px"></div>
+            <div class="chip"><strong>中期计划（3-12个月）</strong><ul>{_plan_items(mid_term)}</ul></div>
+        </section>
+
+        <section class="section">
+            <h2 class="section-title">四、评估指标</h2>
+            <table>
+                <thead><tr><th>指标</th><th style="width:120px">周期</th><th style="width:180px">目标</th></tr></thead>
+                <tbody>{metric_rows}</tbody>
+            </table>
+        </section>
+
+        <section class="section">
+            <h2 class="section-title">五、报告建议</h2>
+            <div class="narrative">{_safe_text(narrative, '暂无建议')}</div>
+        </section>
+
+        <div class="footer-note">说明：本报告基于当前画像、目标岗位与阶段计划自动生成，建议结合导师反馈进行周期复盘。</div>
+    </div>
+</body>
+</html>
+"""
+
+
+def _render_pdf_with_playwright(html: str) -> bytes:
+        try:
+                from playwright.sync_api import sync_playwright
+        except Exception as exc:  # noqa: BLE001
+                raise RuntimeError(
+                        "缺少 playwright 依赖。请在 backend 环境安装 `playwright` 并执行 `playwright install chromium`。"
+                ) from exc
+
+        with sync_playwright() as p:
+                browser = p.chromium.launch(headless=True)
+                page = browser.new_page()
+                page.set_content(html, wait_until="networkidle")
+                pdf_bytes = page.pdf(
+                        format="A4",
+                        print_background=True,
+                        display_header_footer=True,
+                        footer_template=(
+                                '<div style="font-size:9px;color:#6b7280;width:100%;text-align:center;">'
+                                '<span class="pageNumber"></span> / <span class="totalPages"></span>'
+                                "</div>"
+                        ),
+                        margin={"top": "10mm", "right": "8mm", "bottom": "14mm", "left": "8mm"},
+                )
+                browser.close()
+        return pdf_bytes
 
 
 def _truthy(v: Any) -> bool:
@@ -1974,6 +2169,55 @@ def get_report_detail(report_id: int):
             },
         }
     )
+
+
+@career_report_bp.get("/<int:report_id>/export/pdf")
+def export_report_pdf(report_id: int):
+    uid = get_bearer_user_id()
+    if uid is None:
+        return jsonify({"ok": False, "message": "请先登录"}), 401
+
+    _ensure_report_tables()
+    with db_cursor() as (_, cur):
+        cur.execute(
+            """
+            SELECT id, title, report_json
+            FROM career_reports
+            WHERE id = %s AND user_id = %s
+            LIMIT 1
+            """,
+            (report_id, uid),
+        )
+        row = cur.fetchone()
+
+    if not row:
+        return jsonify({"ok": False, "message": "报告不存在或无权访问"}), 404
+
+    title = str(row.get("title") or "生涯报告")
+    report_obj = row.get("report_json")
+    if isinstance(report_obj, str):
+        try:
+            report_obj = json.loads(report_obj)
+        except Exception:  # noqa: BLE001
+            report_obj = {}
+    if not isinstance(report_obj, dict):
+        report_obj = {}
+
+    try:
+        html = _build_report_export_html(report_id=report_id, title=title, report_obj=report_obj)
+        pdf_bytes = _render_pdf_with_playwright(html)
+    except RuntimeError as exc:
+        return jsonify({"ok": False, "message": str(exc)}), 500
+    except Exception as exc:  # noqa: BLE001
+        return jsonify({"ok": False, "message": f"导出 PDF 失败: {exc}"}), 500
+
+    filename = f"career_report_{report_id}.pdf"
+    resp = make_response(pdf_bytes)
+    resp.headers["Content-Type"] = "application/pdf"
+    resp.headers["Content-Disposition"] = (
+        f"attachment; filename={filename}; filename*=UTF-8''{quote(filename)}"
+    )
+    return resp
 
 
 @career_report_bp.get("/my/list")

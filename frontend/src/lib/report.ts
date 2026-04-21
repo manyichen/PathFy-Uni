@@ -1,5 +1,5 @@
 import { getToken } from "./auth";
-import { apiJson } from "./api";
+import { apiFetch, apiJson } from "./api";
 
 export type ReportTargetItem = {
 	job_id: string;
@@ -503,4 +503,29 @@ export async function fetchReportReviews(reportId: number): Promise<ReportReview
 		throw new Error(res.message || "获取评估历史失败");
 	}
 	return res.data.items || [];
+}
+
+export async function exportCareerReportPdf(reportId: number): Promise<void> {
+	const token = getToken();
+	const headers: Record<string, string> = { Accept: "application/pdf" };
+	if (token) headers.Authorization = `Bearer ${token}`;
+
+	const res = await apiFetch(`/api/report/${reportId}/export/pdf`, {
+		method: "GET",
+		headers,
+	});
+	if (!res.ok) {
+		const text = await res.text().catch(() => "");
+		throw new Error(text || "导出 PDF 失败");
+	}
+
+	const blob = await res.blob();
+	const url = URL.createObjectURL(blob);
+	const a = document.createElement("a");
+	a.href = url;
+	a.download = `career_report_${reportId}.pdf`;
+	document.body.appendChild(a);
+	a.click();
+	a.remove();
+	URL.revokeObjectURL(url);
 }
