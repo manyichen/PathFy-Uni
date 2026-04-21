@@ -3,7 +3,7 @@ import json
 import os
 import re
 import time
-from collections import Counter, defaultdict
+from collections import Counter
 from typing import Any, Dict, List, Optional
 
 import pandas as pd
@@ -64,15 +64,13 @@ SYSTEM_PROMPT = """
       },
       "certificates": ["AWS Certified Solutions Architect"],
       "experience_req": "1-3年",
-      "internship_req": "可实习6个月",
-      "potential_promotion_path": ["高级后端工程师", "技术负责人"],
-      "potential_transfer_path": ["SRE工程师", "架构师"]
+            "internship_req": "可实习6个月"
     }
   ]
 }
 
 约束:
-1. hard_skills / certificates / potential_promotion_path / potential_transfer_path 必须是字符串数组。
+1. hard_skills / certificates 必须是字符串数组。
 2. soft_skills 必须包含 innovation, learning, stress, comm 四个字段，值为低/中/高。
 3. experience_req / internship_req 为字符串，未提及填“未知”。
 4. 不确定信息请给空数组或“未知”，不要编造细节。
@@ -206,13 +204,12 @@ def merge_batch_to_neo4j(
     batch_df: pd.DataFrame,
     ai_records: List[Dict[str, Any]],
     core_templates: set,
-) -> List[Dict[str, Any]]:
+) -> None:
     idx_to_ai: Dict[int, Dict[str, Any]] = {}
     for item in ai_records:
         if isinstance(item, dict) and isinstance(item.get("idx"), int):
             idx_to_ai[item["idx"]] = item
 
-    rows_for_transfer: List[Dict[str, Any]] = []
     tx = graph.begin()
 
     for local_idx, row in batch_df.reset_index(drop=True).iterrows():
@@ -335,78 +332,6 @@ def merge_batch_to_neo4j(
             job_key=job_key,
         )
 
-        promotions = ai_data.get("potential_promotion_path", [])
-        if isinstance(promotions, list):
-            for step in promotions:
-                higher_title = normalize_text(step)
-                if not higher_title:
-                    continue
-                higher_key = f"{normalize_title(higher_title)}::inferred"
-                tx.run(
-                    """
-                    MERGE (h:Job {job_key:$higher_key})
-                    SET h.title=$higher_title, h.source='inferred'
-                    WITH h
-                    MATCH (j:Job {job_key:$job_key})
-                    MERGE (j)-[r:VERTICAL_UP]->(h)
-                    SET r.reason='llm_inferred'
-                    """,
-                    higher_key=higher_key,
-                    higher_title=higher_title,
-                    job_key=job_key,
-                )
-
-        rows_for_transfer.append(
-            {
-                "job_key": job_key,
-                "title": job_title,
-                "skills": hard_skills,
-                "transfer_candidates": ai_data.get("potential_transfer_path", []),
-            }
-        )
-
-    graph.commit(tx)
-    return rows_for_transfer
-
-
-def add_transfer_edges(graph: Graph, rows_for_transfer: List[Dict[str, Any]], min_targets: int = 2) -> None:
-    grouped: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
-    for row in rows_for_transfer:
-        grouped[normalize_title(row["title"])].append(row)
-
-    core_job_groups = sorted(grouped.items(), key=lambda kv: len(kv[1]), reverse=True)[:5]
-    selected_titles = {title for title, _ in core_job_groups}
-
-    tx = graph.begin()
-    for title in selected_titles:
-        source = grouped[title][0]
-        scored = []
-        for other_title, other_rows in grouped.items():
-            if other_title == title:
-                continue
-            target = other_rows[0]
-            inter = source["skills"] & target["skills"]
-            union = source["skills"] | target["skills"]
-            score = (len(inter) / len(union)) if union else 0.0
-            if score > 0:
-                scored.append((score, target, inter))
-
-        scored.sort(key=lambda x: x[0], reverse=True)
-        for score, target, inter in scored[: max(min_targets, 2)]:
-            tx.run(
-                """
-                MATCH (a:Job {job_key:$from_key})
-                MATCH (b:Job {job_key:$to_key})
-                MERGE (a)-[r:TRANSFER_TO]->(b)
-                SET r.skill_overlap_score=$score,
-                    r.shared_skills=$shared_skills,
-                    r.reason='skill_overlap'
-                """,
-                from_key=source["job_key"],
-                to_key=target["job_key"],
-                score=round(score, 4),
-                shared_skills=sorted(inter),
-            )
     graph.commit(tx)
 
 
@@ -425,7 +350,6 @@ def process_in_batches(
 
     title_counter = Counter(normalize_title(x) for x in df["name"])
     core_templates = {title for title, _ in title_counter.most_common(10)}
-    all_transfer_rows: List[Dict[str, Any]] = []
 
     total = len(df)
     for start in range(0, total, batch_size):
@@ -444,18 +368,15 @@ def process_in_batches(
             ai_records = call_ollama_batch(ollama_client, ollama_model, payload)
 
         try:
-            transfer_rows = merge_batch_to_neo4j(
+            merge_batch_to_neo4j(
                 graph=graph,
                 batch_df=batch_df,
                 ai_records=ai_records,
                 core_templates=core_templates,
             )
-            all_transfer_rows.extend(transfer_rows)
         except Exception as exc:
             print(f"[ERROR] 批次写入 Neo4j 失败: {exc}")
             continue
-
-    add_transfer_edges(graph, all_transfer_rows, min_targets=2)
 
 
 def load_excel_data(excel_path: str) -> pd.DataFrame:

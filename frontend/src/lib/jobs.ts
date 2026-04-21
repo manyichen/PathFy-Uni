@@ -53,6 +53,66 @@ export type JobDetailItem = JobCardItem & {
 	requirements: JobRequirement[];
 };
 
+export type JobLiteItem = {
+	id: string;
+	title: string;
+	company: string;
+	location?: string;
+	salary?: string;
+	experience_years?: number;
+};
+
+export type TransitionAnalysisResult = {
+	from_job: JobLiteItem;
+	to_job: JobLiteItem;
+	analysis: {
+		score_summary: {
+			experience_gap: number;
+			salary_min_delta: number | null;
+			overlap_count: number;
+			missing_count: number;
+		};
+		skill_overlap: string[];
+		skill_missing: string[];
+		transferable_skills: string[];
+		capability_gaps: Array<{
+			dimension: string;
+			from: number;
+			to: number;
+			gap: number;
+		}>;
+	};
+	advice: {
+		summary: string;
+		feasibility: "高" | "中" | "低" | string;
+		advantages: string[];
+		gaps: string[];
+		learning_plan: string[];
+		risk_alerts: string[];
+		final_recommendation: string;
+	};
+};
+
+export type PromotionPathResult = {
+	job: JobLiteItem;
+	paths: Array<{
+		hops: number;
+		nodes: JobLiteItem[];
+		edges: Array<{
+			source: string;
+			reason: string;
+			score_gap: number;
+			exp_gap: number;
+		}>;
+	}>;
+	next_steps: Array<JobLiteItem & { score_gap: number; exp_gap: number }>;
+	meta: {
+		source: string;
+		max_depth: number;
+		max_paths: number;
+	};
+};
+
 type JobsResponse = {
 	ok: boolean;
 	data?: {
@@ -67,6 +127,18 @@ type JobsResponse = {
 type JobDetailResponse = {
 	ok: boolean;
 	data?: JobDetailItem;
+};
+
+type TransitionAnalysisResponse = {
+	ok: boolean;
+	data?: TransitionAnalysisResult;
+	message?: string;
+};
+
+type PromotionPathResponse = {
+	ok: boolean;
+	data?: PromotionPathResult;
+	message?: string;
 };
 
 export type AssistantSessionItem = {
@@ -146,6 +218,25 @@ export type JobsPageResult = {
 	jobs: JobCardItem[];
 };
 
+export type JobLitePageResult = {
+	total: number;
+	page: number;
+	pageSize: number;
+	totalPages: number;
+	jobs: JobLiteItem[];
+};
+
+type JobOptionsResponse = {
+	ok: boolean;
+	data?: {
+		total: number;
+		page: number;
+		page_size: number;
+		total_pages: number;
+		jobs: JobLiteItem[];
+	};
+};
+
 export async function fetchJobs(params: FetchJobsParams = {}): Promise<JobsPageResult> {
 	const { q = "", page = 1, pageSize = 40 } = params;
 	const query = new URLSearchParams();
@@ -166,6 +257,26 @@ export async function fetchJobs(params: FetchJobsParams = {}): Promise<JobsPageR
 	};
 }
 
+export async function fetchJobOptions(params: FetchJobsParams = {}): Promise<JobLitePageResult> {
+	const { q = "", page = 1, pageSize = 20 } = params;
+	const query = new URLSearchParams();
+	query.set("page", String(page));
+	query.set("page_size", String(Math.max(1, Math.min(pageSize, 100))));
+	if (q.trim()) query.set("q", q.trim());
+
+	const res = await apiJson<JobOptionsResponse>(`/api/jobs/options?${query.toString()}`);
+	if (!res.ok || !res.data?.jobs) {
+		return { total: 0, page: 1, pageSize: 20, totalPages: 1, jobs: [] };
+	}
+	return {
+		total: res.data.total,
+		page: res.data.page,
+		pageSize: res.data.page_size,
+		totalPages: res.data.total_pages,
+		jobs: res.data.jobs,
+	};
+}
+
 export async function fetchJobDetail(jobId: string): Promise<JobDetailItem> {
 	const id = jobId.trim();
 	if (!id) {
@@ -174,6 +285,54 @@ export async function fetchJobDetail(jobId: string): Promise<JobDetailItem> {
 	const res = await apiJson<JobDetailResponse>(`/api/jobs/${encodeURIComponent(id)}`);
 	if (!res.ok || !res.data) {
 		throw new Error("获取岗位详情失败");
+	}
+	return res.data;
+}
+
+export async function analyzeJobTransition(
+	fromJobId: string,
+	toJobId: string,
+): Promise<TransitionAnalysisResult> {
+	const from = fromJobId.trim();
+	const to = toJobId.trim();
+	if (!from || !to) {
+		throw new Error("请选择两个岗位后再分析");
+	}
+	if (from === to) {
+		throw new Error("请至少选择两个不同岗位");
+	}
+
+	const res = await apiJson<TransitionAnalysisResponse>("/api/jobs/transition-analysis", {
+		method: "POST",
+		headers: {
+			"Content-Type": "application/json",
+		},
+		body: JSON.stringify({
+			from_job_id: from,
+			to_job_id: to,
+		}),
+	});
+
+	if (!res.ok || !res.data) {
+		throw new Error(res.message || "转岗分析失败");
+	}
+	return res.data;
+}
+
+export async function fetchPromotionPath(jobId: string, maxDepth = 4, maxPaths = 3): Promise<PromotionPathResult> {
+	const id = jobId.trim();
+	if (!id) {
+		throw new Error("岗位 ID 不能为空");
+	}
+	const query = new URLSearchParams();
+	query.set("max_depth", String(Math.max(1, Math.min(maxDepth, 8))));
+	query.set("max_paths", String(Math.max(1, Math.min(maxPaths, 8))));
+
+	const res = await apiJson<PromotionPathResponse>(
+		`/api/jobs/${encodeURIComponent(id)}/promotion-path?${query.toString()}`,
+	);
+	if (!res.ok || !res.data) {
+		throw new Error(res.message || "升职路径加载失败");
 	}
 	return res.data;
 }
