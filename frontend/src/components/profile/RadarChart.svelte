@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount, onDestroy } from "svelte";
-	import type { JobCardItem } from "@/lib/jobs";
+	import type { JobCardItem } from "@/lib/api/jobs";
 	import {
 		RADAR_DIMENSIONS,
 		RADAR_TIERS,

@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { fade, fly } from "svelte/transition";
-	import type { JobDetailItem } from "@/lib/jobs";
+	import type { JobDetailItem } from "@/lib/api/jobs";
 	import { portal } from "@/lib/portal";
 
 	type Props = {

@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount } from "svelte";
-	import { fetchMyResumes, type MyResumeSummary } from "@/lib/match";
+	import { fetchMyResumes, type MyResumeSummary } from "@/lib/api/match";
 	import {
 		fetchCareerReportDetail,
 		fetchMyCareerReports,
@@ -15,7 +15,7 @@
 		type ReportTargetItem,
 		type TimelinePoint,
 		submitReportReviewCycle,
-	} from "@/lib/report";
+	} from "@/lib/api/report";
 
 	const DIMENSION_LABELS: Record<string, string> = {
 		cap_req_theory: "理论",

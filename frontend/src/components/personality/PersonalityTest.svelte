@@ -11,8 +11,8 @@ import {
   type PersonalityAnswer,
   type PersonalityQuestion,
   type PersonalityResult,
-} from '../../lib/personality';
-import { getUser } from '../../lib/auth';
+} from '@/lib/api/personality';
+import { getUser } from '@/lib/features/auth/session';
 
 let questions: PersonalityQuestion[] = [];
 let currentQuestionIndex = 0;

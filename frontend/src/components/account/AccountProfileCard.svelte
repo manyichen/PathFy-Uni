@@ -1,13 +1,12 @@
 <script lang="ts">
 	import { onMount } from "svelte";
+	import { fetchMe, type AuthUser } from "@/lib/api/auth";
 	import {
 		clearAuth,
-		fetchMe,
 		getToken,
 		getUser,
 		saveAuth,
-		type AuthUser,
-	} from "@/lib/auth";
+	} from "@/lib/features/auth/session";
 
 	let loading = $state(true);
 	let errorMessage = $state("");

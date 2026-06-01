@@ -1,6 +1,8 @@
 # 职业规划智能体 · 前端
 
-基于 [Astro](https://astro.build) + [Svelte](https://svelte.dev) + [Tailwind CSS](https://tailwindcss.com)，视觉与主题变量参考同仓库下的 `suillilab`（Mizuki 主题）精简迁移。
+> 项目总览与文档索引见仓库根目录 [`README.md`](../README.md)。
+
+基于 [Astro](https://astro.build) + [Svelte](https://svelte.dev) + [Tailwind CSS](https://tailwindcss.com)，视觉与主题变量沿用 Mizuki 主题风格。
 
 ## 开发
 
@@ -26,7 +28,7 @@ pnpm build
 
 ## 与后端的约定
 
-见 `src/lib/api.ts`。建议 Flask 提供 `GET/POST /api/...` JSON 接口；本阶段页面已为各模块预留入口与说明文案。
+见 `src/lib/api/`（HTTP 与各域 API）与 `src/lib/features/`（如 auth session）。Flask 提供 `GET/POST /api/...` JSON 接口，各模块页面已对接对应 API。
 
 ## 动态路由说明
 

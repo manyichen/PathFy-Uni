@@ -8,7 +8,7 @@
 		type JobsPageResult,
 		type PromotionPathResult,
 		type TransitionAnalysisResult,
-	} from "../../lib/jobs";
+	} from "@/lib/api/jobs";
 	import JobPickerModal from "./JobPickerModal.svelte";
 
 	let loadingJobs = $state(true);

@@ -1,9 +1,9 @@
 <script lang="ts">
 	import { onMount } from "svelte";
 	import { url } from "@utils/url-utils";
-	import { getToken, getUser, MATCH_CACHE_KEY_PREFIX } from "@/lib/auth";
+	import { MATCH_CACHE_KEY_PREFIX, getToken, getUser } from "@/lib/features/auth/session";
 	import JobDetailDrawer from "@components/jobs/JobDetailDrawer.svelte";
-	import { fetchJobDetail, type JobCardItem, type JobDetailItem } from "@/lib/jobs";
+	import { fetchJobDetail, type JobCardItem, type JobDetailItem } from "@/lib/api/jobs";
 	import {
 		fetchMyResumes,
 		postMatchPreview,
@@ -12,7 +12,7 @@
 		type MatchPreviewJob,
 		type MatchStudentPayload,
 		type MyResumeSummary,
-	} from "@/lib/match";
+	} from "@/lib/api/match";
 	import { emptyCapabilityScores } from "@/lib/radar-geometry";
 	import StudentCapabilityRadar from "./StudentCapabilityRadar.svelte";
 	import MatchPairRadar from "./MatchPairRadar.svelte";

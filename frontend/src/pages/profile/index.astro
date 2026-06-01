@@ -196,9 +196,9 @@ import RadarChart from '../../components/profile/RadarChart.svelte';
 </Layout>
 
 <script>
-  import { getToken, getUser } from '../../lib/auth';
-  import { fetchMyResumes } from '../../lib/match';
-  import { fetchResumePortraitResult, uploadResume } from '../../lib/profile';
+  import { getToken, getUser } from '../../lib/features/auth/session';
+  import { fetchMyResumes } from '../../lib/api/match';
+  import { fetchResumePortraitResult, uploadResume } from '../../lib/api/profile';
   import {
     emitProfileRadarScores,
     loadPortraitLocalCache,

@@ -12,7 +12,7 @@
 		type AssistantSessionItem,
 		type JobCardItem,
 		type JobDetailItem,
-	} from "@/lib/jobs";
+	} from "@/lib/api/jobs";
 	import JobDetailDrawer from "./JobDetailDrawer.svelte";
 	import {
 		RADAR_DIMENSIONS as DIMENSIONS,

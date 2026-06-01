@@ -1,6 +1,7 @@
 <script lang="ts">
 	import AnimatedCharacters from "./AnimatedCharacters.svelte";
-	import { login, register, saveAuth } from "@/lib/auth";
+	import { login, register } from "@/lib/api/auth";
+	import { saveAuth } from "@/lib/features/auth/session";
 
 	type Mode = "login" | "register";
 

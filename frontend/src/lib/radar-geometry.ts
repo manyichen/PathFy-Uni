@@ -1,7 +1,7 @@
 /**
  * 岗位探索与人岗/能力画像共用的八维雷达几何（与 JobsExplorer 卡片一致）
  */
-import type { JobCardItem } from "@/lib/jobs";
+import type { JobCardItem } from "@/lib/api/jobs";
 
 export const RADAR_DIMENSIONS: {
 	key: keyof JobCardItem["scores"];
