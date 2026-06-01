@@ -10,6 +10,7 @@ from .career_report import career_report_bp
 def create_app() -> Flask:
     app = Flask(__name__)
     app.config.from_object(Config)
+    app.config["MAX_CONTENT_LENGTH"] = Config.MAX_UPLOAD_MB * 1024 * 1024
 
     CORS(
         app,

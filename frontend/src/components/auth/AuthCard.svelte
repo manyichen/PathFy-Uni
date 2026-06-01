@@ -139,10 +139,10 @@
 			<a href="/" class="logo-link">
 				<img
 					src="https://i.postimg.cc/nLrDYrHW/icon.png"
-					alt="CareerCompass logo"
+					alt="Suilli-PathFy logo"
 					class="logo-image"
 				/>
-				<span>CareerCompass</span>
+				<span>Suilli-PathFy</span>
 			</a>
 		</div>
 		<div class="characters-section">
@@ -168,10 +168,10 @@
 			<div class="mobile-logo">
 				<img
 					src="https://i.postimg.cc/nLrDYrHW/icon.png"
-					alt="CareerCompass logo"
+					alt="Suilli-PathFy logo"
 					class="logo-image"
 				/>
-				<span>CareerCompass</span>
+				<span>Suilli-PathFy</span>
 			</div>
 
 			<div class="form-header">

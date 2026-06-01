@@ -58,6 +58,13 @@ html.astro-client-nav .onload-animation {
 		animation: none;
 	}
 
+	/* 持久化顶栏不参与 root 交叉淡入，避免暗色模式下闪白 */
+	::view-transition-group(site-navbar),
+	::view-transition-old(site-navbar),
+	::view-transition-new(site-navbar) {
+		animation: none;
+	}
+
 	::view-transition-old(page-main),
 	::view-transition-new(page-main) {
 		animation-duration: 380ms;

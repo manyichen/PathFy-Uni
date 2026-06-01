@@ -27,6 +27,18 @@ def get_bearer_user_id() -> int | None:
         return int(sub) if sub is not None else None
     except (TypeError, ValueError):
         return None
+
+
+def require_bearer_user_id() -> int | None:
+    """从 Bearer JWT 解析用户 id；缺失或无效时返回 ``None``。"""
+    return get_bearer_user_id()
+
+
+def assert_self_user_id(requested: int, jwt_uid: int) -> bool:
+    """路径中的 user_id 必须与 JWT 中的用户 id 一致。"""
+    return int(requested) == int(jwt_uid)
+
+
 USERNAME_RE = re.compile(r"^[a-zA-Z0-9_]{2,32}$")
 
 def _create_token(user_id: int, username: str, email: str) -> str:
@@ -79,16 +91,11 @@ def register():
         }
     }), 201
 
-# ==================== 原版干净登录 ====================
-@auth_bp.route("/login", methods=["POST", "GET"])
+@auth_bp.post("/login")
 def login():
-    if request.method == "POST":
-        payload = request.get_json(silent=True) or {}
-        account = (payload.get("account") or "").strip()
-        password = payload.get("password") or ""
-    else:
-        account = (request.args.get("account") or "").strip()
-        password = request.args.get("password") or ""
+    payload = request.get_json(silent=True) or {}
+    account = (payload.get("account") or "").strip()
+    password = payload.get("password") or ""
 
     if not account or not password:
         return jsonify({"ok": False, "message": "账号和密码不能为空"}), 400

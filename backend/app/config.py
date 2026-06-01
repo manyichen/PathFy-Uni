@@ -4,14 +4,16 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+_BACKEND_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+
 
 class Config:
     SECRET_KEY = os.getenv("SECRET_KEY", "dev-secret")
     TOKEN_EXPIRES_HOURS = int(os.getenv("TOKEN_EXPIRES_HOURS", "24"))
 
-    MYSQL_HOST = os.getenv("MYSQL_HOST", "47.104.168.245")
+    MYSQL_HOST = os.getenv("MYSQL_HOST", "127.0.0.1")
     MYSQL_PORT = int(os.getenv("MYSQL_PORT", "3306"))
-    MYSQL_USER = os.getenv("MYSQL_USER", "suilli")
+    MYSQL_USER = os.getenv("MYSQL_USER", "root")
     MYSQL_PASSWORD = os.getenv("MYSQL_PASSWORD", "")
     MYSQL_DATABASE = os.getenv("MYSQL_DATABASE", "suilli_mizi")
 
@@ -28,6 +30,12 @@ class Config:
     AI_LLM_TIMEOUT_SECONDS = int(os.getenv("AI_LLM_TIMEOUT_SECONDS", "90"))
 
     FRONTEND_ORIGIN = os.getenv("FRONTEND_ORIGIN", "http://localhost:4321")
+    MAX_UPLOAD_MB = int(os.getenv("MAX_UPLOAD_MB", "10"))
+    # 简历原文件临时目录（Web 不可访问；OCR 完成后自动删除）
+    RESUME_UPLOAD_DIR = os.path.abspath(
+        os.getenv("RESUME_UPLOAD_DIR")
+        or os.path.join(_BACKEND_ROOT, "private_uploads", "resumes")
+    )
     # 在Config类中添加以下配置
     OCR_APP_ID = os.getenv("OCR_APP_ID")
     OCR_API_KEY = os.getenv("OCR_API_KEY")

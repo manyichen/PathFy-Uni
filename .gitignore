@@ -22,6 +22,31 @@ backend/.venv/
 **/.env.*.local
 !**/.env.example
 
+# --- Sensitive data & credentials (never commit) ---
+# Navicat / mysqldump exports with real users, resumes, password hashes
+datasets/**/*.sql
+datasets/**/*.dump
+datasets/**/*.sql.gz
+*.sql.dump
+backups/
+**/backup/**/*.sql
+
+# SSH / TLS private keys
+*.pem
+*.ppk
+*.p12
+*.pfx
+id_rsa
+id_rsa.*
+id_ed25519
+id_ed25519.*
+
+# Local-only exports (keep backend/schema.sql + migrations tracked)
+**/suilli_mizi.sql
+
+# 简历 OCR 临时文件（OCR 后自动删除，勿提交）
+backend/private_uploads/
+
 # --- Python 缓存 & 运行文件（必须加！）---
 __pycache__/
 */__pycache__/

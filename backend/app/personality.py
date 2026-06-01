@@ -6,6 +6,7 @@ import requests
 import re
 
 from app.config import Config
+from app.auth import assert_self_user_id, get_bearer_user_id
 
 personality_bp = Blueprint('personality', __name__, url_prefix='/api/personality')
 
@@ -857,11 +858,14 @@ def get_questions():
 @personality_bp.route('/submit', methods=['POST'])
 def submit_answers():
     try:
-        data = request.get_json()
-        user_id = data.get('user_id')
+        uid = get_bearer_user_id()
+        if uid is None:
+            return jsonify({"code": 401, "msg": "需要登录（Authorization: Bearer）"}), 401
+
+        data = request.get_json(silent=True) or {}
         answers = data.get('answers')
 
-        if not user_id or not answers:
+        if not answers or not isinstance(answers, list):
             return jsonify({"code": 400, "msg": "参数不全"}), 400
 
         # 计算MBTI类型和维度统计
@@ -886,7 +890,7 @@ def submit_answers():
         for answer in answers:
             cur.execute(
                 "INSERT INTO personality_test_answers (user_id, question_id, user_choice) VALUES (%s, %s, %s)",
-                (user_id, answer['question_id'], answer['user_choice'])
+                (uid, answer['question_id'], answer['user_choice'])
             )
 
         # 检查表结构是否包含detailed_analysis字段
@@ -899,7 +903,7 @@ def submit_answers():
                 """INSERT INTO personality_profiles
                 (user_id, mbti_type, personality_analysis, recommended_jobs, detailed_analysis)
                 VALUES (%s, %s, %s, %s, %s)""",
-                (user_id, mbti_type, personality_analysis, ", ".join(job_recommendations["recommended_jobs"]),
+                (uid, mbti_type, personality_analysis, ", ".join(job_recommendations["recommended_jobs"]),
                  json.dumps({
                      "dimension_analysis": dimension_analysis,
                      "complete_analysis": complete_analysis,
@@ -912,7 +916,7 @@ def submit_answers():
                 """INSERT INTO personality_profiles
                 (user_id, mbti_type, personality_analysis, recommended_jobs)
                 VALUES (%s, %s, %s, %s)""",
-                (user_id, mbti_type, personality_analysis, ", ".join(job_recommendations["recommended_jobs"]))
+                (uid, mbti_type, personality_analysis, ", ".join(job_recommendations["recommended_jobs"]))
             )
 
         conn.commit()
@@ -970,9 +974,16 @@ def generate_comprehensive_report(mbti_type, dimension_analysis, complete_analys
 def get_profile(profile_id):
     """获取性格测试结果"""
     try:
+        uid = get_bearer_user_id()
+        if uid is None:
+            return jsonify({"code": 401, "msg": "需要登录（Authorization: Bearer）"}), 401
+
         conn = get_db()
         cur = conn.cursor()
-        cur.execute("SELECT * FROM personality_profiles WHERE id = %s", (profile_id,))
+        cur.execute(
+            "SELECT * FROM personality_profiles WHERE id = %s AND user_id = %s",
+            (profile_id, uid),
+        )
         result = cur.fetchone()
         conn.close()
 
@@ -991,6 +1002,12 @@ def get_profile(profile_id):
 def get_user_history(user_id):
     """获取用户的历史性格测试记录"""
     try:
+        uid = get_bearer_user_id()
+        if uid is None:
+            return jsonify({"code": 401, "msg": "需要登录（Authorization: Bearer）"}), 401
+        if not assert_self_user_id(user_id, uid):
+            return jsonify({"code": 403, "msg": "无权访问该用户数据"}), 403
+
         conn = get_db()
         cur = conn.cursor()
         cur.execute("""

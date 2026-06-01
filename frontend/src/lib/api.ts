@@ -24,6 +24,28 @@ export async function apiFetch(
 	});
 }
 
+/** 从失败响应体中提取后端返回的可读错误文案（支持 `message` / `msg`）。 */
+function extractApiErrorMessage(
+	text: string,
+	status: number,
+	statusText: string,
+): string {
+	const trimmed = text.trim();
+	if (!trimmed) {
+		return `请求失败（${status} ${statusText}）`;
+	}
+	try {
+		const body = JSON.parse(trimmed) as Record<string, unknown>;
+		const msg = body.message ?? body.msg;
+		if (typeof msg === "string" && msg.trim()) {
+			return msg.trim();
+		}
+	} catch {
+		// 非 JSON 响应（如 Nginx 502 页面）走下方兜底
+	}
+	return `请求失败（${status}）`;
+}
+
 export async function apiJson<T>(
 	path: string,
 	init?: RequestInit,
@@ -31,9 +53,7 @@ export async function apiJson<T>(
 	const res = await apiFetch(path, init);
 	if (!res.ok) {
 		const text = await res.text().catch(() => "");
-		throw new Error(
-			`API ${path} failed: ${res.status} ${res.statusText} ${text}`,
-		);
+		throw new Error(extractApiErrorMessage(text, res.status, res.statusText));
 	}
 	return res.json() as Promise<T>;
 }

@@ -1,15 +1,19 @@
 from decimal import Decimal
+from uuid import uuid4
 
-from flask import Blueprint, request, jsonify, current_app
+from flask import Blueprint, request, jsonify
 import os
 import json
 import pymysql
+from werkzeug.utils import secure_filename
 
-from app.auth import get_bearer_user_id
+from app.auth import assert_self_user_id, get_bearer_user_id
 from app.config import Config
 from app.utils import ocr_image, pdf_to_image, score_resume, create_radar_chart
 
 portrait_bp = Blueprint("profile", __name__, url_prefix="/api/profile")
+
+_ALLOWED_RESUME_EXTENSIONS = {".pdf", ".png", ".jpg", ".jpeg", ".webp"}
 
 
 def _jsonable_row(row: dict | None) -> dict | None:
@@ -22,6 +26,81 @@ def _jsonable_row(row: dict | None) -> dict | None:
         else:
             out[k] = v
     return out
+
+def _resume_extension(filename: str) -> str:
+    _, ext = os.path.splitext(filename or "")
+    return ext.lower()
+
+
+def _resume_upload_dir() -> str:
+    """简历 OCR 用临时目录（不在 Flask static 下，不可通过 URL 直接访问）。"""
+    path = Config.RESUME_UPLOAD_DIR
+    os.makedirs(path, mode=0o700, exist_ok=True)
+    return path
+
+
+def _discard_path(path: str | None) -> None:
+    if not path or not os.path.isfile(path):
+        return
+    try:
+        os.remove(path)
+    except OSError:
+        pass
+
+
+def _discard_pdf_preview_artifacts(pdf_path: str | None) -> None:
+    """删除 PDF 转 PNG 时产生的 pdf_images 子目录及其中文件。"""
+    if not pdf_path:
+        return
+    preview_dir = os.path.join(os.path.dirname(pdf_path), "pdf_images")
+    if not os.path.isdir(preview_dir):
+        return
+    try:
+        for name in os.listdir(preview_dir):
+            fp = os.path.join(preview_dir, name)
+            if os.path.isfile(fp):
+                os.remove(fp)
+        os.rmdir(preview_dir)
+    except OSError:
+        pass
+
+
+def _cleanup_resume_upload_artifacts(
+    file_path: str | None, ocr_path: str | None, *, from_pdf: bool
+) -> None:
+    """OCR 结束后删除磁盘上的简历原文件与 PDF 预览图。"""
+    if ocr_path and ocr_path != file_path:
+        _discard_path(ocr_path)
+    if from_pdf:
+        _discard_pdf_preview_artifacts(file_path)
+    _discard_path(file_path)
+
+
+def _save_resume_upload(file) -> tuple[str | None, str | None]:
+    """校验并保存简历文件，返回 (磁盘路径, 错误信息)。"""
+    if not file or not file.filename:
+        return None, "请上传简历文件"
+
+    ext = _resume_extension(file.filename)
+    if ext not in _ALLOWED_RESUME_EXTENSIONS:
+        return None, "仅支持 PDF、PNG、JPG、JPEG、WEBP 格式"
+
+    file.seek(0, os.SEEK_END)
+    size = file.tell()
+    file.seek(0)
+    if size <= 0:
+        return None, "文件为空"
+    max_bytes = Config.MAX_UPLOAD_MB * 1024 * 1024
+    if size > max_bytes:
+        return None, f"文件大小不能超过 {Config.MAX_UPLOAD_MB}MB"
+
+    safe_name = secure_filename(file.filename) or "resume"
+    stored_name = f"{uuid4().hex}_{safe_name}"
+    upload_dir = _resume_upload_dir()
+    file_path = os.path.join(upload_dir, stored_name)
+    file.save(file_path)
+    return file_path, None
+
 
 def get_db():
     """自己实现数据库连接,不依赖项目db.py,零冲突"""
@@ -469,19 +548,6 @@ def generate_overall_evaluation(scores, avg_score):
     return evaluation
 
 
-def _resolve_upload_user_id() -> tuple[int | None, str | None]:
-    jwt_uid = get_bearer_user_id()
-    raw = request.form.get("user_id")
-    if jwt_uid is not None:
-        return jwt_uid, None
-    if not raw:
-        return None, "未登录时请提供 user_id；已登录请携带 Authorization: Bearer"
-    try:
-        return int(raw), None
-    except (TypeError, ValueError):
-        return None, "user_id 格式无效"
-
-
 @portrait_bp.route("/resumes", methods=["GET"])
 def list_my_resumes():
     """当前登录用户的能力画像（简历分析）列表，供人岗匹配选用。"""
@@ -551,10 +617,13 @@ def list_my_resumes():
 
 @portrait_bp.route("/upload", methods=["POST"])
 def upload_resume():
+    file_path: str | None = None
+    ocr_path: str | None = None
+    from_pdf = False
     try:
-        uid, err = _resolve_upload_user_id()
-        if err or uid is None:
-            return jsonify({"code": 400, "msg": err or "无法确定用户"}), 400
+        uid = get_bearer_user_id()
+        if uid is None:
+            return jsonify({"code": 401, "msg": "需要登录（Authorization: Bearer）"}), 401
 
         name = request.form.get("name")
         major = request.form.get("major")
@@ -563,12 +632,13 @@ def upload_resume():
         if not all([name, major, file]):
             return jsonify({"code": 400, "msg": "参数不全"}), 400
 
-        upload_dir = os.path.join(current_app.static_folder, "uploads")
-        os.makedirs(upload_dir, exist_ok=True)
-        file_path = os.path.join(upload_dir, file.filename)
-        file.save(file_path)
+        file_path, upload_err = _save_resume_upload(file)
+        if upload_err or not file_path:
+            status = 413 if upload_err and "不能超过" in upload_err else 400
+            return jsonify({"code": status, "msg": upload_err or "上传失败"}), status
 
-        if file.filename.lower().endswith(".pdf"):
+        from_pdf = _resume_extension(file.filename) == ".pdf"
+        if from_pdf:
             ocr_path = pdf_to_image(file_path)
         else:
             ocr_path = file_path
@@ -663,21 +733,23 @@ def upload_resume():
         )
     except Exception as e:
         return jsonify({"code": 500, "msg": f"服务器错误: {str(e)}"}), 500
+    finally:
+        _cleanup_resume_upload_artifacts(file_path, ocr_path, from_pdf=from_pdf)
 
 
 @portrait_bp.route("/result/<int:resume_id>", methods=["GET"])
 def get_result(resume_id):
     try:
         uid = get_bearer_user_id()
+        if uid is None:
+            return jsonify({"code": 401, "msg": "需要登录（Authorization: Bearer）"}), 401
+
         conn = get_db()
         cur = conn.cursor()
-        if uid is not None:
-            cur.execute(
-                "SELECT * FROM student_resume WHERE id = %s AND user_id = %s",
-                (resume_id, uid),
-            )
-        else:
-            cur.execute("SELECT * FROM student_resume WHERE id = %s", (resume_id,))
+        cur.execute(
+            "SELECT * FROM student_resume WHERE id = %s AND user_id = %s",
+            (resume_id, uid),
+        )
         result = cur.fetchone()
         conn.close()
         if not result:
@@ -694,6 +766,12 @@ def get_result(resume_id):
 def get_user_history(user_id):
     """获取用户的历史能力画像记录"""
     try:
+        uid = get_bearer_user_id()
+        if uid is None:
+            return jsonify({"code": 401, "msg": "需要登录（Authorization: Bearer）"}), 401
+        if not assert_self_user_id(user_id, uid):
+            return jsonify({"code": 403, "msg": "无权访问该用户数据"}), 403
+
         conn = get_db()
         cur = conn.cursor()
         cur.execute("""
@@ -738,6 +816,12 @@ def get_user_history(user_id):
 def get_ability_trend(user_id):
     """获取用户能力变化趋势"""
     try:
+        uid = get_bearer_user_id()
+        if uid is None:
+            return jsonify({"code": 401, "msg": "需要登录（Authorization: Bearer）"}), 401
+        if not assert_self_user_id(user_id, uid):
+            return jsonify({"code": 403, "msg": "无权访问该用户数据"}), 403
+
         conn = get_db()
         cur = conn.cursor()
         cur.execute("""

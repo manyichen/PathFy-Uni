@@ -239,27 +239,37 @@ def _build_report_export_html(report_id: int, title: str, report_obj: Dict[str, 
 def _render_pdf_with_playwright(html: str) -> bytes:
         try:
                 from playwright.sync_api import sync_playwright
-        except Exception as exc:  # noqa: BLE001
+        except ModuleNotFoundError as exc:
                 raise RuntimeError(
-                        "缺少 playwright 依赖。请在 backend 环境安装 `playwright` 并执行 `playwright install chromium`。"
+                        "未安装 Python 包 `playwright`。请在 backend 虚拟环境中执行："
+                        "`pip install playwright`，然后执行：`python -m playwright install chromium`。"
                 ) from exc
 
-        with sync_playwright() as p:
-                browser = p.chromium.launch(headless=True)
-                page = browser.new_page()
-                page.set_content(html, wait_until="networkidle")
-                pdf_bytes = page.pdf(
-                        format="A4",
-                        print_background=True,
-                        display_header_footer=True,
-                        footer_template=(
-                                '<div style="font-size:9px;color:#6b7280;width:100%;text-align:center;">'
-                                '<span class="pageNumber"></span> / <span class="totalPages"></span>'
-                                "</div>"
-                        ),
-                        margin={"top": "10mm", "right": "8mm", "bottom": "14mm", "left": "8mm"},
-                )
-                browser.close()
+        try:
+                with sync_playwright() as p:
+                        browser = p.chromium.launch(headless=True)
+                        page = browser.new_page()
+                        page.set_content(html, wait_until="networkidle")
+                        pdf_bytes = page.pdf(
+                                format="A4",
+                                print_background=True,
+                                display_header_footer=True,
+                                footer_template=(
+                                        '<div style="font-size:9px;color:#6b7280;width:100%;text-align:center;">'
+                                        '<span class="pageNumber"></span> / <span class="totalPages"></span>'
+                                        "</div>"
+                                ),
+                                margin={"top": "10mm", "right": "8mm", "bottom": "14mm", "left": "8mm"},
+                        )
+                        browser.close()
+        except Exception as exc:  # noqa: BLE001
+                msg = str(exc).lower()
+                if "executable" in msg or "browser" in msg or "chromium" in msg:
+                        raise RuntimeError(
+                                "Playwright 未下载 Chromium 浏览器。请在 backend 环境中执行："
+                                "`python -m playwright install chromium`。"
+                        ) from exc
+                raise
         return pdf_bytes
 
 

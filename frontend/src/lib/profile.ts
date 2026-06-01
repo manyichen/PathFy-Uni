@@ -33,14 +33,15 @@ export interface PortraitResult {
 }
 
 export async function uploadResume(data: FormData) {
-  const headers: HeadersInit = {};
   const token = getToken();
-  if (token) {
-    headers.Authorization = `Bearer ${token}`;
+  if (!token) {
+    throw new Error('请先登录');
   }
   const res = await apiFetch("/api/profile/upload", {
     method: "POST",
-    headers,
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
     body: data,
   });
 

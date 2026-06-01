@@ -13,7 +13,6 @@
 		type JobCardItem,
 		type JobDetailItem,
 	} from "@/lib/jobs";
-	import { getToken } from "@/lib/auth";
 	import JobDetailDrawer from "./JobDetailDrawer.svelte";
 	import {
 		RADAR_DIMENSIONS as DIMENSIONS,
@@ -70,6 +69,9 @@
 	let messages = $state<AssistantMessageItem[]>([]);
 	let assistantInput = $state("");
 	let saveMessageState = $state<Record<number, "idle" | "saving" | "saved">>({});
+	const detailCache = new Map<string, JobDetailItem>();
+	/** 每次成功拉取后递增，触发列表淡入动画 */
+	let listFadeKey = $state(0);
 
 	let totalPages = $derived(Math.max(1, totalPagesState));
 	let pageInfoText = $derived(`第 ${currentPage} / ${totalPages} 页 · 共 ${totalCount} 条`);
@@ -119,6 +121,9 @@
 			totalCount = res.total;
 			totalPagesState = res.totalPages;
 			currentPage = res.page;
+			if (res.jobs.length > 0) {
+				listFadeKey += 1;
+			}
 		} catch (e) {
 			errorMessage = e instanceof Error ? e.message : "加载岗位数据失败";
 			jobs = [];
@@ -135,13 +140,32 @@
 		void loadJobs(q, 1);
 	}
 
+	function prefetchDetail(jobId: string): void {
+		if (detailCache.has(jobId)) return;
+		void fetchJobDetail(jobId)
+			.then((data) => {
+				detailCache.set(jobId, data);
+			})
+			.catch(() => {
+				// 预加载失败不影响正式打开
+			});
+	}
+
 	async function openDetail(jobId: string): Promise<void> {
 		detailVisible = true;
-		detailLoading = true;
 		detailError = "";
+		const cached = detailCache.get(jobId);
+		if (cached) {
+			detailData = cached;
+			detailLoading = false;
+			return;
+		}
+		detailLoading = true;
 		detailData = null;
 		try {
-			detailData = await fetchJobDetail(jobId);
+			const data = await fetchJobDetail(jobId);
+			detailCache.set(jobId, data);
+			detailData = data;
 		} catch (e) {
 			detailError = e instanceof Error ? e.message : "加载岗位详情失败";
 		} finally {
@@ -153,28 +177,24 @@
 		detailVisible = false;
 	}
 
-	async function loadSessionDetail(sessionId: number): Promise<void> {
+	async function loadSessionDetail(
+		sessionId: number,
+		options?: { replaceJobs?: boolean },
+	): Promise<void> {
 		assistantError = "";
 		try {
-			console.log("检查登录状态...");
-			console.log("是否登录:", isLoggedIn());
-			console.log("令牌:", getToken());
-			
 			if (!isLoggedIn()) {
 				assistantError = "请先登录后再使用 AI 助手";
 				return;
 			}
-			
-			console.log("开始加载会话详情...");
-			console.log("会话ID:", sessionId);
-			
+
 			const detail = await getAssistantSessionDetail(sessionId);
-			console.log("会话详情加载成功:", detail);
 			clearNewChatDraft();
 			currentSessionId = detail.session.id;
 			historyPickerOpen = false;
 			messages = detail.messages;
-			if (detail.jobs?.length) {
+			const shouldReplaceJobs = options?.replaceJobs !== false;
+			if (shouldReplaceJobs && detail.jobs?.length) {
 				jobs = detail.jobs;
 				totalCount = detail.jobs.length;
 				totalPagesState = 1;
@@ -193,27 +213,21 @@
 		assistantLoading = true;
 		assistantError = "";
 		try {
-			console.log("检查登录状态...");
-			console.log("是否登录:", isLoggedIn());
-			console.log("令牌:", getToken());
-			
 			if (!isLoggedIn()) {
 				assistantError = "请先登录后再使用 AI 助手";
 				currentSessionId = null;
 				messages = [];
 				return;
 			}
-			
-			console.log("开始加载会话...");
+
 			sessions = await listAssistantSessions();
-			console.log("会话加载成功:", sessions);
 			if (isNewChatDraftPreferred()) {
 				currentSessionId = null;
 				messages = [];
 				return;
 			}
 			if (sessions.length > 0) {
-				await loadSessionDetail(sessions[0].id);
+				await loadSessionDetail(sessions[0].id, { replaceJobs: false });
 			} else {
 				currentSessionId = null;
 				messages = [];
@@ -227,17 +241,11 @@
 	}
 
 	async function refreshSessionsListOnly(): Promise<void> {
-		console.log("检查登录状态...");
-		console.log("是否登录:", isLoggedIn());
-		console.log("令牌:", getToken());
-		
 		if (!isLoggedIn()) {
 			return;
 		}
 		try {
-			console.log("开始刷新会话列表...");
 			sessions = await listAssistantSessions();
-			console.log("会话列表刷新成功:", sessions);
 		} catch (e) {
 			console.error("刷新会话列表失败:", e);
 			// 不阻塞主流程，保留当前界面状态
@@ -248,16 +256,12 @@
 		e.preventDefault();
 		const message = assistantInput.trim();
 		if (!message || assistantSending) return;
-		
-		console.log("检查登录状态...");
-		console.log("是否登录:", isLoggedIn());
-		console.log("令牌:", getToken());
-		
+
 		if (!isLoggedIn()) {
 			assistantError = "请先登录后再使用 AI 助手";
 			return;
 		}
-		
+
 		assistantSending = true;
 		assistantError = "";
 		const optimisticUserId = -Date.now();
@@ -283,16 +287,11 @@
 			},
 		];
 		try {
-			console.log("开始发送消息...");
-			console.log("消息内容:", message);
-			console.log("会话ID:", currentSessionId);
-			
 			const res = await chatJobsAssistant({
 				message,
 				sessionId: currentSessionId ?? undefined,
 			});
-			console.log("消息发送成功:", res);
-			
+
 			currentSessionId = res.session_id;
 			clearNewChatDraft();
 			messages = messages.map((item) => {
@@ -338,24 +337,16 @@
 
 	async function onSaveAssistantMessage(messageId: number): Promise<void> {
 		if (saveMessageState[messageId] === "saving") return;
-		
-		console.log("检查登录状态...");
-		console.log("是否登录:", isLoggedIn());
-		console.log("令牌:", getToken());
-		
+
 		if (!isLoggedIn()) {
 			assistantError = "请先登录后再使用 AI 助手";
 			return;
 		}
-		
+
 		saveMessageState = { ...saveMessageState, [messageId]: "saving" };
 		try {
-			console.log("开始保存消息...");
-			console.log("消息ID:", messageId);
-			
 			await saveAssistantMessage(messageId);
-			console.log("消息保存成功:", messageId);
-			
+
 			saveMessageState = { ...saveMessageState, [messageId]: "saved" };
 			messages = messages.map((item) =>
 				item.id === messageId ? { ...item, is_saved: true } : item,
@@ -401,16 +392,21 @@
 
 	<div class="jobs-layout">
 		<div class="jobs-main">
-			{#if loading}
-				<div class="panel">岗位数据加载中...</div>
-			{:else if errorMessage}
+			{#if loading && jobs.length === 0}
+				<div class="jobs-await" aria-busy="true" aria-label="岗位数据加载中"></div>
+			{:else if errorMessage && jobs.length === 0}
 				<div class="panel error">{errorMessage}</div>
 			{:else if jobs.length === 0}
 				<div class="panel">暂无匹配岗位，换个关键词试试。</div>
 			{:else}
-				<div class="grid-wrap">
-					{#each jobs as job}
-						<article class="job-card">
+				{#key listFadeKey}
+					<div class="jobs-reveal">
+						<div class="grid-wrap">
+							{#each jobs as job, cardIdx (job.id)}
+								<article
+									class="job-card"
+									style={`--card-delay: ${Math.min(cardIdx, 11) * 60}ms`}
+								>
 							<div class="head">
 								<h3>{job.title}</h3>
 								<span class="score-badge {scoreTone(job.score_avg)}">{job.score_avg}</span>
@@ -470,14 +466,20 @@
 
 							<div class="card-foot">
 								<span class="confidence-tag">平均置信度: {confidenceText(job.conf_avg)}</span>
-								<button type="button" class="detail-btn" onclick={() => openDetail(job.id)}>
+								<button
+									type="button"
+									class="detail-btn"
+									onmouseenter={() => prefetchDetail(job.id)}
+									onfocus={() => prefetchDetail(job.id)}
+									onclick={() => openDetail(job.id)}
+								>
 									查看详情
 								</button>
 							</div>
 						</article>
 					{/each}
-				</div>
-				<div class="pager">
+						</div>
+						<div class="pager">
 					<button type="button" onclick={() => goToPage(currentPage - 1)} disabled={currentPage === 1}>
 						上一页
 					</button>
@@ -517,7 +519,9 @@
 						<span>条</span>
 						<button type="submit" disabled={loading || totalCount === 0}>跳转</button>
 					</form>
-				</div>
+						</div>
+					</div>
+				{/key}
 			{/if}
 		</div>
 
@@ -662,6 +666,29 @@
 	.panel.error {
 		color: #b91c1c;
 		background: rgba(220, 38, 38, 0.08);
+	}
+	.jobs-await {
+		min-height: 28rem;
+	}
+	.jobs-reveal .job-card {
+		opacity: 0;
+		animation: jobs-fade-in 0.9s ease-out forwards;
+		animation-delay: var(--card-delay, 0ms);
+	}
+	.jobs-reveal .pager {
+		opacity: 0;
+		animation: jobs-fade-in 0.85s ease-out forwards;
+		animation-delay: 480ms;
+	}
+	@keyframes jobs-fade-in {
+		from {
+			opacity: 0;
+			transform: translateY(8px);
+		}
+		to {
+			opacity: 1;
+			transform: translateY(0);
+		}
 	}
 	.grid-wrap {
 		display: grid;
@@ -1106,6 +1133,14 @@
 		}
 		.radar {
 			max-width: 320px;
+		}
+	}
+	@media (prefers-reduced-motion: reduce) {
+		.jobs-reveal .job-card,
+		.jobs-reveal .pager {
+			opacity: 1;
+			animation: none;
+			transform: none;
 		}
 	}
 </style>

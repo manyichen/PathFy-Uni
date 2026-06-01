@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { fade, fly } from "svelte/transition";
 	import type { JobDetailItem } from "@/lib/jobs";
 	import { portal } from "@/lib/portal";
 
@@ -12,21 +13,58 @@
 
 	let { open, loading, error, detail, onClose }: Props = $props();
 
+	$effect(() => {
+		if (typeof document === "undefined") return;
+		if (open) {
+			document.body.style.overflow = "hidden";
+			return () => {
+				document.body.style.overflow = "";
+			};
+		}
+		document.body.style.overflow = "";
+	});
+
 	function normalizeText(text: string): string {
 		return text.replace(/<br\s*\/?>/gi, "\n").replace(/&nbsp;/gi, " ").trim();
 	}
+
+	function handleKeydown(e: KeyboardEvent) {
+		if (!open) return;
+		if (e.key === "Escape") {
+			e.preventDefault();
+			onClose();
+		}
+	}
 </script>
 
+<svelte:window onkeydown={handleKeydown} />
+
 {#if open}
-	<div class="detail-overlay" use:portal role="presentation" onclick={onClose}>
-		<div class="detail-drawer" role="dialog" aria-modal="true" onclick={(e) => e.stopPropagation()}>
+	<div
+		class="detail-overlay"
+		use:portal
+		role="presentation"
+		transition:fade={{ duration: 180 }}
+		onclick={onClose}
+	>
+		<div
+			class="detail-drawer"
+			role="dialog"
+			aria-modal="true"
+			aria-busy={loading}
+			transition:fly={{ x: 360, duration: 280, opacity: 1, easing: (t) => 1 - Math.pow(1 - t, 3) }}
+			onclick={(e) => e.stopPropagation()}
+		>
 			<div class="detail-head">
 				<h3>{detail?.title || "岗位详情"}</h3>
 				<button type="button" class="close-btn" onclick={onClose}>关闭</button>
 			</div>
 
 			{#if loading}
-				<div class="panel">详情加载中...</div>
+				<div class="panel loading-panel" aria-live="polite">
+					<div class="loading-shimmer" aria-hidden="true"></div>
+					<p>详情加载中…</p>
+				</div>
 			{:else if error}
 				<div class="panel error">{error}</div>
 			{:else if detail}
@@ -108,19 +146,52 @@
 		color: #b91c1c;
 		background: rgba(220, 38, 38, 0.08);
 	}
+	.loading-panel {
+		display: grid;
+		gap: 0.75rem;
+		margin-top: 0.75rem;
+	}
+	.loading-panel p {
+		margin: 0;
+		font-size: 0.88rem;
+		color: color-mix(in oklab, var(--text-75) 85%, transparent);
+	}
+	.loading-shimmer {
+		height: 4.5rem;
+		border-radius: 0.65rem;
+		background: linear-gradient(
+			90deg,
+			color-mix(in oklab, var(--btn-regular-bg) 90%, var(--text-75)) 0%,
+			color-mix(in oklab, var(--btn-regular-bg) 60%, white) 50%,
+			color-mix(in oklab, var(--btn-regular-bg) 90%, var(--text-75)) 100%
+		);
+		background-size: 200% 100%;
+		animation: shimmer 1.1s ease-in-out infinite;
+	}
+	@keyframes shimmer {
+		0% {
+			background-position: 100% 0;
+		}
+		100% {
+			background-position: -100% 0;
+		}
+	}
 	.detail-overlay {
 		position: fixed;
 		inset: 0;
-		background: rgba(15, 23, 42, 0.35);
+		background: rgba(15, 23, 42, 0.4);
+		backdrop-filter: blur(2px);
 		display: flex;
 		align-items: stretch;
 		justify-content: flex-end;
 		padding: 0;
 		z-index: 120;
+		will-change: opacity;
 	}
 	.detail-drawer {
 		width: min(620px, 92vw);
 		height: 100vh;
+		height: 100dvh;
 		overflow: auto;
 		border-radius: 0;
 		background: var(--card-bg);
@@ -128,6 +199,8 @@
 		padding: 0 1rem 1.25rem;
 		box-shadow: -12px 0 30px rgba(2, 6, 23, 0.15);
 		font-family: "FangSong", "STFangsong", "仿宋", serif;
+		will-change: transform;
+		overscroll-behavior: contain;
 	}
 	.detail-head {
 		position: sticky;
@@ -162,6 +235,17 @@
 		margin-top: 0.75rem;
 		display: grid;
 		gap: 0.85rem;
+		animation: body-in 0.22s ease-out;
+	}
+	@keyframes body-in {
+		from {
+			opacity: 0;
+			transform: translateY(6px);
+		}
+		to {
+			opacity: 1;
+			transform: translateY(0);
+		}
 	}
 	.detail-meta {
 		display: flex;
@@ -224,6 +308,14 @@
 	@media (max-width: 768px) {
 		.detail-drawer {
 			width: 100vw;
+		}
+	}
+	@media (prefers-reduced-motion: reduce) {
+		.detail-body {
+			animation: none;
+		}
+		.loading-shimmer {
+			animation: none;
 		}
 	}
 </style>

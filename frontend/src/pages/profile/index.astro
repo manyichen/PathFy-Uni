@@ -566,7 +566,6 @@ import RadarChart from '../../components/profile/RadarChart.svelte';
       formData.append('name', nameInput.value);
       formData.append('major', majorInput.value);
       formData.append('resume', resumeInput.files[0]);
-      formData.append('user_id', String(u.id));
 
       submitBtn.disabled = true;
       submitBtn.textContent = '分析中...';
