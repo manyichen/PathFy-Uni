@@ -129,3 +129,56 @@ export async function postMatchPreview(body: MatchPreviewRequest): Promise<Match
 	}
 	return res.data;
 }
+
+export type MatchHistorySummary = {
+	run_id: number;
+	resume_id: number;
+	match_goal: "fit" | "stretch";
+	q: string;
+	location_q: string;
+	refine_with_llm: boolean;
+	created_at: string;
+	student_name: string;
+	returned: number;
+	llm_ok: boolean;
+};
+
+export type MatchHistoryDetail = MatchPreviewData & {
+	run_id: number;
+	resume_id: number;
+	created_at: string;
+};
+
+export async function fetchMatchHistory(limit = 30): Promise<MatchHistorySummary[]> {
+	const token = getBearerToken();
+	if (!token) return [];
+	const res = await apiJson<{ ok: boolean; data?: { items: MatchHistorySummary[] }; message?: string }>(
+		`/api/match/history?limit=${Math.max(1, Math.min(80, limit))}`,
+		{
+			method: "GET",
+			headers: { Authorization: `Bearer ${token}` },
+		},
+	);
+	if (!res.ok || !res.data?.items) {
+		throw new Error(res.message || "加载历史匹配失败");
+	}
+	return res.data.items;
+}
+
+export async function fetchMatchHistoryDetail(runId: number): Promise<MatchHistoryDetail> {
+	const token = getBearerToken();
+	if (!token) {
+		throw new Error("请先登录");
+	}
+	const res = await apiJson<{ ok: boolean; data?: MatchHistoryDetail; message?: string }>(
+		`/api/match/history/${runId}`,
+		{
+			method: "GET",
+			headers: { Authorization: `Bearer ${token}` },
+		},
+	);
+	if (!res.ok || !res.data) {
+		throw new Error(res.message || "加载匹配记录失败");
+	}
+	return res.data;
+}

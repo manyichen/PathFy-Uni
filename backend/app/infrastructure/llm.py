@@ -9,6 +9,8 @@ from typing import Any
 from flask import current_app
 from openai import OpenAI
 
+from app.infrastructure.privacy import llm_privacy_notice, privacy_mode_enabled, redact_payload
+
 
 def strip_json_fence(text: str) -> str:
     """从模型输出中剥离 ```json ... ``` 围栏，返回可 parse 的 JSON 字符串。"""
@@ -49,12 +51,17 @@ def call_ark_json(
         return None
 
     model = current_app.config.get("ARK_MODEL", "doubao-seed-2-0-mini-260215")
+    sys_content = system_prompt
+    notice = llm_privacy_notice()
+    if notice:
+        sys_content = f"{sys_content}\n{notice}"
+    safe_payload = redact_payload(payload) if privacy_mode_enabled() else payload
     try:
         resp = client.chat.completions.create(
             model=model,
             messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": json.dumps(payload, ensure_ascii=False)},
+                {"role": "system", "content": sys_content},
+                {"role": "user", "content": json.dumps(safe_payload, ensure_ascii=False)},
             ],
             temperature=temperature,
             stream=False,

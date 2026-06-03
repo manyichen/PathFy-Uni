@@ -10,8 +10,9 @@ from flask import current_app
 
 from app.infrastructure.llm import strip_json_fence
 from app.infrastructure.neo4j import neo4j_driver, neo4j_settings, serialize_job_row
-from app.domains.report.constants import DIM_LABELS
-from app.domains.report.helpers import _truthy
+from app.domains.report.llm import _call_openai_compatible
+from app.infrastructure.privacy import redact_payload
+from app.domains.report.utils import truthy
 
 def _build_trend_for_job(job: Dict[str, Any]) -> Dict[str, Any]:
     score_avg = float(job.get("score_avg") or 0)
@@ -143,7 +144,7 @@ def _clamp_0_100(v: Any, default: float) -> float:
 
 def _augment_trends_with_deepseek(target_insights: List[Dict[str, Any]]) -> Dict[str, Any]:
     cfg = current_app.config
-    if not _truthy(cfg.get("CAREER_ENABLE_TREND_AUGMENT", True)):
+    if not truthy(cfg.get("CAREER_ENABLE_TREND_AUGMENT", True)):
         return {"ok": False, "reason": "CAREER_ENABLE_TREND_AUGMENT disabled"}
     api_key = str(cfg.get("DEEPSEEK_API_KEY") or "").strip()
     if not api_key:
@@ -169,7 +170,7 @@ def _augment_trends_with_deepseek(target_insights: List[Dict[str, Any]]) -> Dict
         "仅输出 JSON 对象，格式：{\"items\":[{\"job_id\":\"...\",\"demand_index_0_100\":0-100,"
         "\"growth_signal_0_100\":0-100,\"volatility_0_100\":0-100,\"analysis_text\":\"一句中文解释<=40字\"}]}"
         "。禁止输出 Markdown。\n"
-        f"{json.dumps(payload, ensure_ascii=False)}"
+        f"{json.dumps(redact_payload(payload), ensure_ascii=False)}"
     )
     system_prompt = "你是职业趋势分析顾问，擅长根据岗位信息给出需求、增长、波动的相对判断。"
     model = str(cfg.get("CAREER_DEEPSEEK_MODEL") or "deepseek-chat")

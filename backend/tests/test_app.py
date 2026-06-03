@@ -16,6 +16,8 @@ def test_health(client):
     body = res.get_json()
     assert body["ok"] is True
     assert "message" in body
+    assert res.headers.get("Cache-Control") == "no-store, max-age=0"
+    assert res.headers.get("X-Content-Type-Options") == "nosniff"
 
 
 def test_index_lists_routes(client):

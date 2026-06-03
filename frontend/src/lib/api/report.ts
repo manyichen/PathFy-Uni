@@ -14,17 +14,15 @@ export type ReportTargetItem = {
 };
 
 export type ImportTargetsRequest = {
-	resume_id: number;
-	q?: string;
-	location_q?: string;
-	match_goal?: "fit" | "stretch";
-	refine_with_llm?: boolean;
+	/** 人岗匹配历史记录 id（match_runs.id）；画像由记录自动带出 */
+	run_id: number;
 	limit?: number;
 };
 
 export type ImportTargetsResponse = {
 	ok: boolean;
 	data?: {
+		run_id: number;
 		resume_id: number;
 		match_goal: "fit" | "stretch";
 		source: string;
@@ -44,6 +42,20 @@ export type ManualSearchTargetsResponse = {
 	data?: {
 		targets: ReportTargetItem[];
 		count: number;
+	};
+	message?: string;
+};
+
+export type RandomBrowseTargetsResponse = {
+	ok: boolean;
+	data?: {
+		seed: string;
+		targets: ReportTargetItem[];
+		count: number;
+		total: number;
+		page: number;
+		page_size: number;
+		total_pages: number;
 	};
 	message?: string;
 };
@@ -279,6 +291,7 @@ export type CareerReportHistoryItem = {
 	resume_id: number;
 	primary_job_id?: string;
 	target_job_ids: string[];
+	target_titles?: string[];
 	created_at: string;
 	updated_at: string;
 };
@@ -331,7 +344,7 @@ export async function importTargetsFromMatch(
 		body: JSON.stringify(body),
 	});
 	if (!res.ok || !res.data) {
-		throw new Error(res.message || "导入智能推荐失败");
+		throw new Error(res.message || "导入匹配数据失败");
 	}
 	return res.data;
 }
@@ -346,6 +359,32 @@ export async function manualSearchTargets(
 	});
 	if (!res.ok || !res.data) {
 		throw new Error(res.message || "手动搜索目标职业失败");
+	}
+	return res.data;
+}
+
+export async function fetchRandomBrowseTargets(params: {
+	seed: string;
+	page?: number;
+	page_size?: number;
+}): Promise<NonNullable<RandomBrowseTargetsResponse["data"]>> {
+	const seed = params.seed.trim();
+	const page = Math.max(1, params.page ?? 1);
+	const pageSize = Math.max(1, Math.min(50, params.page_size ?? 20));
+	const qs = new URLSearchParams({
+		seed,
+		page: String(page),
+		page_size: String(pageSize),
+	});
+	const res = await apiJson<RandomBrowseTargetsResponse>(
+		`/api/report/targets/random-browse?${qs.toString()}`,
+		{
+			method: "GET",
+			headers: withAuthHeaders(),
+		},
+	);
+	if (!res.ok || !res.data) {
+		throw new Error(res.message || "加载随机岗位失败");
 	}
 	return res.data;
 }

@@ -11,8 +11,14 @@ from flask import current_app
 from openai import OpenAI
 
 from app.infrastructure.llm import strip_json_fence
-from app.domains.report.constants import DIM_LABELS, MID_TERM_ACTIONS, SHORT_TERM_ACTIONS
-from app.domains.report.helpers import _json_dumps, _parse_metric_target, _to_float, _truthy
+from app.infrastructure.privacy import redact_payload, redact_text
+from app.domains.report.constants import DIM_LABELS, SHORT_TERM_ACTIONS
+from app.domains.report.growth import (
+    _execution_hints_for_replan_action,
+    _review_point_progress,
+)
+from app.domains.report.llm import _call_openai_compatible
+from app.domains.report.utils import parse_metric_target, to_float
 
 def _evaluate_review_metrics(
     expected_metrics: List[Dict[str, Any]],
@@ -25,8 +31,8 @@ def _evaluate_review_metrics(
         code = str(m.get("code") or "").strip()
         if not code:
             continue
-        target = _parse_metric_target(str(m.get("target") or "0"))
-        actual = _to_float(submitted.get(code), float("nan"))
+        target = parse_metric_target(str(m.get("target") or "0"))
+        actual = to_float(submitted.get(code), float("nan"))
         if actual != actual:  # nan
             passed = False
             actual = 0.0
@@ -74,15 +80,15 @@ def _numeric_hints_from_review_text(review_text: str) -> Dict[str, Any]:
     text = str(review_text or "")
     pcts: List[float] = []
     for m in re.finditer(r"(\d+(?:\.\d+)?)\s*%", text):
-        pcts.append(_to_float(m.group(1), 0.0))
+        pcts.append(to_float(m.group(1), 0.0))
     points: List[float] = []
     for m in re.finditer(r"(\d+(?:\.\d+)?)\s*分", text):
-        points.append(_to_float(m.group(1), 0.0))
+        points.append(to_float(m.group(1), 0.0))
     for m in re.finditer(r"(?:提高|提升|增加|上涨|多了|少|降低|减少)\s*(\d+(?:\.\d+)?)\s*分", text):
-        points.append(_to_float(m.group(1), 0.0))
+        points.append(to_float(m.group(1), 0.0))
     item_counts: List[int] = []
     for m in re.finditer(r"(\d+)\s*(?:项|个|条|件)(?:成果|作品|产出|项目)?", text):
-        item_counts.append(int(_to_float(m.group(1), 0.0)))
+        item_counts.append(int(to_float(m.group(1), 0.0)))
     # 「八成」「七成五」等口语
     cn_frac = {
         "十成": 100.0,
@@ -113,7 +119,7 @@ def _heuristic_extract_metrics_from_text(review_text: str) -> Dict[str, float]:
         for p in patterns:
             m = re.search(p, text, re.IGNORECASE)
             if m:
-                return _to_float(m.group(1), default)
+                return to_float(m.group(1), default)
         return default
 
     return {
@@ -156,10 +162,14 @@ def _llm_extract_metrics_from_text(
             )
 
     numeric_hints = _numeric_hints_from_review_text(review_text)
+    safe_review_text = redact_text(
+        review_text,
+        max_chars=int(cfg.get("LLM_MAX_TEXT_CHARS") or 4000),
+    )
     prompt_obj = {
         "task": "extract_review_metrics_from_natural_language",
         "review_cycle": review_cycle,
-        "review_text": review_text,
+        "review_text": safe_review_text,
         "numeric_hints_from_text": numeric_hints,
         "metrics_schema": metrics_brief,
         "rules": [
@@ -180,7 +190,7 @@ def _llm_extract_metrics_from_text(
     user_prompt = (
         "你是职业发展评估助手。请从自然语言复盘中提取关键指标并量化。"
         "仅输出 JSON 对象，禁止 markdown。\n"
-        f"{json.dumps(prompt_obj, ensure_ascii=False)}"
+        f"{json.dumps(redact_payload(prompt_obj), ensure_ascii=False)}"
     )
     model = str(cfg.get("CAREER_DEEPSEEK_MODEL") or "deepseek-chat")
     timeout = float(cfg.get("CAREER_LLM_TIMEOUT_SECONDS") or 120.0)
@@ -203,14 +213,14 @@ def _llm_extract_metrics_from_text(
         if not isinstance(parsed, dict):
             raise RuntimeError("llm_root_not_object")
         metrics = {
-            "dim_gap_reduction": _to_float(parsed.get("dim_gap_reduction"), 0.0),
-            "project_completion": _to_float(parsed.get("project_completion"), 0.0),
-            "match_score_change": _to_float(parsed.get("match_score_change"), 0.0),
-            "delivery_output": _to_float(parsed.get("delivery_output"), 0.0),
+            "dim_gap_reduction": to_float(parsed.get("dim_gap_reduction"), 0.0),
+            "project_completion": to_float(parsed.get("project_completion"), 0.0),
+            "match_score_change": to_float(parsed.get("match_score_change"), 0.0),
+            "delivery_output": to_float(parsed.get("delivery_output"), 0.0),
         }
         metrics["delivery_output"] = max(0.0, round(metrics.get("delivery_output", 0.0)))
         for k in ("dim_gap_reduction", "project_completion", "match_score_change"):
-            metrics[k] = round(_to_float(metrics.get(k), 0.0), 2)
+            metrics[k] = round(to_float(metrics.get(k), 0.0), 2)
         summary = str(parsed.get("summary") or "").strip()[:120]
         return {
             "ok": True,
@@ -235,7 +245,7 @@ def _build_auto_adjustment(report_obj: Dict[str, Any], failed_codes: List[str]) 
     for t in targets:
         gaps = ((t or {}).get("match_preview") or {}).get("dimension_gaps") or {}
         for k, v in gaps.items():
-            gap_counter[str(k)] += _to_float(v, 0.0)
+            gap_counter[str(k)] += to_float(v, 0.0)
     top_dims = sorted(gap_counter.keys(), key=lambda x: gap_counter[x], reverse=True)[:2]
     if not top_dims:
         top_dims = ["cap_req_growth", "cap_req_practice"]
@@ -300,9 +310,8 @@ def _llm_auto_replan_payload(
         return {"ok": False, "error": "CAREER_ENABLE_REPLAN_LLM disabled"}
 
     cfg = current_app.config
-    provider = str(cfg.get("CAREER_PRIMARY_PROVIDER") or "deepseek").strip().lower()
     timeout = float(cfg.get("CAREER_LLM_TIMEOUT_SECONDS") or 120.0)
-    secondary = str(cfg.get("CAREER_SECONDARY_PROVIDER") or "").strip().lower()
+    model = str(cfg.get("CAREER_DEEPSEEK_MODEL") or "deepseek-chat")
 
     eval_block = (report_obj.get("evaluation") or {})
     metric_defs = eval_block.get("metrics") if isinstance(eval_block, dict) else []
@@ -358,62 +367,21 @@ def _llm_auto_replan_payload(
         "只输出 JSON 对象，不要输出 markdown。"
         "键必须仅包含 focus_dimensions(数组, 1-2个cap_req_*), focus_labels(数组), extra_actions(数组, 1-3条中文可执行动作)。"
     )
-    user_prompt = json.dumps(user_payload, ensure_ascii=False)
+    user_prompt = json.dumps(redact_payload(user_payload), ensure_ascii=False)
 
-    def _try_provider(p: str) -> Dict[str, Any]:
-        if p == "deepseek":
-            api_key = str(cfg.get("DEEPSEEK_API_KEY") or "").strip()
-            if not api_key:
-                return {"ok": False, "error": "missing DEEPSEEK_API_KEY"}
-            text = _call_openai_compatible(
-                api_key=api_key,
-                base_url="https://api.deepseek.com",
-                model=str(cfg.get("CAREER_DEEPSEEK_MODEL") or "deepseek-chat"),
-                timeout=timeout,
-                system_prompt=system_prompt,
-                user_prompt=user_prompt,
-            )
-            return _parse_replan_json(text, provider="deepseek", model=str(cfg.get("CAREER_DEEPSEEK_MODEL") or "deepseek-chat"))
-        if p == "qwen":
-            api_key = str(cfg.get("DASHSCOPE_API_KEY") or "").strip()
-            if not api_key:
-                return {"ok": False, "error": "missing DASHSCOPE_API_KEY"}
-            text = _call_qwen_text(
-                api_key=api_key,
-                model=str(cfg.get("CAREER_QWEN_MODEL") or "qwen-plus"),
-                user_prompt=user_prompt,
-                timeout=timeout,
-            )
-            return _parse_replan_json(text, provider="qwen", model=str(cfg.get("CAREER_QWEN_MODEL") or "qwen-plus"))
-        # 豆包
-        api_key = str(cfg.get("ARK_API_KEY") or "").strip()
+    try:
+        api_key = str(cfg.get("DEEPSEEK_API_KEY") or "").strip()
         if not api_key:
-            return {"ok": False, "error": "missing ARK_API_KEY"}
+            return {"ok": False, "error": "missing DEEPSEEK_API_KEY"}
         text = _call_openai_compatible(
             api_key=api_key,
-            base_url=str(cfg.get("ARK_BASE_URL") or "https://ark.cn-beijing.volces.com/api/v3"),
-            model=str(cfg.get("CAREER_ARK_MODEL") or cfg.get("ARK_MODEL") or "doubao-seed-2-0-lite-260215"),
+            base_url="https://api.deepseek.com",
+            model=model,
             timeout=timeout,
             system_prompt=system_prompt,
             user_prompt=user_prompt,
         )
-        return _parse_replan_json(
-            text,
-            provider="doubao",
-            model=str(cfg.get("CAREER_ARK_MODEL") or cfg.get("ARK_MODEL") or "doubao-seed-2-0-lite-260215"),
-        )
-
-    try:
-        first = _try_provider(provider)
-        if first.get("ok"):
-            return first
-        if secondary and secondary != provider:
-            second = _try_provider(secondary)
-            if second.get("ok"):
-                second["error"] = first.get("error")
-                return second
-            return {"ok": False, "error": f"primary:{first.get('error')};secondary:{second.get('error')}"}
-        return first
+        return _parse_replan_json(text, provider="deepseek", model=model)
     except Exception as exc:  # noqa: BLE001
         return {"ok": False, "error": str(exc)}
 

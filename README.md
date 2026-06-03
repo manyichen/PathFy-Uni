@@ -21,6 +21,7 @@
 | [`docs/smoke-test.md`](./docs/smoke-test.md) | 发布或合并前手动冒烟清单 |
 | [`docs/API_CONTRACT.md`](./docs/API_CONTRACT.md) | API 双包络响应契约 |
 | [`docs/auth-audit.md`](./docs/auth-audit.md) | 接口鉴权审计清单 |
+| [`docs/privacy-security.md`](./docs/privacy-security.md) | 隐私与安全加固变更说明 |
 | [`paper-brief/`](./paper-brief/) | 论文/研究背景材料（非运行依赖） |
 
 ---

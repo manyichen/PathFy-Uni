@@ -8,6 +8,10 @@ load_dotenv()
 _BACKEND_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 
 
+def _env_bool(name: str, default: str = "false") -> bool:
+    return str(os.getenv(name, default)).strip().lower() in ("1", "true", "yes", "on")
+
+
 class Config:
     SECRET_KEY = os.getenv("SECRET_KEY", "dev-secret")
     TOKEN_EXPIRES_HOURS = int(os.getenv("TOKEN_EXPIRES_HOURS", "24"))
@@ -29,6 +33,19 @@ class Config:
     AI_MAX_RETURN_JOBS = int(os.getenv("AI_MAX_RETURN_JOBS", "40"))
     AI_CONTEXT_WINDOW = int(os.getenv("AI_CONTEXT_WINDOW", "6"))
     AI_LLM_TIMEOUT_SECONDS = int(os.getenv("AI_LLM_TIMEOUT_SECONDS", "90"))
+
+    # 外发 LLM / 本地存储隐私（见 app/infrastructure/privacy.py）
+    LLM_PRIVACY_MODE = _env_bool("LLM_PRIVACY_MODE", "true")
+    LLM_MAX_TEXT_CHARS = int(os.getenv("LLM_MAX_TEXT_CHARS", "4000"))
+    LLM_MAX_RESUME_CHARS = int(os.getenv("LLM_MAX_RESUME_CHARS", "6000"))
+    LLM_MAX_FIELD_CHARS = int(os.getenv("LLM_MAX_FIELD_CHARS", "1200"))
+    LLM_STORE_RAW_SNIPPETS = _env_bool("LLM_STORE_RAW_SNIPPETS", "false")
+    LOCAL_STORE_RAW_RESUME_TEXT = _env_bool("LOCAL_STORE_RAW_RESUME_TEXT", "false")
+    LOCAL_STORE_RAW_REVIEW_TEXT = _env_bool("LOCAL_STORE_RAW_REVIEW_TEXT", "false")
+    LOCAL_STORE_RAW_CHAT_MESSAGES = _env_bool("LOCAL_STORE_RAW_CHAT_MESSAGES", "false")
+    LOCAL_MAX_STORED_TEXT_CHARS = int(os.getenv("LOCAL_MAX_STORED_TEXT_CHARS", "4000"))
+    DELETE_UPLOADED_RESUME_AFTER_OCR = _env_bool("DELETE_UPLOADED_RESUME_AFTER_OCR", "true")
+    API_CACHE_NO_STORE = _env_bool("API_CACHE_NO_STORE", "true")
 
     FRONTEND_ORIGIN = os.getenv("FRONTEND_ORIGIN", "http://localhost:4321")
     MAX_UPLOAD_MB = int(os.getenv("MAX_UPLOAD_MB", "10"))
@@ -57,11 +74,7 @@ class Config:
     MATCH_DEEPSEEK_MODEL = os.getenv("MATCH_DEEPSEEK_MODEL", "deepseek-chat")
     MATCH_LLM_TIMEOUT_SECONDS = float(os.getenv("MATCH_LLM_TIMEOUT_SECONDS", "120"))
 
-    CAREER_PRIMARY_PROVIDER = os.getenv("CAREER_PRIMARY_PROVIDER", "deepseek")
-    CAREER_SECONDARY_PROVIDER = os.getenv("CAREER_SECONDARY_PROVIDER", "qwen")
-    CAREER_COPYWRITER_PROVIDER = os.getenv("CAREER_COPYWRITER_PROVIDER", "doubao")
     CAREER_DEEPSEEK_MODEL = os.getenv("CAREER_DEEPSEEK_MODEL", "deepseek-chat")
-    CAREER_QWEN_MODEL = os.getenv("CAREER_QWEN_MODEL", "qwen-plus")
     CAREER_ARK_MODEL = os.getenv("CAREER_ARK_MODEL", "doubao-seed-2-0-lite-260215")
     CAREER_LLM_TIMEOUT_SECONDS = float(os.getenv("CAREER_LLM_TIMEOUT_SECONDS", "120"))
     CAREER_LLM_MAX_RETRIES = int(os.getenv("CAREER_LLM_MAX_RETRIES", "2"))

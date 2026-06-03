@@ -8,12 +8,15 @@
 		fetchMyResumes,
 		postMatchPreview,
 		type LlmTop5Item,
+		type MatchHistoryDetail,
 		type MatchLlmBlock,
+		type MatchPreviewData,
 		type MatchPreviewJob,
 		type MatchStudentPayload,
 		type MyResumeSummary,
 	} from "@/lib/api/match";
 	import { emptyCapabilityScores } from "@/lib/radar-geometry";
+	import MatchHistoryModal from "./MatchHistoryModal.svelte";
 	import StudentCapabilityRadar from "./StudentCapabilityRadar.svelte";
 	import MatchPairRadar from "./MatchPairRadar.svelte";
 
@@ -26,7 +29,6 @@
 	let locationQ = $state("");
 	/** fit=匹配适合岗位；stretch=冲刺高质岗位（粗排/精排策略不同） */
 	let matchGoal = $state<"fit" | "stretch">("fit");
-	let refineLlm = $state(true);
 
 	let loading = $state(false);
 	let runError = $state("");
@@ -40,6 +42,9 @@
 		llm_pool_size?: number;
 	} | null>(null);
 	let llmBlock = $state<MatchLlmBlock | null>(null);
+
+	let historyModalOpen = $state(false);
+	let historyInfo = $state("");
 
 	let jobDetailOpen = $state(false);
 	let jobDetailLoading = $state(false);
@@ -81,7 +86,7 @@
 		if (selectedResumeId !== "" && myResumes.length) {
 			const id = Number(selectedResumeId);
 			const r = myResumes.find((x) => x.id === id);
-			if (r) return `#${r.id} ${r.name} · ${r.major}（均分 ${r.score_avg}）`;
+			if (r) return `${r.name} · ${r.major}（均分 ${r.score_avg}）`;
 		}
 		return "请选择上方画像记录";
 	});
@@ -106,6 +111,39 @@
 		}
 	});
 
+	function applyMatchPreviewData(data: MatchPreviewData, resumeIdOverride?: number): void {
+		resultStudent = data.student;
+		resultJobs = data.jobs || [];
+		const st = data.stats;
+		resultStats = st
+			? {
+					scanned: st.scanned,
+					returned: st.returned,
+					match_top_k_return: st.match_top_k_return,
+					match_llm_pool_k: st.match_llm_pool_k,
+					llm_pool_size: st.llm_pool_size,
+				}
+			: null;
+		llmBlock = data.llm ?? null;
+		q = data.filters?.q ?? "";
+		locationQ = data.filters?.location_q ?? "";
+		matchGoal = data.filters?.match_goal === "stretch" ? "stretch" : "fit";
+		if (resumeIdOverride !== undefined && myResumes.some((x) => x.id === resumeIdOverride)) {
+			selectedResumeId = resumeIdOverride;
+		}
+		persistMatchState();
+	}
+
+	function handleHistoryLoad(detail: MatchHistoryDetail): void {
+		runError = "";
+		const ts = detail.created_at?.replace("T", " ").slice(0, 19) || "历史";
+		const resumeOk = myResumes.some((x) => x.id === detail.resume_id);
+		historyInfo = resumeOk
+			? `已加载 ${ts} 的匹配结果。`
+			: `已加载 ${ts} 的匹配结果（原画像记录已不可用，仅恢复匹配内容与列表）。`;
+		applyMatchPreviewData(detail, resumeOk ? detail.resume_id : undefined);
+	}
+
 	async function runMatch() {
 		if (!getToken()) {
 			runError = "使用能力画像请先登录。";
@@ -116,6 +154,7 @@
 			return;
 		}
 		runError = "";
+		historyInfo = "";
 		loading = true;
 		resultStudent = null;
 		resultJobs = [];
@@ -125,27 +164,14 @@
 			const base = {
 				q: q.trim(),
 				location_q: locationQ.trim(),
-				refine_with_llm: refineLlm,
+				refine_with_llm: true,
 				match_goal: matchGoal,
 			};
 			const data = await postMatchPreview({
 				...base,
 				resume_id: Number(selectedResumeId),
 			});
-			resultStudent = data.student;
-			resultJobs = data.jobs || [];
-			const st = data.stats;
-			resultStats = st
-				? {
-						scanned: st.scanned,
-						returned: st.returned,
-						match_top_k_return: st.match_top_k_return,
-						match_llm_pool_k: st.match_llm_pool_k,
-						llm_pool_size: st.llm_pool_size,
-					}
-				: null;
-			llmBlock = data.llm ?? null;
-			persistMatchState();
+			applyMatchPreviewData(data, Number(selectedResumeId));
 		} catch (e) {
 			runError = e instanceof Error ? e.message : "请求失败";
 		} finally {
@@ -185,7 +211,6 @@
 		q: string;
 		locationQ: string;
 		matchGoal?: "fit" | "stretch";
-		refineLlm: boolean;
 		sourceMode?: "resume" | "mock";
 		selectedResumeId: number | "";
 		selectedMockId?: string;
@@ -206,7 +231,6 @@
 		q: string;
 		locationQ: string;
 		matchGoal?: "fit" | "stretch";
-		refineLlm: boolean;
 		selectedResumeId: number | "";
 	};
 
@@ -227,7 +251,6 @@
 				q,
 				locationQ,
 				matchGoal,
-				refineLlm,
 				selectedResumeId,
 			};
 			localStorage.setItem(matchStateStorageKey(), JSON.stringify(payload));
@@ -261,7 +284,6 @@
 			q = o.q ?? "";
 			locationQ = o.locationQ ?? "";
 			matchGoal = o.matchGoal === "stretch" ? "stretch" : "fit";
-			refineLlm = typeof o.refineLlm === "boolean" ? o.refineLlm : true;
 			selectedResumeId = o.selectedResumeId;
 			return true;
 		} catch {
@@ -294,7 +316,7 @@
 				>
 					{#each myResumes as r (r.id)}
 						<option value={r.id}>
-							#{r.id} {r.name} · {r.major}（均分 {r.score_avg}）
+							{r.name} · {r.major}（均分 {r.score_avg}）
 						</option>
 					{/each}
 				</select>
@@ -338,10 +360,6 @@
 		</div>
 
 		<div class="mt-4 flex flex-wrap items-center gap-4">
-			<label class="flex cursor-pointer items-center gap-2 text-sm text-75">
-				<input type="checkbox" bind:checked={refineLlm} class="accent-[var(--primary)]" />
-				开启智能精排与匹配说明（推荐）
-			</label>
 			<button
 				type="button"
 				class="rounded-xl bg-[var(--primary)] px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:opacity-90 disabled:opacity-50"
@@ -349,6 +367,16 @@
 				onclick={() => void runMatch()}
 			>
 				{loading ? "匹配中…" : "开始匹配"}
+			</button>
+			<button
+				type="button"
+				class="rounded-xl border border-black/15 bg-[var(--btn-regular-bg)] px-5 py-2.5 text-sm font-medium text-black transition hover:opacity-90 disabled:opacity-50 dark:border-white/20 dark:text-white"
+				disabled={!getToken()}
+				onclick={() => {
+					historyModalOpen = true;
+				}}
+			>
+				加载历史匹配
 			</button>
 			<a
 				href={url("/jobs")}
@@ -360,6 +388,9 @@
 
 			{#if runError}
 				<p class="mt-3 text-sm text-red-600 dark:text-red-400">{runError}</p>
+			{/if}
+			{#if historyInfo}
+				<p class="mt-3 text-sm text-[var(--primary)]">{historyInfo}</p>
 			{/if}
 		</div>
 
@@ -527,7 +558,7 @@
 				</div>
 			{:else}
 				<p class="text-sm text-amber-800 dark:text-amber-200">
-					{llmBlock.error || "暂未获得智能推荐结果，请稍后重试或关闭「智能精排」仅查看列表匹配。"}
+					{llmBlock.error || "暂未获得智能推荐结果，请稍后重试。"}
 				</p>
 			{/if}
 		</div>
@@ -597,6 +628,14 @@
 		error={jobDetailError}
 		detail={jobDetailData}
 		onClose={closeJobDetail}
+	/>
+
+	<MatchHistoryModal
+		open={historyModalOpen}
+		onClose={() => {
+			historyModalOpen = false;
+		}}
+		onLoad={handleHistoryLoad}
 	/>
 </div>
 

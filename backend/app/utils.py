@@ -8,6 +8,7 @@ from pyecharts.charts import Radar
 from app.core.config import Config
 from app.infrastructure.neo4j import CONF_KEYS, DIM_KEYS
 from app.infrastructure.ocr import ocr_image, pdf_to_image
+from app.infrastructure.privacy import llm_privacy_notice, redact_text
 
 __all__ = ["ocr_image", "pdf_to_image", "score_resume", "create_radar_chart"]
 
@@ -50,6 +51,13 @@ def score_resume(resume_text: str) -> Tuple[Dict[str, int], Dict[str, float]]:
         "Content-Type": "application/json",
     }
 
+    safe_resume_text = redact_text(
+        resume_text,
+        max_chars=int(getattr(Config, "LLM_MAX_RESUME_CHARS", 6000)),
+    )
+    privacy_notice = llm_privacy_notice()
+    privacy_block = f"\n{privacy_notice}\n" if privacy_notice else ""
+
     prompt = f"""
 你是专业大学生就业能力评估师。根据简历文本，为 8 个能力维度给出 0–100 的供给分，
 并为每一维给出 0~1 的置信度(cap_conf_*)：表示你在该维上打分的证据充分程度
@@ -70,8 +78,8 @@ cap_conf_theory, cap_conf_cross, cap_conf_practice, cap_conf_digital,
 cap_conf_innovation, cap_conf_teamwork, cap_conf_social, cap_conf_growth
 
 简历内容：
-{resume_text}
-
+{safe_resume_text}
+{privacy_block}
 只输出一个标准 JSON 对象，不要其它文字。格式示例：
 {{
     "cap_req_theory": 72,

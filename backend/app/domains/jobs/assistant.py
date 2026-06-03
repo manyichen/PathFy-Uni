@@ -9,6 +9,7 @@ from app.core.security import get_bearer_user_id
 from app.db import db_cursor
 from app.infrastructure.neo4j import neo4j_driver, neo4j_settings, serialize_job_row
 from app.infrastructure.llm import call_ark_json
+from app.infrastructure.privacy import storage_safe_text
 from app.infrastructure.salary import parse_salary_range, salary_matches_target
 
 jobs_assistant_bp = Blueprint("jobs_assistant", __name__, url_prefix="/api/jobs/assistant")
@@ -703,7 +704,7 @@ def _create_or_load_session(user_id: int, session_id: Optional[int], first_text:
             if row:
                 return int(row["id"])
 
-        title = (first_text.strip() or "新对话")[:40]
+        title = storage_safe_text(first_text.strip() or "新对话", kind="chat", max_chars=40)
         cursor.execute(
             """
             INSERT INTO ai_chat_sessions (user_id, title, last_message_at)
@@ -742,7 +743,7 @@ def chat():
             INSERT INTO ai_chat_messages (session_id, role, content, created_at)
             VALUES (%s, 'user', %s, NOW())
             """,
-            (session_id, message),
+            (session_id, storage_safe_text(message, kind="chat", max_chars=2000)),
         )
         user_message_id = int(cursor.lastrowid)
 
@@ -784,7 +785,7 @@ def chat():
             """,
             (
                 session_id,
-                answer_text,
+                storage_safe_text(answer_text, kind="chat", max_chars=4000),
                 json.dumps(merged_filters, ensure_ascii=False),
                 json.dumps(result_ids, ensure_ascii=False),
             ),
@@ -842,6 +843,8 @@ def list_sessions():
             (user_id,),
         )
         rows = cursor.fetchall()
+    for row in rows:
+        row["title"] = storage_safe_text(row.get("title") or "", kind="chat", max_chars=40)
     return jsonify({"ok": True, "data": {"sessions": rows}})
 
 
@@ -875,6 +878,10 @@ def session_detail(session_id: int):
             (session_id,),
         )
         messages = cursor.fetchall()
+
+    session_row["title"] = storage_safe_text(session_row.get("title") or "", kind="chat", max_chars=40)
+    for row in messages:
+        row["content"] = storage_safe_text(row.get("content") or "", kind="chat", max_chars=4000)
 
     latest_ids: List[str] = []
     latest_filters: Dict[str, Any] = {}

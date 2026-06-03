@@ -1,16 +1,20 @@
 <script lang="ts">
 	import { onMount } from "svelte";
-	import { fetchMyResumes, type MyResumeSummary } from "@/lib/api/match";
 	import {
-		fetchCareerReportDetail,
-		fetchMyCareerReports,
+		fetchMyResumes,
+		type MatchHistoryDetail,
+		type MyResumeSummary,
+	} from "@/lib/api/match";
+	import MatchHistoryModal from "@components/match/MatchHistoryModal.svelte";
+	import ManualTargetSearchModal from "@components/report/ManualTargetSearchModal.svelte";
+	import ReportHistoryModal from "@components/report/ReportHistoryModal.svelte";
+	import {
 		fetchReportReviews,
 		exportCareerReportPdf,
 		generateCareerReport,
 		importTargetsFromMatch,
-		manualSearchTargets,
+		type CareerReportGenerateResponse,
 		type CareerReportPayload,
-		type CareerReportHistoryItem,
 		type ReportReviewItem,
 		type ReportTargetItem,
 		type TimelinePoint,
@@ -63,23 +67,18 @@
 
 	let resumes = $state<MyResumeSummary[]>([]);
 	let selectedResumeId = $state<number | "">("");
-	let matchGoal = $state<"fit" | "stretch">("fit");
+	let matchImportModalOpen = $state(false);
+	let reportHistoryModalOpen = $state(false);
+	let manualSearchModalOpen = $state(false);
 	let loadingImport = $state(false);
-	let loadingSearch = $state(false);
 	let loadingGenerate = $state(false);
 	let error = $state("");
 	let info = $state("");
 
-	let searchQ = $state("");
-	let searchLocation = $state("");
-
 	let selectedTargets = $state<ReportTargetItem[]>([]);
-	let searchedTargets = $state<ReportTargetItem[]>([]);
 	let generatedReportId = $state<number | null>(null);
 	let generatedReport = $state<CareerReportPayload | null>(null);
-	let reportHistory = $state<CareerReportHistoryItem[]>([]);
 	let reviewHistory = $state<ReportReviewItem[]>([]);
-	let selectedHistoryReportId = $state<number | "">("");
 	let focusLineId = $state("");
 	let selectedAdjustmentId = $state("");
 	let highlightedMetricCode = $state("");
@@ -383,10 +382,6 @@ function metricDisplayLabel(metric: { code?: string; label?: string }): string {
 		if (resumes.length) {
 			selectedResumeId = resumes[0].id;
 		}
-		reportHistory = await fetchMyCareerReports(20).catch(() => []);
-		if (reportHistory.length) {
-			selectedHistoryReportId = reportHistory[0].report_id;
-		}
 	});
 
 	async function loadReviewsForReport(reportId: number): Promise<void> {
@@ -447,50 +442,35 @@ function metricDisplayLabel(metric: { code?: string; label?: string }): string {
 		}
 	}
 
-	async function importSmartTargets(): Promise<void> {
-		if (selectedResumeId === "") {
-			error = "请先选择画像记录。";
-			return;
-		}
+	function matchGoalRemark(goal: string): string {
+		return goal === "stretch" ? "用于冲刺" : "匹配合适";
+	}
+
+	async function handleMatchImportSelect(detail: MatchHistoryDetail): Promise<void> {
 		error = "";
 		info = "";
 		loadingImport = true;
 		try {
 			const data = await importTargetsFromMatch({
-				resume_id: Number(selectedResumeId),
-				match_goal: matchGoal,
-				refine_with_llm: true,
+				run_id: detail.run_id,
 				limit: 5,
 			});
 			selectedTargets = (data?.targets || []).slice(0, 5);
-			info = `已导入 ${selectedTargets.length} 个智能推荐目标（来源：${data?.source || "unknown"}）。`;
+			const rid = data?.resume_id;
+			if (rid && resumes.some((x) => x.id === rid)) {
+				selectedResumeId = rid;
+			} else if (rid) {
+				error = "匹配记录关联的画像已不可用，请改用手动导入选择其他画像。";
+			}
+			const ts = detail.created_at?.replace("T", " ").slice(0, 19) || "";
+			const student = detail.student?.display_name || "该画像";
+			if (!error) {
+				info = `已从 ${ts} 的匹配记录导入 ${selectedTargets.length} 个目标（${student} · ${matchGoalRemark(data?.match_goal || "fit")}）。`;
+			}
 		} catch (e) {
-			error = e instanceof Error ? e.message : "导入智能推荐失败";
+			error = e instanceof Error ? e.message : "导入匹配数据失败";
 		} finally {
 			loadingImport = false;
-		}
-	}
-
-	async function runManualSearch(): Promise<void> {
-		if (!searchQ.trim()) {
-			error = "请输入岗位关键词。";
-			return;
-		}
-		error = "";
-		info = "";
-		loadingSearch = true;
-		try {
-			const data = await manualSearchTargets({
-				q: searchQ.trim(),
-				location_q: searchLocation.trim(),
-				limit: 20,
-			});
-			searchedTargets = data?.targets || [];
-			info = `检索到 ${searchedTargets.length} 个候选岗位。`;
-		} catch (e) {
-			error = e instanceof Error ? e.message : "手动搜索失败";
-		} finally {
-			loadingSearch = false;
 		}
 	}
 
@@ -534,27 +514,22 @@ function metricDisplayLabel(metric: { code?: string; label?: string }): string {
 		}
 	}
 
-	async function loadHistoryReport(): Promise<void> {
-		if (selectedHistoryReportId === "") return;
+	function applyHistoryReportDetail(data: NonNullable<CareerReportGenerateResponse["data"]>): void {
 		error = "";
 		info = "";
-		try {
-			const data = await fetchCareerReportDetail(Number(selectedHistoryReportId));
-			generatedReportId = data?.report_id || null;
-			generatedReport = data?.report || null;
-			selectedTimelineReviewId = null;
-			focusLineId = generatedReport?.development_lines?.lines?.[0]?.line_id || "";
-			const firstAdjH = generatedReport?.development_lines?.adjustments?.find(
-				(a) => a.line_id === focusLineId,
-			);
-			selectedAdjustmentId = firstAdjH?.id || generatedReport?.development_lines?.adjustments?.[0]?.id || "";
-			if (generatedReportId) {
-				await loadReviewsForReport(generatedReportId);
-			}
-			info = generatedReportId ? `已加载历史报告 #${generatedReportId}` : "历史报告加载成功。";
-		} catch (e) {
-			error = e instanceof Error ? e.message : "加载历史报告失败";
+		generatedReportId = data?.report_id || null;
+		generatedReport = data?.report || null;
+		selectedTimelineReviewId = null;
+		focusLineId = generatedReport?.development_lines?.lines?.[0]?.line_id || "";
+		const firstAdjH = generatedReport?.development_lines?.adjustments?.find(
+			(a) => a.line_id === focusLineId,
+		);
+		selectedAdjustmentId = firstAdjH?.id || generatedReport?.development_lines?.adjustments?.[0]?.id || "";
+		if (generatedReportId) {
+			void loadReviewsForReport(generatedReportId);
 		}
+		const title = data?.title?.trim();
+		info = title ? `已加载历史报告「${title}」` : "历史报告加载成功。";
 	}
 
 	async function submitReview(): Promise<void> {
@@ -632,61 +607,67 @@ function metricDisplayLabel(metric: { code?: string; label?: string }): string {
 			<div class="rail-card">
 				<div class="rail-head">
 					<h3>目标职业配置</h3>
-					<p>导入智能推荐或手动选择，最多 5 个目标。</p>
+					<p>智能导入或手动选岗，最多 5 个目标。</p>
 				</div>
 
-				<label class="field">
-					<span>画像记录</span>
-					<select bind:value={selectedResumeId} disabled={!resumes.length}>
-						{#each resumes as r (r.id)}
-							<option value={r.id}>#{r.id} {r.name} · {r.major}</option>
-						{/each}
-					</select>
-				</label>
-
-				<div class="field">
-					<span>模式</span>
-					<div class="mode-switch">
-						<label><input type="radio" name="report-goal" bind:group={matchGoal} value="fit" />适配优先</label>
-						<label><input type="radio" name="report-goal" bind:group={matchGoal} value="stretch" />冲刺优先</label>
+				<div class="config-module">
+					<div class="config-module-head">
+						<h4>1. 智能导入</h4>
+						<p>从人岗匹配云端记录导入 Top5，画像与策略随记录自动关联。</p>
 					</div>
-				</div>
-
-				<div class="actions-row">
-					<button type="button" class="primary" disabled={loadingImport || selectedResumeId === ""} onclick={() => void importSmartTargets()}>
-						{loadingImport ? "导入中..." : "导入 Top5 智能推荐"}
+					<button
+						type="button"
+						class="primary config-module-btn"
+						disabled={loadingImport}
+						onclick={() => {
+							matchImportModalOpen = true;
+						}}
+					>
+						{loadingImport ? "导入中..." : "导入匹配数据"}
 					</button>
 				</div>
 
-				{#if reportHistory.length}
-					<div class="history-box">
-						<select bind:value={selectedHistoryReportId}>
-							{#each reportHistory as h (h.report_id)}
-								<option value={h.report_id}>#{h.report_id} {h.title}</option>
+				<div class="config-module">
+					<div class="config-module-head">
+						<h4>2. 手动导入</h4>
+						<p>选择画像记录，点击「搜索候选」从岗位库挑选并加入列表。</p>
+					</div>
+
+					<label class="field">
+						<span>画像记录</span>
+						<select bind:value={selectedResumeId} disabled={!resumes.length}>
+							{#each resumes as r (r.id)}
+								<option value={r.id}>{r.name} · {r.major}</option>
 							{/each}
 						</select>
-						<button type="button" class="ghost" onclick={() => void loadHistoryReport()}>加载历史报告</button>
-					</div>
-				{/if}
+					</label>
 
-				<div class="search-box">
-					<input type="text" bind:value={searchQ} placeholder="岗位关键词，如：数据分析师" />
-					<input type="text" bind:value={searchLocation} placeholder="地点（可选）" />
-					<button type="button" class="ghost" disabled={loadingSearch} onclick={() => void runManualSearch()}>
-						{loadingSearch ? "搜索中..." : "搜索候选"}
+					<button
+						type="button"
+						class="ghost config-module-btn"
+						onclick={() => {
+							manualSearchModalOpen = true;
+						}}
+					>
+						搜索候选
 					</button>
 				</div>
 
-				{#if searchedTargets.length}
-					<div class="search-list">
-						{#each searchedTargets as t (t.job_id)}
-							<button type="button" class="result-item" onclick={() => upsertTarget(t)}>
-								<span class="result-title">{t.title || t.job_id}</span>
-								<span class="result-sub">{t.company || "未知公司"} · {t.location || "未知地点"}</span>
-							</button>
-						{/each}
+				<div class="config-module">
+					<div class="config-module-head">
+						<h4>历史报告</h4>
+						<p>加载已生成的生涯报告，继续查看画布或提交复盘。</p>
 					</div>
-				{/if}
+					<button
+						type="button"
+						class="ghost config-module-btn"
+						onclick={() => {
+							reportHistoryModalOpen = true;
+						}}
+					>
+						加载历史报告
+					</button>
+				</div>
 
 				<div class="selected-area">
 					<div class="selected-head">
@@ -702,11 +683,11 @@ function metricDisplayLabel(metric: { code?: string; label?: string }): string {
 					{#if selectedTargets.length}
 						{#each selectedTargets as t (t.job_id)}
 							<div class="selected-item">
-								<div class="min-w-0">
-									<p class="truncate">{t.title || t.job_id}</p>
-									<p class="truncate text-xs text-50">{t.company || "未知公司"} · {t.location || "未知地点"}</p>
+								<div class="selected-item-body">
+									<p class="selected-title">{t.title || t.job_id}</p>
+									<p class="selected-sub">{t.company || "未知公司"} · {t.location || "未知地点"}</p>
 								</div>
-								<button type="button" class="text-btn danger" onclick={() => removeTarget(t.job_id)}>移除</button>
+								<button type="button" class="text-btn danger remove-btn" onclick={() => removeTarget(t.job_id)}>移除</button>
 							</div>
 						{/each}
 					{:else}
@@ -1300,6 +1281,36 @@ function metricDisplayLabel(metric: { code?: string; label?: string }): string {
 	{#if info}
 		<p class="msg ok">{info}</p>
 	{/if}
+
+	<MatchHistoryModal
+		open={matchImportModalOpen}
+		modalTitle="选择匹配记录"
+		confirmLabel="导入"
+		emptyHint="暂无匹配记录，请先到「人岗匹配」完成一次匹配。"
+		onClose={() => {
+			matchImportModalOpen = false;
+		}}
+		onLoad={(detail) => void handleMatchImportSelect(detail)}
+	/>
+
+	<ReportHistoryModal
+		open={reportHistoryModalOpen}
+		resumeNames={Object.fromEntries(resumes.map((r) => [r.id, r.name]))}
+		onClose={() => {
+			reportHistoryModalOpen = false;
+		}}
+		onLoad={(detail) => applyHistoryReportDetail(detail)}
+	/>
+
+	<ManualTargetSearchModal
+		open={manualSearchModalOpen}
+		selectedTargets={selectedTargets}
+		onClose={() => {
+			manualSearchModalOpen = false;
+		}}
+		onSelect={(target) => upsertTarget(target)}
+		onRemove={(jobId) => removeTarget(jobId)}
+	/>
 </section>
 
 <style>
@@ -1316,6 +1327,8 @@ function metricDisplayLabel(metric: { code?: string; label?: string }): string {
 	.control-rail {
 		display: grid;
 		gap: 0.9rem;
+		min-width: 0;
+		max-width: 100%;
 	}
 	.rail-card,
 	.m3-card,
@@ -1325,6 +1338,9 @@ function metricDisplayLabel(metric: { code?: string; label?: string }): string {
 		background: color-mix(in oklch, var(--card-bg) 94%, transparent);
 		border-radius: 1rem;
 		padding: 1rem;
+		min-width: 0;
+		max-width: 100%;
+		box-sizing: border-box;
 	}
 	.rail-head h3,
 	.canvas-head h3 {
@@ -1335,6 +1351,32 @@ function metricDisplayLabel(metric: { code?: string; label?: string }): string {
 	.canvas-head p {
 		font-size: 0.78rem;
 		color: color-mix(in oklch, currentColor 55%, transparent);
+	}
+	.config-module {
+		margin-top: 0.85rem;
+		padding: 0.75rem;
+		border-radius: 0.85rem;
+		border: 1px solid color-mix(in oklch, currentColor 10%, transparent);
+		background: color-mix(in oklch, var(--btn-regular-bg) 45%, transparent);
+		min-width: 0;
+		max-width: 100%;
+		box-sizing: border-box;
+	}
+	.config-module-head h4 {
+		font-size: 0.88rem;
+		font-weight: 700;
+	}
+	.config-module-head p {
+		margin-top: 0.25rem;
+		font-size: 0.74rem;
+		color: color-mix(in oklch, currentColor 52%, transparent);
+	}
+	.config-module-btn {
+		margin-top: 0.65rem;
+		width: 100%;
+	}
+	.config-module .field {
+		margin-top: 0.65rem;
 	}
 	.field {
 		margin-top: 0.8rem;
@@ -1379,42 +1421,12 @@ function metricDisplayLabel(metric: { code?: string; label?: string }): string {
 	.ghost {
 		border: 1px solid color-mix(in oklch, currentColor 15%, transparent);
 	}
-	.search-box,
-	.selected-area,
-	.history-box {
+	.selected-area {
 		margin-top: 0.8rem;
 		display: grid;
 		gap: 0.5rem;
-	}
-	.search-list {
-		margin-top: 0.7rem;
-		max-height: 11rem;
-		overflow: auto;
-		display: grid;
-		gap: 0.35rem;
-	}
-	.result-item {
-		text-align: left;
-		padding: 0.55rem 0.6rem;
-		border-radius: 0.7rem;
-		border: 1px solid color-mix(in oklch, currentColor 12%, transparent);
-		background: color-mix(in oklch, var(--btn-regular-bg) 75%, transparent);
-	}
-	.result-title {
-		display: block;
-		font-size: 0.82rem;
-		font-weight: 600;
-		white-space: nowrap;
-		overflow: hidden;
-		text-overflow: ellipsis;
-	}
-	.result-sub {
-		display: block;
-		font-size: 0.73rem;
-		color: color-mix(in oklch, currentColor 55%, transparent);
-		white-space: nowrap;
-		overflow: hidden;
-		text-overflow: ellipsis;
+		min-width: 0;
+		width: 100%;
 	}
 	.selected-head,
 	.selected-item {
@@ -1422,11 +1434,39 @@ function metricDisplayLabel(metric: { code?: string; label?: string }): string {
 		gap: 0.6rem;
 		align-items: center;
 		justify-content: space-between;
+		min-width: 0;
+		width: 100%;
+		box-sizing: border-box;
 	}
 	.selected-item {
 		padding: 0.45rem 0.5rem;
 		border-radius: 0.6rem;
 		background: color-mix(in oklch, var(--btn-regular-bg) 70%, transparent);
+	}
+	.selected-item-body {
+		flex: 1 1 auto;
+		min-width: 0;
+		overflow: hidden;
+	}
+	.selected-title {
+		margin: 0;
+		font-size: 0.82rem;
+		font-weight: 600;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+	.selected-sub {
+		margin: 0.12rem 0 0;
+		font-size: 0.73rem;
+		color: color-mix(in oklch, currentColor 55%, transparent);
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+	.remove-btn {
+		flex: 0 0 auto;
+		white-space: nowrap;
 	}
 	.text-btn {
 		font-size: 0.74rem;

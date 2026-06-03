@@ -9,6 +9,7 @@ from werkzeug.utils import secure_filename
 from app.core.security import assert_self_user_id, get_bearer_user_id
 from app.core.config import Config
 from app.db import db_cursor
+from app.infrastructure.privacy import redact_text, storage_safe_text
 from app.infrastructure.ocr import ocr_image, pdf_to_image
 from app.utils import create_radar_chart, score_resume
 
@@ -26,6 +27,11 @@ def _jsonable_row(row: dict | None) -> dict | None:
             out[k] = float(v)
         else:
             out[k] = v
+    if out.get("resume_text"):
+        out["resume_text"] = redact_text(
+            out["resume_text"],
+            max_chars=int(getattr(Config, "LOCAL_MAX_STORED_TEXT_CHARS", 4000)),
+        )
     return out
 
 def _resume_extension(filename: str) -> str:
@@ -70,6 +76,8 @@ def _cleanup_resume_upload_artifacts(
     file_path: str | None, ocr_path: str | None, *, from_pdf: bool
 ) -> None:
     """OCR 结束后删除磁盘上的简历原文件与 PDF 预览图。"""
+    if not getattr(Config, "DELETE_UPLOADED_RESUME_AFTER_OCR", True):
+        return
     if ocr_path and ocr_path != file_path:
         _discard_path(ocr_path)
     if from_pdf:
@@ -637,6 +645,11 @@ def upload_resume():
         radar_html = create_radar_chart(scores)
 
         detailed_analysis = generate_detailed_analysis(scores, resume_text)
+        stored_resume_text = storage_safe_text(
+            resume_text,
+            kind="resume",
+            max_chars=int(getattr(Config, "LLM_MAX_RESUME_CHARS", 6000)),
+        )
 
         with db_cursor() as (_, cur):
             cur.execute("SHOW COLUMNS FROM student_resume LIKE 'detailed_analysis'")
@@ -650,7 +663,7 @@ def upload_resume():
                 uid,
                 name,
                 major,
-                resume_text,
+                stored_resume_text,
                 scores["cap_req_theory"],
                 scores["cap_req_cross"],
                 scores["cap_req_practice"],

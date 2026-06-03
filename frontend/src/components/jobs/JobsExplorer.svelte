@@ -12,6 +12,7 @@
 		type AssistantSessionItem,
 		type JobCardItem,
 		type JobDetailItem,
+		type JobSortMode,
 	} from "@/lib/api/jobs";
 	import JobDetailDrawer from "./JobDetailDrawer.svelte";
 	import {
@@ -49,6 +50,8 @@
 
 	let loading = $state(true);
 	let q = $state("");
+	let sortMode = $state<JobSortMode>("default");
+	let randomSeed = $state("");
 	let jobs = $state<JobCardItem[]>([]);
 	let errorMessage = $state("");
 	let currentPage = $state(1);
@@ -112,11 +115,38 @@
 		return `${value.toFixed(2)}%`;
 	}
 
+	function newRandomSeed(): string {
+		if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+			return crypto.randomUUID();
+		}
+		return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+	}
+
+	function onSortChange(): void {
+		if (sortMode === "random") {
+			randomSeed = newRandomSeed();
+		} else {
+			randomSeed = "";
+		}
+		void loadJobs(q, 1);
+	}
+
 	async function loadJobs(keyword = "", page = 1): Promise<void> {
 		loading = true;
 		errorMessage = "";
 		try {
-			const res = await fetchJobs({ q: keyword, page, pageSize: PAGE_SIZE });
+			let seed = randomSeed;
+			if (sortMode === "random" && !seed) {
+				seed = newRandomSeed();
+				randomSeed = seed;
+			}
+			const res = await fetchJobs({
+				q: keyword,
+				page,
+				pageSize: PAGE_SIZE,
+				sort: sortMode,
+				seed: sortMode === "random" ? seed : undefined,
+			});
 			jobs = res.jobs;
 			totalCount = res.total;
 			totalPagesState = res.totalPages;
@@ -137,6 +167,9 @@
 
 	function onSearchSubmit(e: SubmitEvent): void {
 		e.preventDefault();
+		if (sortMode === "random") {
+			randomSeed = newRandomSeed();
+		}
 		void loadJobs(q, 1);
 	}
 
@@ -387,6 +420,17 @@
 <section class="space-y-5">
 	<form class="search-row" onsubmit={onSearchSubmit}>
 		<input bind:value={q} type="text" placeholder="搜索岗位/公司/地点（例如 实施工程师、合肥）" />
+		<select
+			class="sort-select"
+			bind:value={sortMode}
+			aria-label="排序方式"
+			onchange={onSortChange}
+		>
+			<option value="default">默认排序</option>
+			<option value="random">随机排序</option>
+			<option value="score_asc">综合能力需求从小到大</option>
+			<option value="score_desc">综合能力需求从大到小</option>
+		</select>
 		<button type="submit">搜索</button>
 	</form>
 
@@ -640,14 +684,27 @@
 	.search-row {
 		display: flex;
 		gap: 0.6rem;
+		align-items: stretch;
 	}
 	.search-row input {
 		flex: 1;
+		min-width: 0;
 		height: 2.8rem;
 		border-radius: 0.75rem;
 		border: 1px solid color-mix(in oklab, var(--text-75) 28%, transparent);
 		padding: 0 0.85rem;
 		background: var(--card-bg);
+	}
+	.sort-select {
+		flex: 0 1 12.5rem;
+		min-width: 9.5rem;
+		height: 2.8rem;
+		border-radius: 0.75rem;
+		border: 1px solid color-mix(in oklab, var(--text-75) 28%, transparent);
+		padding: 0 0.65rem;
+		background: var(--card-bg);
+		font-size: 0.82rem;
+		color: inherit;
 	}
 	.search-row button {
 		height: 2.8rem;

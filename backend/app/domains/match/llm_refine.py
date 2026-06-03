@@ -35,18 +35,16 @@ strengths(string 数组 2-4 条每条≤45字), gaps(string 数组 2-4 条每条
 
 
 from app.infrastructure.llm import strip_json_fence
+from app.infrastructure.privacy import (
+    llm_privacy_notice,
+    privacy_student_profile,
+    redact_text,
+    should_store_raw_llm,
+)
+
+
 def _slim_student(profile: Dict[str, Any]) -> Dict[str, Any]:
-    out: Dict[str, Any] = {
-        "id": profile.get("id"),
-        "display_name": profile.get("display_name"),
-        "vector_kind": profile.get("vector_kind"),
-        "scores": profile.get("scores") or {},
-        "confidences": profile.get("confidences") or {},
-    }
-    for k in ("education", "city_pref", "skills_hint", "resume_excerpt"):
-        if profile.get(k):
-            out[k] = profile[k]
-    return out
+    return privacy_student_profile(profile, include_excerpt=False)
 
 
 def _slim_job(job: Dict[str, Any]) -> Dict[str, Any]:
@@ -220,6 +218,9 @@ def refine_top5_deepseek(
     goal = (match_goal or "fit").strip().lower()
     is_stretch = goal == "stretch"
     system_content = _SYSTEM_STRETCH if is_stretch else _SYSTEM
+    privacy_notice = llm_privacy_notice()
+    if privacy_notice:
+        system_content = f"{system_content}\n{privacy_notice}"
 
     if is_stretch:
         instr = (
@@ -299,12 +300,12 @@ def refine_top5_deepseek(
     if len(snippet) > 2000:
         snippet = snippet[:2000] + "…"
 
-    return (
-        {
-            "top5": decorated,
-            "model": model,
-            "pool_size": len(pool),
-            "raw_snippet": snippet,
-        },
-        "",
-    )
+    result: Dict[str, Any] = {
+        "top5": decorated,
+        "model": model,
+        "pool_size": len(pool),
+        "privacy": {"student_profile": "anonymized"},
+    }
+    if should_store_raw_llm():
+        result["raw_snippet"] = redact_text(snippet, max_chars=2000)
+    return (result, "")

@@ -6,7 +6,7 @@
 
 | # | 步骤 | 预期 |
 |---|------|------|
-| 1 | `GET http://127.0.0.1:5000/api/health` | `{"ok": true, ...}` |
+| 1 | `GET http://127.0.0.1:5000/api/health` | `{"ok": true, ...}`；响应头含 `Cache-Control: no-store`、`X-Content-Type-Options: nosniff` |
 | 2 | 注册或登录，取得 Token | 跳转或本地存 Token |
 | 3 | `GET /api/auth/me`（带 Bearer） | 返回当前用户 |
 | 4 | `/profile` 上传简历 | 返回八维分数与 resume_id |

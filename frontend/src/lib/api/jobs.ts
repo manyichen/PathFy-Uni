@@ -204,10 +204,14 @@ type AssistantSaveResponse = {
 	message?: string;
 };
 
+export type JobSortMode = "default" | "random" | "score_asc" | "score_desc";
+
 export type FetchJobsParams = {
 	q?: string;
 	page?: number;
 	pageSize?: number;
+	sort?: JobSortMode;
+	seed?: string;
 };
 
 export type JobsPageResult = {
@@ -238,11 +242,13 @@ type JobOptionsResponse = {
 };
 
 export async function fetchJobs(params: FetchJobsParams = {}): Promise<JobsPageResult> {
-	const { q = "", page = 1, pageSize = 40 } = params;
+	const { q = "", page = 1, pageSize = 40, sort = "default", seed = "" } = params;
 	const query = new URLSearchParams();
 	query.set("page", String(page));
 	query.set("page_size", String(pageSize));
 	if (q.trim()) query.set("q", q.trim());
+	if (sort && sort !== "default") query.set("sort", sort);
+	if (sort === "random" && seed.trim()) query.set("seed", seed.trim());
 
 	const res = await apiJson<JobsResponse>(`/api/jobs?${query.toString()}`);
 	if (!res.ok || !res.data?.jobs) {

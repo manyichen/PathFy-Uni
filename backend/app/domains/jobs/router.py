@@ -1,4 +1,7 @@
+import hashlib
 import json
+from typing import Any, Dict, List, Tuple
+
 from flask import Blueprint, jsonify, request
 
 from app.infrastructure.neo4j import (
@@ -13,6 +16,123 @@ from app.infrastructure.llm import call_ark_json
 from app.infrastructure.salary import parse_salary_range
 
 jobs_bp = Blueprint("jobs", __name__, url_prefix="/api/jobs")
+
+_JOBS_FILTER_WHERE = """
+    (j.source IS NULL OR trim(toString(j.source)) = '')
+      AND (
+        $q = '' OR
+        toLower(coalesce(j.title, j.name, '')) CONTAINS toLower($q) OR
+        toLower(coalesce(j.company, '')) CONTAINS toLower($q) OR
+        toLower(coalesce(j.location, '')) CONTAINS toLower($q)
+      )
+"""
+
+_JOBS_RETURN_FIELDS = """
+      coalesce(j.job_key, j.job_code, j.name, j.title, elementId(j)) AS id,
+      coalesce(j.title, j.name, '未命名岗位') AS title,
+      coalesce(j.salary, '薪资面议') AS salary,
+      coalesce(j.company, '未知公司') AS company,
+      coalesce(j.location, '未知地点') AS location,
+      coalesce(j.cap_risk_flags, []) AS risk_flags,
+      coalesce(j.cap_req_theory, 0.0) AS cap_req_theory,
+      coalesce(j.cap_req_cross, 0.0) AS cap_req_cross,
+      coalesce(j.cap_req_practice, 0.0) AS cap_req_practice,
+      coalesce(j.cap_req_digital, 0.0) AS cap_req_digital,
+      coalesce(j.cap_req_innovation, 0.0) AS cap_req_innovation,
+      coalesce(j.cap_req_teamwork, 0.0) AS cap_req_teamwork,
+      coalesce(j.cap_req_social, 0.0) AS cap_req_social,
+      coalesce(j.cap_req_growth, 0.0) AS cap_req_growth,
+      coalesce(j.cap_conf_theory, 0.0) AS cap_conf_theory,
+      coalesce(j.cap_conf_cross, 0.0) AS cap_conf_cross,
+      coalesce(j.cap_conf_practice, 0.0) AS cap_conf_practice,
+      coalesce(j.cap_conf_digital, 0.0) AS cap_conf_digital,
+      coalesce(j.cap_conf_innovation, 0.0) AS cap_conf_innovation,
+      coalesce(j.cap_conf_teamwork, 0.0) AS cap_conf_teamwork,
+      coalesce(j.cap_conf_social, 0.0) AS cap_conf_social,
+      coalesce(j.cap_conf_growth, 0.0) AS cap_conf_growth
+"""
+
+_JOBS_SHUFFLE_CACHE: Dict[Tuple[str, str], List[Dict[str, Any]]] = {}
+_JOBS_SHUFFLE_CACHE_ORDER: List[Tuple[str, str]] = []
+_MAX_JOBS_SHUFFLE_CACHES = 32
+
+
+def _normalize_jobs_sort(raw: str) -> str:
+    value = str(raw or "").strip().lower()
+    if value in {"random", "score_asc", "score_desc"}:
+        return value
+    return "default"
+
+
+def _jobs_order_clause(sort_mode: str) -> str:
+    if sort_mode == "score_asc":
+        return "ORDER BY total_score ASC, title ASC"
+    return "ORDER BY total_score DESC, title ASC"
+
+
+def _jobs_shuffle_key(job_id: str, seed: str) -> str:
+    return hashlib.md5(f"{seed}:{job_id}".encode("utf-8")).hexdigest()
+
+
+def _shuffled_job_rows(keyword: str, seed: str) -> List[Dict[str, Any]]:
+    cache_key = (keyword, seed)
+    cached = _JOBS_SHUFFLE_CACHE.get(cache_key)
+    if cached is not None:
+        return cached
+    uri, user, password, database = neo4j_settings()
+    query = f"""
+    MATCH (j:Job)
+    WHERE {_JOBS_FILTER_WHERE}
+    WITH j,
+      (coalesce(j.cap_req_theory, 0.0) +
+       coalesce(j.cap_req_cross, 0.0) +
+       coalesce(j.cap_req_practice, 0.0) +
+       coalesce(j.cap_req_digital, 0.0) +
+       coalesce(j.cap_req_innovation, 0.0) +
+       coalesce(j.cap_req_teamwork, 0.0) +
+       coalesce(j.cap_req_social, 0.0) +
+       coalesce(j.cap_req_growth, 0.0)) AS total_score
+    RETURN
+      {_JOBS_RETURN_FIELDS},
+      total_score
+    """
+    driver = neo4j_driver(uri, user, password)
+    with driver.session(database=database) as session:
+        rows = [dict(r) for r in session.run(query, {"q": keyword})]
+    rows.sort(key=lambda row: _jobs_shuffle_key(str(row.get("id") or ""), seed))
+    _JOBS_SHUFFLE_CACHE[cache_key] = rows
+    _JOBS_SHUFFLE_CACHE_ORDER.append(cache_key)
+    while len(_JOBS_SHUFFLE_CACHE_ORDER) > _MAX_JOBS_SHUFFLE_CACHES:
+        old_key = _JOBS_SHUFFLE_CACHE_ORDER.pop(0)
+        _JOBS_SHUFFLE_CACHE.pop(old_key, None)
+    return rows
+
+
+def _jobs_page_payload(
+    rows: List[Dict[str, Any]],
+    *,
+    page: int,
+    page_size: int,
+    sort_mode: str,
+    seed: str = "",
+) -> Dict[str, Any]:
+    total = len(rows)
+    total_pages = max(1, (total + page_size - 1) // page_size) if total else 1
+    page_num = min(max(1, page), total_pages)
+    start = (page_num - 1) * page_size
+    page_rows = rows[start : start + page_size]
+    data = [serialize_job_row(r) for r in page_rows]
+    payload: Dict[str, Any] = {
+        "jobs": data,
+        "total": total,
+        "page": page_num,
+        "page_size": page_size,
+        "total_pages": total_pages,
+        "sort": sort_mode,
+    }
+    if sort_mode == "random" and seed:
+        payload["seed"] = seed
+    return payload
 
 
 def _safe_float(value, default=0.0):
@@ -159,28 +279,24 @@ def list_jobs():
     page_size = max(1, min(int(request.args.get("page_size", "40")), 200))
     skip = (page - 1) * page_size
     keyword = (request.args.get("q") or "").strip()
+    sort_mode = _normalize_jobs_sort(request.args.get("sort") or "")
+    seed = str(request.args.get("seed") or "").strip()
 
-    count_query = """
+    if sort_mode == "random":
+        if not seed:
+            return jsonify({"ok": False, "message": "随机排序需要提供 seed"}), 400
+        rows = _shuffled_job_rows(keyword, seed)
+        return jsonify({"ok": True, "data": _jobs_page_payload(rows, page=page, page_size=page_size, sort_mode=sort_mode, seed=seed)})
+
+    count_query = f"""
     MATCH (j:Job)
-    WHERE (j.source IS NULL OR trim(toString(j.source)) = '')
-      AND (
-        $q = '' OR
-        toLower(coalesce(j.title, j.name, '')) CONTAINS toLower($q) OR
-        toLower(coalesce(j.company, '')) CONTAINS toLower($q) OR
-        toLower(coalesce(j.location, '')) CONTAINS toLower($q)
-      )
+    WHERE {_JOBS_FILTER_WHERE}
     RETURN count(j) AS total
     """
 
-    list_query = """
+    list_query = f"""
     MATCH (j:Job)
-    WHERE (j.source IS NULL OR trim(toString(j.source)) = '')
-      AND (
-        $q = '' OR
-        toLower(coalesce(j.title, j.name, '')) CONTAINS toLower($q) OR
-        toLower(coalesce(j.company, '')) CONTAINS toLower($q) OR
-        toLower(coalesce(j.location, '')) CONTAINS toLower($q)
-      )
+    WHERE {_JOBS_FILTER_WHERE}
     WITH j,
       (coalesce(j.cap_req_theory, 0.0) +
        coalesce(j.cap_req_cross, 0.0) +
@@ -191,29 +307,8 @@ def list_jobs():
        coalesce(j.cap_req_social, 0.0) +
        coalesce(j.cap_req_growth, 0.0)) AS total_score
     RETURN
-      coalesce(j.job_key, j.job_code, j.name, j.title, elementId(j)) AS id,
-      coalesce(j.title, j.name, '未命名岗位') AS title,
-      coalesce(j.salary, '薪资面议') AS salary,
-      coalesce(j.company, '未知公司') AS company,
-      coalesce(j.location, '未知地点') AS location,
-      coalesce(j.cap_risk_flags, []) AS risk_flags,
-      coalesce(j.cap_req_theory, 0.0) AS cap_req_theory,
-      coalesce(j.cap_req_cross, 0.0) AS cap_req_cross,
-      coalesce(j.cap_req_practice, 0.0) AS cap_req_practice,
-      coalesce(j.cap_req_digital, 0.0) AS cap_req_digital,
-      coalesce(j.cap_req_innovation, 0.0) AS cap_req_innovation,
-      coalesce(j.cap_req_teamwork, 0.0) AS cap_req_teamwork,
-      coalesce(j.cap_req_social, 0.0) AS cap_req_social,
-      coalesce(j.cap_req_growth, 0.0) AS cap_req_growth,
-      coalesce(j.cap_conf_theory, 0.0) AS cap_conf_theory,
-      coalesce(j.cap_conf_cross, 0.0) AS cap_conf_cross,
-      coalesce(j.cap_conf_practice, 0.0) AS cap_conf_practice,
-      coalesce(j.cap_conf_digital, 0.0) AS cap_conf_digital,
-      coalesce(j.cap_conf_innovation, 0.0) AS cap_conf_innovation,
-      coalesce(j.cap_conf_teamwork, 0.0) AS cap_conf_teamwork,
-      coalesce(j.cap_conf_social, 0.0) AS cap_conf_social,
-      coalesce(j.cap_conf_growth, 0.0) AS cap_conf_growth
-    ORDER BY total_score DESC, title ASC
+      {_JOBS_RETURN_FIELDS}
+    {_jobs_order_clause(sort_mode)}
     SKIP $skip
     LIMIT $limit
     """
@@ -241,6 +336,7 @@ def list_jobs():
                 "page": page,
                 "page_size": page_size,
                 "total_pages": total_pages,
+                "sort": sort_mode,
             },
         }
     )

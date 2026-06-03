@@ -153,7 +153,6 @@ def _student_row_to_serialized_profile(row: Dict[str, Any]) -> Dict[str, Any]:
     for ck in CONF_KEYS:
         v = row.get(ck)
         confidences[ck] = float(v) if v is not None else 0.55
-    excerpt = (row.get("resume_text") or "")[:1200]
     major = (row.get("major") or "").strip()
     raw: Dict[str, Any] = {
         "id": str(row["id"]),
@@ -161,7 +160,6 @@ def _student_row_to_serialized_profile(row: Dict[str, Any]) -> Dict[str, Any]:
         "education": major or None,
         "city_pref": None,
         "skills_hint": [],
-        "resume_excerpt": excerpt,
         "scores": scores,
         "confidences": confidences,
     }
@@ -187,7 +185,7 @@ def _resolve_student_profile(
             with db_cursor() as (_, cur):
                 cur.execute(
                     """
-                    SELECT id, user_id, name, major, resume_text,
+                    SELECT id, user_id, name, major,
                       cap_req_theory, cap_req_cross, cap_req_practice, cap_req_digital,
                       cap_req_innovation, cap_req_teamwork, cap_req_social, cap_req_growth,
                       cap_conf_theory, cap_conf_cross, cap_conf_practice, cap_conf_digital,
@@ -351,7 +349,6 @@ def run_match_preview(body: Dict[str, Any], jwt_user_id: int | None) -> Tuple[Di
             "education": profile.get("education"),
             "city_pref": profile.get("city_pref"),
             "skills_hint": profile.get("skills_hint"),
-            "resume_excerpt": profile.get("resume_excerpt"),
         },
         "filters": {"q": q, "location_q": location_q, "match_goal": match_goal},
         "scoring": {
