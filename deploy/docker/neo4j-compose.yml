@@ -1,0 +1,25 @@
+# 2G 机器 Neo4j 内存限制示例（在项目根目录或 deploy/docker 下执行）
+# docker compose -f deploy/docker/neo4j-compose.yml up -d
+#
+# 7474/7687 仅本机访问，勿在阿里云安全组对公网开放。
+
+services:
+  neo4j:
+    image: neo4j:5
+    container_name: pathfy-neo4j
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:7474:7474"
+      - "127.0.0.1:7687:7687"
+    environment:
+      NEO4J_AUTH: neo4j/请替换密码
+      NEO4J_server_memory_heap_initial__size: 256m
+      NEO4J_server_memory_heap_max__size: 512m
+      NEO4J_server_memory_pagecache_size: 256m
+    volumes:
+      - neo4j_data:/data
+      - neo4j_logs:/logs
+
+volumes:
+  neo4j_data:
+  neo4j_logs:

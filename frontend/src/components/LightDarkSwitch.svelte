@@ -1,4 +1,5 @@
 <script lang="ts">
+import { onMount } from "svelte";
 import { DARK_MODE, LIGHT_MODE } from "@constants/constants";
 import Icon from "@iconify/svelte";
 import { getStoredTheme, setTheme } from "@utils/setting-utils";
@@ -7,6 +8,10 @@ import type { LIGHT_DARK_MODE } from "@/types/config";
 const seq: LIGHT_DARK_MODE[] = [LIGHT_MODE, DARK_MODE];
 let mode: LIGHT_DARK_MODE = $state(getStoredTheme());
 let isChanging = false;
+
+function syncModeFromStorage() {
+	mode = getStoredTheme();
+}
 
 function switchScheme(newMode: LIGHT_DARK_MODE) {
 	if (isChanging) return;
@@ -26,6 +31,14 @@ function toggleScheme() {
 	}
 	switchScheme(seq[(i + 1) % seq.length]);
 }
+
+onMount(() => {
+	syncModeFromStorage();
+	document.addEventListener("astro:page-load", syncModeFromStorage);
+	return () => {
+		document.removeEventListener("astro:page-load", syncModeFromStorage);
+	};
+});
 </script>
 
 <div class="relative z-50">

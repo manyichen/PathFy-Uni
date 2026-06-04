@@ -4,6 +4,7 @@
 	--radius-large: 1rem;
 	--content-delay: 150ms;
 	--hue: 230;
+	color-scheme: light;
 
 	--primary: oklch(0.7 0.14 var(--hue));
 	--page-bg: oklch(0.95 0.01 var(--hue));
@@ -78,6 +79,7 @@
 }
 
 :root.dark {
+	color-scheme: dark;
 	--primary: oklch(0.75 0.14 var(--hue));
 	--page-bg: oklch(0.16 0.014 var(--hue));
 	--card-bg: oklch(0.23 0.015 var(--hue));

@@ -1,7 +1,7 @@
 /**
  * 能力画像页：完整度/竞争力文案与 DOM 更新（供上传成功与刷新后从服务端恢复共用）
  */
-import type { JobCardItem } from "@/lib/jobs";
+import type { JobCardItem } from "@/lib/api/jobs";
 
 export type PortraitScoresShape = JobCardItem["scores"];
 

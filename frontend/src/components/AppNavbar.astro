@@ -7,7 +7,7 @@ import { url } from "@utils/url-utils";
 
 const nav = [
 	{ name: "首页", href: "/", protected: false },
-	{ name: "岗位探索", href: "/jobs/", protected: false },
+	{ name: "岗位探索", href: "/jobs/", protected: true },
 	{ name: "能力画像", href: "/profile/", protected: true },
 	{ name: "性格测试", href: "/personality/", protected: true },
 	{ name: "人岗匹配", href: "/match/", protected: true },
@@ -35,7 +35,7 @@ const titleIcon =
 		data-transparent-mode={navbarTransparentMode}
 		data-is-home={isHomePage}
 	>
-		<div class="absolute left-0 right-0 -top-8 h-8 bg-[var(--card-bg)] transition"></div>
+		<div class="absolute left-0 right-0 -top-8 h-8 bg-[var(--card-bg)]"></div>
 		<div
 			class="!overflow-visible mx-auto flex h-[4.5rem] max-w-[var(--page-width)] items-center justify-between px-4"
 		>
@@ -184,7 +184,6 @@ const titleIcon =
 		return (
 			pathname === "/" ||
 			pathname === "" ||
-			pathname.startsWith("/jobs") ||
 			pathname.startsWith("/login") ||
 			pathname.startsWith("/register")
 		);

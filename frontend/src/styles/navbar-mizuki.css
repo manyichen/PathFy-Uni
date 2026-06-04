@@ -8,5 +8,8 @@
 #navbar > div:nth-child(2) {
 	background: var(--card-bg);
 	border-radius: var(--radius-large);
-	transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+	/* 勿 transition: all，换页时 --card-bg 瞬时切换会导致暗色模式闪白 */
+	transition:
+		transform 0.3s cubic-bezier(0.4, 0, 0.2, 1),
+		box-shadow 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }

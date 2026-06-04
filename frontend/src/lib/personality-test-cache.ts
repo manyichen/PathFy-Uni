@@ -1,4 +1,4 @@
-import { getUser, PERSONALITY_CACHE_KEY_PREFIX } from "./auth";
+import { getUser, PERSONALITY_CACHE_KEY_PREFIX } from "./features/auth/session";
 
 export function getPersonalityTestStorageKey(): string {
 	const u = getUser();

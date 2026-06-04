@@ -5,61 +5,18 @@ import {
   loadPersonalityTestCache,
   savePersonalityTestCache,
 } from '../../lib/personality-test-cache';
+import {
+  fetchPersonalityQuestions,
+  submitPersonalityAnswers,
+  type PersonalityAnswer,
+  type PersonalityQuestion,
+  type PersonalityResult,
+} from '@/lib/api/personality';
+import { getUser } from '@/lib/features/auth/session';
 
-interface Question {
-  id: number;
-  question_text: string;
-  option_a: string;
-  option_b: string;
-  dimension: string;
-  option_a_type: string;
-  option_b_type: string;
-}
-
-interface Answer {
-  question_id: number;
-  user_choice: string;
-}
-
-interface DimensionAnalysis {
-  dimension: string;
-  type: string;
-  name: string;
-  description: string;
-  characteristics: string[];
-  work_preference: string[];
-  growth_suggestions: string[];
-}
-
-interface CompleteAnalysis {
-  type: string;
-  name: string;
-  summary: string;
-  core_strengths: string[];
-  career_tendencies: string[];
-  workplace_relationships: string[];
-  development_areas: string[];
-  stress_response: string;
-}
-
-interface JobRecommendation {
-  recommended_jobs: string[];
-  career_advice: string;
-}
-
-interface PersonalityResult {
-  mbti_type: string;
-  personality_analysis: string;
-  recommended_jobs: string[];
-  dimension_analysis: DimensionAnalysis[];
-  complete_analysis: CompleteAnalysis;
-  job_recommendations: JobRecommendation;
-  profile_id: number;
-}
-
-let questions: Question[] = [];
+let questions: PersonalityQuestion[] = [];
 let currentQuestionIndex = 0;
-let answers: Answer[] = [];
+let answers: PersonalityAnswer[] = [];
 let isLoading = true;
 let isSubmitting = false;
 let showResults = false;
@@ -70,30 +27,24 @@ let animationComplete = false;
 
 async function loadQuestions() {
   try {
-    const response = await fetch('http://localhost:5000/api/personality/questions');
-    const data = await response.json();
-    if (data.code === 200) {
-      questions = data.data;
-      const cached = loadPersonalityTestCache(questions.length);
-      if (cached) {
-        showStartScreen = cached.showStartScreen;
-        showResults = cached.showResults;
-        currentQuestionIndex = Math.min(
-          Math.max(0, cached.currentQuestionIndex),
-          Math.max(0, questions.length - 1),
-        );
-        const idSet = new Set(questions.map((q) => q.id));
-        answers = (cached.answers || []).filter((a) => idSet.has(a.question_id));
-        personalityProfile = (cached.personalityProfile || null) as PersonalityResult | null;
-        if (!showStartScreen) {
-          animationComplete = true;
-        }
-        if (showResults && !personalityProfile) {
-          showResults = false;
-        }
+    questions = await fetchPersonalityQuestions();
+    const cached = loadPersonalityTestCache(questions.length);
+    if (cached) {
+      showStartScreen = cached.showStartScreen;
+      showResults = cached.showResults;
+      currentQuestionIndex = Math.min(
+        Math.max(0, cached.currentQuestionIndex),
+        Math.max(0, questions.length - 1),
+      );
+      const idSet = new Set(questions.map((q) => q.id));
+      answers = (cached.answers || []).filter((a) => idSet.has(a.question_id));
+      personalityProfile = (cached.personalityProfile || null) as PersonalityResult | null;
+      if (!showStartScreen) {
+        animationComplete = true;
       }
-    } else {
-      throw new Error(data.msg || '加载题目失败');
+      if (showResults && !personalityProfile) {
+        showResults = false;
+      }
     }
   } catch (error) {
     console.error('加载题目失败:', error);
@@ -115,29 +66,20 @@ async function submitAnswers() {
     return;
   }
 
+  const user = getUser();
+  if (!user?.id) {
+    alert('请先登录后再提交性格测试');
+    window.location.assign(`/login?redirect=${encodeURIComponent(window.location.pathname)}`);
+    return;
+  }
+
   isSubmitting = true;
   try {
-    const response = await fetch('http://localhost:5000/api/personality/submit', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        user_id: localStorage.getItem('user_id') || '1',
-        answers
-      })
-    });
-
-    const data = await response.json();
-    if (data.code === 200) {
-      personalityProfile = data.data as PersonalityResult;
-      showResults = true;
-    } else {
-      throw new Error(data.msg || '提交答案失败');
-    }
+    personalityProfile = await submitPersonalityAnswers(answers);
+    showResults = true;
   } catch (error) {
     console.error('提交答案失败:', error);
-    alert('提交答案失败，请稍后重试');
+    alert(error instanceof Error ? error.message : '提交答案失败，请稍后重试');
   } finally {
     isSubmitting = false;
   }

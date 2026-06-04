@@ -60,6 +60,32 @@ if (siteConfig.font) {
 	<head>
 		<meta charset="UTF-8" />
 		<meta name="viewport" content="width=device-width" />
+		<script
+			is:inline
+			define:vars={{ DEFAULT_THEME, LIGHT_MODE, DARK_MODE, configHue }}
+		>
+			function applyThemeToRoot(el, hueDefault) {
+				const theme = localStorage.getItem("theme") || DEFAULT_THEME;
+				if (theme === DARK_MODE) {
+					el.classList.add("dark");
+				} else {
+					el.classList.remove("dark");
+				}
+				const isDark = el.classList.contains("dark");
+				el.setAttribute("data-theme", isDark ? "github-dark" : "github-light");
+				const hue = localStorage.getItem("hue") || String(hueDefault);
+				el.style.setProperty("--hue", hue);
+			}
+			function applyStoredThemeAndHue() {
+				applyThemeToRoot(document.documentElement, configHue);
+			}
+			applyStoredThemeAndHue();
+			document.addEventListener("astro:before-swap", (event) => {
+				applyThemeToRoot(event.newDocument.documentElement, configHue);
+			});
+			document.addEventListener("astro:after-swap", applyStoredThemeAndHue);
+			document.addEventListener("astro:page-load", applyStoredThemeAndHue);
+		</script>
 		<meta name="description" content={metaDesc} />
 		<title>{pageTitle}</title>
 		<link rel="icon" type="image/svg+xml" href={url("/favicon.svg")} />
@@ -75,32 +101,6 @@ if (siteConfig.font) {
 			document.addEventListener("astro:before-preparation", () => {
 				document.documentElement.classList.add("astro-client-nav");
 			});
-		</script>
-		<script
-			is:inline
-			define:vars={{
-				DEFAULT_THEME,
-				LIGHT_MODE,
-				DARK_MODE,
-				configHue,
-			}}
-		>
-			const theme = localStorage.getItem("theme") || DEFAULT_THEME;
-			switch (theme) {
-				case LIGHT_MODE:
-					document.documentElement.classList.remove("dark");
-					break;
-				case DARK_MODE:
-					document.documentElement.classList.add("dark");
-					break;
-			}
-			const isDark = document.documentElement.classList.contains("dark");
-			document.documentElement.setAttribute(
-				"data-theme",
-				isDark ? "github-dark" : "github-light",
-			);
-			const hue = localStorage.getItem("hue") || String(configHue);
-			document.documentElement.style.setProperty("--hue", hue);
 		</script>
 	</head>
 	<body

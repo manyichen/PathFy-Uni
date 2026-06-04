@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { fetchJobs, type JobCardItem, type JobLiteItem } from "../../lib/jobs";
+	import { fetchJobs, type JobCardItem, type JobLiteItem } from "@/lib/api/jobs";
 
 	type OnClose = () => void;
 	type OnSelect = (job: JobLiteItem) => void;

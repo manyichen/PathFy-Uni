@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount } from "svelte";
 	import { url } from "@utils/url-utils";
-	import { fetchJobDetail, type JobDetailItem } from "@/lib/jobs";
+	import { fetchJobDetail, type JobDetailItem } from "@/lib/api/jobs";
 	import StudentCapabilityRadar from "@/components/match/StudentCapabilityRadar.svelte";
 
 	function normalizeText(text: string): string {
