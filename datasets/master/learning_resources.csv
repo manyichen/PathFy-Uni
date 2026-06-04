@@ -1,0 +1,632 @@
+resource_id,job_name,resource_name,resource_desc,resource_url,resource_type,difficulty,source,skill_tag
+Java_1,Java,Java程序设计（零基础入门）,东北大学开设的Java零基础课程，从环境搭建、基本语法、流程控制到数组与函数，系统讲解Java程序设计入门知识。,https://www.icourse163.org/learn/-1205915818,视频课程,入门,中国大学MOOC,Java基础
+Java_2,Java,Java程序设计,北京大学经典Java课程，涵盖语法、面向对象、GUI、多线程、JDBC与网络编程，配套编程作业与项目实践。,https://www.icourse163.org/learn/PKU-1001941004,视频课程,进阶,中国大学MOOC,Java基础
+Java_3,Java,Java面向对象程序设计,江苏海洋大学课程，聚焦类与对象、封装继承多态、接口与抽象类等OOP核心概念。,https://www.icourse163.org/learn/HHIT-1001753066,视频课程,入门,中国大学MOOC,面向对象
+Java_4,Java,Learn Java（Oracle官方）,Oracle dev.java 站点Java学习资源，含语法速查、教程与最佳实践，权威且持续更新。,https://dev.java/learn/,文档教程,入门,Oracle,Java基础
+Java_5,Java,数据结构与算法（Java描述）,南京工程学院课程，以Java实现线性表、栈队列、树、图及排序查找算法。,https://www.icourse163.org/learn/NJIT-1464552176,视频课程,进阶,中国大学MOOC,数据结构与算法
+Java_6,Java,MySQL数据库设计与应用,昆明理工大学数据库课程，讲解SQL、表设计、索引、事务与查询优化。,https://www.icourse163.org/learn/KMUST-1206687836,视频课程,进阶,中国大学MOOC,MySQL
+Java_7,Java,JavaEE平台技术,厦门大学课程，讲解Spring、Spring MVC、MyBatis与Redis等企业级技术栈。,https://www.icourse163.org/learn/XMU-1462056168,视频课程,进阶,中国大学MOOC,Spring Boot
+Java_8,Java,开发第一个Spring Boot应用,Spring Boot中文文档官方入门教程，涵盖项目创建、依赖配置与第一个Web应用。,https://www.spring-doc.cn/spring-boot/3.4.9/tutorial_first-application_index.html,文档教程,进阶,Spring中文文档,Spring Boot
+Java_9,Java,Java Web应用开发,扬州职业技术大学课程，讲解Servlet、JSP、MVC模式与Java Web开发流程。,https://www.icourse163.org/learn/YZPC-1449963190,视频课程,进阶,中国大学MOOC,Java Web
+Java_10,Java,AcWing算法题库,在线算法练习平台，提供专题编程题与Java提交环境，适合笔试面试准备。,https://www.acwing.com/problem/,在线练习,进阶,AcWing,算法练习
+Java_11,Java,Pro Git第二版（中文版）,Git官方书籍中文版，涵盖版本控制、分支合并与远程协作。,https://git-scm.com/book/zh/v2,文档教程,入门,Git官方,Git版本控制
+Java_12,Java,Maven Getting Started,Apache Maven官方入门文档，介绍项目结构、pom.xml与依赖管理。,https://maven.apache.org/guides/getting-started/index.html,文档教程,入门,Apache,Maven构建
+Java_13,Java,Java开发手册（嵩山版）,阿里云开发者社区Java开发手册专题，涵盖编程规约与工程实践规范。,https://developer.aliyun.com/topic/java20,文档教程,进阶,阿里云开发者社区,Java工程规范
+Java_14,Java,Redis入门指南,Redis官方Getting Started，介绍安装、基本数据类型与常用命令。,https://redis.io/docs/latest/develop/get-started/,文档教程,入门,Redis官方,Redis
+Java_15,Java,Docker官方入门教程,Docker官方Get Started，讲解容器概念、镜像构建与容器运行。,https://docs.docker.com/get-started/,文档教程,入门,Docker官方,Docker
+实施工程师_1,实施工程师,软件工程,北京大学软件工程课程，讲解需求分析、系统设计、项目管理与软件生命周期。,https://www.icourse163.org/learn/PKU-1002525006,视频课程,入门,中国大学MOOC,软件工程
+实施工程师_2,实施工程师,ERP原理与应用,北京交通大学ERP课程，讲解企业资源计划系统架构与实施方法论。,https://www.icourse163.org/learn/BJTU-1003377001,视频课程,进阶,中国大学MOOC,ERP实施
+实施工程师_3,实施工程师,项目管理,北京理工大学项目管理课程，涵盖范围、进度、成本、质量与风险管理。,https://www.icourse163.org/learn/BIT-1002531002,视频课程,进阶,中国大学MOOC,项目管理
+实施工程师_4,实施工程师,MySQL数据库设计与应用,实施工程师需掌握SQL查询、数据迁移与数据库配置。,https://www.icourse163.org/learn/KMUST-1206687836,视频课程,进阶,中国大学MOOC,MySQL
+实施工程师_5,实施工程师,Linux系统管理,讲解文件系统、用户权限、Shell脚本与服务管理，部署维护必备。,https://www.icourse163.org/learn/OUCC-1002337008,视频课程,入门,中国大学MOOC,Linux
+实施工程师_6,实施工程师,计算机网络,帮助理解网络拓扑、协议与故障排查，支撑系统联调与客户环境部署。,https://www.icourse163.org/learn/HIT-1000531008,视频课程,进阶,中国大学MOOC,计算机网络
+实施工程师_7,实施工程师,需求分析与软件设计,讲解需求获取、用例建模与原型设计，准确理解客户需求。,https://www.icourse163.org/learn/BFU-1003377002,视频课程,进阶,中国大学MOOC,需求分析
+实施工程师_8,实施工程师,Office办公软件应用,涵盖Word/Excel/PPT高级应用，数据整理与方案汇报常用技能。,https://www.icourse163.org/learn/WHU-1002537001,视频课程,入门,中国大学MOOC,Office办公
+实施工程师_9,实施工程师,沟通技巧,提升与客户、开发团队的有效沟通能力，协调多方资源的关键软技能。,https://www.icourse163.org/learn/THU-1002537002,视频课程,入门,中国大学MOOC,沟通技巧
+实施工程师_10,实施工程师,工程项目管理,同济大学国家精品项目管理课程，讲解项目全生命周期与管理工具。,https://www.icourse163.org/learn/TONGJI-46008,视频课程,进阶,中国大学MOOC,项目管理
+实施工程师_11,实施工程师,Docker官方入门教程,容器化部署是实施工程师快速交付与迁移系统的常用手段。,https://docs.docker.com/get-started/,文档教程,入门,Docker官方,Docker
+实施工程师_12,实施工程师,Nginx官方文档,反向代理与负载均衡是实施部署的常见配置参考。,https://nginx.org/en/docs/,文档教程,进阶,Nginx官方,Nginx
+实施工程师_13,实施工程师,Pro Git第二版（中文版）,版本控制与代码部署协作的基础工具。,https://git-scm.com/book/zh/v2,文档教程,入门,Git官方,Git版本控制
+技术支持工程师_1,技术支持工程师,计算机网络,理解TCP/IP、DNS、HTTP等协议以排查网络与连接问题。,https://www.icourse163.org/learn/HIT-1000531008,视频课程,进阶,中国大学MOOC,计算机网络
+技术支持工程师_2,技术支持工程师,Linux系统管理,服务器运维与日志排查是技术支持核心工作。,https://www.icourse163.org/learn/OUCC-1002337008,视频课程,入门,中国大学MOOC,Linux
+技术支持工程师_3,技术支持工程师,操作系统,理解进程、内存、文件系统有助于定位系统级故障。,https://www.icourse163.org/learn/HIT-1002531001,视频课程,进阶,中国大学MOOC,操作系统
+技术支持工程师_4,技术支持工程师,MySQL数据库设计与应用,数据库连接与查询异常是常见技术支持场景。,https://www.icourse163.org/learn/KMUST-1206687836,视频课程,进阶,中国大学MOOC,MySQL
+技术支持工程师_5,技术支持工程师,Java程序设计,读懂日志与基本代码逻辑以定位Java系统问题。,https://www.icourse163.org/learn/PKU-1001941004,视频课程,进阶,中国大学MOOC,Java基础
+技术支持工程师_6,技术支持工程师,沟通技巧,向非技术人员清晰解释问题与解决方案的核心软技能。,https://www.icourse163.org/learn/THU-1002537002,视频课程,入门,中国大学MOOC,沟通技巧
+技术支持工程师_7,技术支持工程师,客户服务与管理,讲解服务流程、投诉处理与客户满意度管理。,https://www.icourse163.org/learn/BIT-1003377001,视频课程,入门,中国大学MOOC,客户服务
+技术支持工程师_8,技术支持工程师,信息安全概论,了解常见安全威胁与防护，保障系统与用户数据安全。,https://www.icourse163.org/learn/NJU-1002537001,视频课程,进阶,中国大学MOOC,信息安全
+技术支持工程师_9,技术支持工程师,Docker官方入门教程,容器化应用部署与故障排查常见场景。,https://docs.docker.com/get-started/,文档教程,入门,Docker官方,Docker
+技术支持工程师_10,技术支持工程师,Redis入门指南,缓存相关问题排查需了解Redis基本命令。,https://redis.io/docs/latest/develop/get-started/,文档教程,入门,Redis官方,Redis
+技术支持工程师_11,技术支持工程师,Nginx官方文档,Web服务与反向代理配置排查高频场景。,https://nginx.org/en/docs/,文档教程,进阶,Nginx官方,Nginx
+技术支持工程师_12,技术支持工程师,Wireshark用户指南,网络抓包与分析是排查连接与协议问题的专业工具。,https://www.wireshark.org/docs/wsug_html_chunked/,文档教程,进阶,Wireshark官方,网络抓包
+技术支持工程师_13,技术支持工程师,Pro Git第二版（中文版）,版本回退与代码问题定位常需Git知识。,https://git-scm.com/book/zh/v2,文档教程,入门,Git官方,Git版本控制
+测试工程师_1,测试工程师,软件测试,北航软件测试课程，讲解测试理论、用例设计、缺陷管理与测试流程。,https://www.icourse163.org/learn/BUAA-1002537001,视频课程,入门,中国大学MOOC,软件测试理论
+测试工程师_2,测试工程师,软件工程,理解软件开发生命周期与质量保障体系。,https://www.icourse163.org/learn/PKU-1002525006,视频课程,入门,中国大学MOOC,软件工程
+测试工程师_3,测试工程师,Java程序设计,自动化测试常用Java语言，提供语法与面向对象基础。,https://www.icourse163.org/learn/PKU-1001941004,视频课程,进阶,中国大学MOOC,Java基础
+测试工程师_4,测试工程师,Python语言程序设计,测试自动化与脚本编写的主流语言。,https://www.icourse163.org/learn/PKU-1002525007,视频课程,入门,中国大学MOOC,Python
+测试工程师_5,测试工程师,MySQL数据库设计与应用,验证数据正确性与SQL逻辑，理解数据层测试要点。,https://www.icourse163.org/learn/KMUST-1206687836,视频课程,进阶,中国大学MOOC,MySQL
+测试工程师_6,测试工程师,Selenium官方文档,Web自动化测试主流框架，提供安装、API与最佳实践。,https://www.selenium.dev/documentation/,文档教程,进阶,Selenium官方,自动化测试
+测试工程师_7,测试工程师,JUnit 5用户指南,Java单元测试标准框架官方指南。,https://junit.org/junit5/docs/current/user-guide/,文档教程,进阶,JUnit官方,单元测试
+测试工程师_8,测试工程师,Postman学习中心,API测试、集合管理与自动化流程，接口测试必备。,https://learning.postman.com/docs/introduction/overview/,文档教程,入门,Postman官方,接口测试
+测试工程师_9,测试工程师,Apache JMeter用户手册,性能测试场景设计、并发模拟与结果分析。,https://jmeter.apache.org/usermanual/index.html,文档教程,进阶,Apache,性能测试
+测试工程师_10,测试工程师,Playwright官方文档,新一代Web自动化测试框架完整指南。,https://playwright.dev/docs/intro,文档教程,进阶,Playwright官方,自动化测试
+测试工程师_11,测试工程师,ISTQB软件测试认证概览,国际软件测试资质认证体系与知识体系参考。,https://www.istqb.org/,文档教程,进阶,ISTQB,测试认证
+测试工程师_12,测试工程师,Linux系统管理,测试环境搭建与日志分析需Linux基础。,https://www.icourse163.org/learn/OUCC-1002337008,视频课程,入门,中国大学MOOC,Linux
+测试工程师_13,测试工程师,Pro Git第二版（中文版）,测试代码与用例版本管理与团队协作。,https://git-scm.com/book/zh/v2,文档教程,入门,Git官方,Git版本控制
+软件测试_1,软件测试,软件测试,北航软件测试课程，讲解测试理论、用例设计、缺陷管理与测试流程。,https://www.icourse163.org/learn/BUAA-1002537001,视频课程,入门,中国大学MOOC,软件测试理论
+软件测试_2,软件测试,软件工程,理解软件开发生命周期与质量保障体系。,https://www.icourse163.org/learn/PKU-1002525006,视频课程,入门,中国大学MOOC,软件工程
+软件测试_3,软件测试,Java程序设计,自动化测试常用Java语言，提供语法与面向对象基础。,https://www.icourse163.org/learn/PKU-1001941004,视频课程,进阶,中国大学MOOC,Java基础
+软件测试_4,软件测试,Python语言程序设计,测试自动化与脚本编写的主流语言。,https://www.icourse163.org/learn/PKU-1002525007,视频课程,入门,中国大学MOOC,Python
+软件测试_5,软件测试,MySQL数据库设计与应用,验证数据正确性与SQL逻辑，理解数据层测试要点。,https://www.icourse163.org/learn/KMUST-1206687836,视频课程,进阶,中国大学MOOC,MySQL
+软件测试_6,软件测试,Selenium官方文档,Web自动化测试主流框架，提供安装、API与最佳实践。,https://www.selenium.dev/documentation/,文档教程,进阶,Selenium官方,自动化测试
+软件测试_7,软件测试,JUnit 5用户指南,Java单元测试标准框架官方指南。,https://junit.org/junit5/docs/current/user-guide/,文档教程,进阶,JUnit官方,单元测试
+软件测试_8,软件测试,Postman学习中心,API测试、集合管理与自动化流程，接口测试必备。,https://learning.postman.com/docs/introduction/overview/,文档教程,入门,Postman官方,接口测试
+软件测试_9,软件测试,Apache JMeter用户手册,性能测试场景设计、并发模拟与结果分析。,https://jmeter.apache.org/usermanual/index.html,文档教程,进阶,Apache,性能测试
+软件测试_10,软件测试,Playwright官方文档,新一代Web自动化测试框架完整指南。,https://playwright.dev/docs/intro,文档教程,进阶,Playwright官方,自动化测试
+软件测试_11,软件测试,ISTQB软件测试认证概览,国际软件测试资质认证体系与知识体系参考。,https://www.istqb.org/,文档教程,进阶,ISTQB,测试认证
+软件测试_12,软件测试,Linux系统管理,测试环境搭建与日志分析需Linux基础。,https://www.icourse163.org/learn/OUCC-1002337008,视频课程,入门,中国大学MOOC,Linux
+软件测试_13,软件测试,Pro Git第二版（中文版）,测试代码与用例版本管理与团队协作。,https://git-scm.com/book/zh/v2,文档教程,入门,Git官方,Git版本控制
+科研人员_1,科研人员,科研伦理与学术规范,讲解学术诚信、论文规范与科研道德的基本素养。,https://www.icourse163.org/learn/BNU-1003377001,视频课程,入门,中国大学MOOC,科研伦理
+科研人员_2,科研人员,Python语言程序设计,科研数据处理与可视化的主流工具。,https://www.icourse163.org/learn/PKU-1002525007,视频课程,入门,中国大学MOOC,Python
+科研人员_3,科研人员,数据结构与算法,算法思维是科研编程与数据分析的基础能力。,https://www.icourse163.org/learn/NJIT-1464552176,视频课程,进阶,中国大学MOOC,数据结构与算法
+科研人员_4,科研人员,统计学,科研数据分析与实验设计需扎实的统计学基础。,https://www.icourse163.org/learn/RUC-1002537001,视频课程,进阶,中国大学MOOC,统计学
+科研人员_5,科研人员,文献检索与科技论文写作,文献检索方法、论文结构与投稿规范。,https://www.icourse163.org/learn/USTC-1003377001,视频课程,入门,中国大学MOOC,论文写作
+科研人员_6,科研人员,机器学习,监督/无监督学习、神经网络等AI方向科研核心基础。,https://www.icourse163.org/learn/ZJU-1002537001,视频课程,进阶,中国大学MOOC,机器学习
+科研人员_7,科研人员,MySQL数据库设计与应用,科研数据管理与存储的数据库知识。,https://www.icourse163.org/learn/KMUST-1206687836,视频课程,进阶,中国大学MOOC,MySQL
+科研人员_8,科研人员,Learn LaTeX in 30 minutes,Overleaf官方LaTeX入门，科研论文排版标准工具。,https://www.overleaf.com/learn/latex/Learn_LaTeX_in_30_minutes,文档教程,入门,Overleaf,LaTeX排版
+科研人员_9,科研人员,NumPy用户指南,Python科学计算核心库官方文档。,https://numpy.org/doc/stable/user/index.html,文档教程,进阶,NumPy官方,NumPy
+科研人员_10,科研人员,Pandas入门指南,科研数据清洗、分析与表格处理核心工具。,https://pandas.pydata.org/docs/getting_started/index.html,文档教程,进阶,Pandas官方,Pandas
+科研人员_11,科研人员,Matplotlib教程,科研数据可视化与图表绑制标准库。,https://matplotlib.org/stable/tutorials/index.html,文档教程,进阶,Matplotlib官方,数据可视化
+科研人员_12,科研人员,Zotero官方文档,文献管理工具，高效管理参考文献与生成引用。,https://www.zotero.org/support/,文档教程,入门,Zotero官方,文献管理
+科研人员_13,科研人员,ResearchGate帮助中心,国际科研社交平台使用指南，促进学术合作。,https://help.researchgate.net/hc/en-us,文档教程,入门,ResearchGate,科研社交
+C_C_1,C/C++,C语言程序设计,浙江大学C语言经典课程，从语法到指针、结构体与文件操作。,https://www.icourse163.org/learn/ZJU-1002537002,视频课程,入门,中国大学MOOC,C语言
+C_C_2,C/C++,C++程序设计,北京大学C++课程，讲解类与对象、继承多态、模板与STL。,https://www.icourse163.org/learn/PKU-1002537002,视频课程,进阶,中国大学MOOC,C++
+C_C_3,C/C++,数据结构与算法,算法与数据结构是C/C++面试与工程实践的基础。,https://www.icourse163.org/learn/NJIT-1464552176,视频课程,进阶,中国大学MOOC,数据结构与算法
+C_C_4,C/C++,操作系统,C/C++系统编程需理解进程、内存与文件系统原理。,https://www.icourse163.org/learn/HIT-1002531001,视频课程,进阶,中国大学MOOC,操作系统
+C_C_5,C/C++,计算机网络,网络编程是C/C++常见应用场景。,https://www.icourse163.org/learn/HIT-1000531008,视频课程,进阶,中国大学MOOC,计算机网络
+C_C_6,C/C++,Learn C++,LearnCpp.com免费C++教程，从基础到高级特性。,https://www.learncpp.com/,文档教程,入门,LearnCpp,C++
+C_C_7,C/C++,cppreference在线参考,C/C++标准库权威在线参考手册。,https://en.cppreference.com/w/,文档教程,进阶,cppreference,C++标准库
+C_C_8,C/C++,CMake官方教程,C/C++项目构建标准工具官方教程。,https://cmake.org/cmake/help/latest/guide/tutorial/index.html,文档教程,进阶,CMake官方,CMake
+C_C_9,C/C++,AcWing算法题库,支持C/C++提交的在线算法练习平台。,https://www.acwing.com/problem/,在线练习,进阶,AcWing,算法练习
+C_C_10,C/C++,Pro Git第二版（中文版）,C/C++项目协作与版本管理。,https://git-scm.com/book/zh/v2,文档教程,入门,Git官方,Git版本控制
+C_C_11,C/C++,Valgrind用户手册,C/C++内存泄漏与性能分析专业工具。,https://valgrind.org/docs/manual/manual.html,文档教程,进阶,Valgrind官方,内存调试
+C_C_12,C/C++,C++ Core Guidelines,ISO C++官方FAQ与核心指南，工业级C++最佳实践参考。,https://isocpp.org/wiki/faq,文档教程,进阶,ISO C++,编码规范
+C_C_13,C/C++,Linux系统管理,C/C++系统级开发常运行于Linux环境。,https://www.icourse163.org/learn/OUCC-1002337008,视频课程,入门,中国大学MOOC,Linux
+前端开发_1,前端开发,HTML5网页设计,语义化标签、表单、多媒体与Canvas，前端HTML基础。,https://www.icourse163.org/learn/BIT-1002537001,视频课程,入门,中国大学MOOC,HTML/CSS
+前端开发_2,前端开发,JavaScript程序设计,语法、DOM操作、事件与异步编程，前端核心语言。,https://www.icourse163.org/learn/PKU-1002537003,视频课程,入门,中国大学MOOC,JavaScript
+前端开发_3,前端开发,Web前端开发,HTML/CSS/JS与响应式布局，贴近前端岗位技能。,https://www.icourse163.org/learn/BFU-1003377003,视频课程,进阶,中国大学MOOC,前端基础
+前端开发_4,前端开发,Vue.js官方教程,国内主流前端框架，讲解组件、路由与状态管理。,https://cn.vuejs.org/guide/introduction.html,文档教程,进阶,Vue.js官方,Vue.js
+前端开发_5,前端开发,React官方文档,全球主流前端框架Learn章节。,https://react.dev/learn,文档教程,进阶,React官方,React
+前端开发_6,前端开发,TypeScript官方手册,前端工程化必备类型系统与编译配置指南。,https://www.typescriptlang.org/docs/handbook/intro.html,文档教程,进阶,TypeScript官方,TypeScript
+前端开发_7,前端开发,MDN Web文档,Mozilla Web开发权威参考，涵盖HTML/CSS/JS API。,https://developer.mozilla.org/zh-CN/docs/Web,文档教程,入门,MDN,Web开发
+前端开发_8,前端开发,Node.js官方入门,前端全栈开发需掌握服务端JavaScript运行时。,https://nodejs.org/en/learn/getting-started/introduction-to-nodejs,文档教程,进阶,Node.js官方,Node.js
+前端开发_9,前端开发,Webpack概念指南,前端工程化打包工具核心概念与配置入门。,https://webpack.js.org/concepts/,文档教程,进阶,Webpack官方,Webpack
+前端开发_10,前端开发,Pro Git第二版（中文版）,前端项目版本管理与团队协作。,https://git-scm.com/book/zh/v2,文档教程,入门,Git官方,Git版本控制
+前端开发_11,前端开发,CSS-Tricks指南,CSS布局与动画权威参考，涵盖Flexbox/Grid。,https://css-tricks.com/guides/,文档教程,进阶,CSS-Tricks,CSS
+前端开发_12,前端开发,ESLint官方文档,JavaScript代码质量工具规则配置与项目集成。,https://eslint.org/docs/latest/,文档教程,进阶,ESLint官方,代码规范
+前端开发_13,前端开发,Vite官方指南,现代前端构建工具快速入门与配置参考。,https://vitejs.dev/guide/,文档教程,进阶,Vite官方,Vite
+硬件测试_1,硬件测试,模拟电子技术,理解电路原理与信号特性，硬件测试的电路基础。,https://www.icourse163.org/learn/XJTU-1002537001,视频课程,进阶,中国大学MOOC,模拟电路
+硬件测试_2,硬件测试,数字电子技术,逻辑门、组合时序电路与FPGA基础。,https://www.icourse163.org/learn/HIT-1002537001,视频课程,进阶,中国大学MOOC,数字电路
+硬件测试_3,硬件测试,软件测试,硬件产品软件层面测试理论与用例设计。,https://www.icourse163.org/learn/BUAA-1002537001,视频课程,入门,中国大学MOOC,软件测试理论
+硬件测试_4,硬件测试,嵌入式系统,硬件测试常涉及嵌入式设备与MCU外设接口。,https://www.icourse163.org/learn/BIT-1002537003,视频课程,进阶,中国大学MOOC,嵌入式
+硬件测试_5,硬件测试,C语言程序设计,硬件测试脚本与固件调试常用C语言。,https://www.icourse163.org/learn/ZJU-1002537002,视频课程,入门,中国大学MOOC,C语言
+硬件测试_6,硬件测试,Python语言程序设计,测试脚本编写与数据分析。,https://www.icourse163.org/learn/PKU-1002525007,视频课程,入门,中国大学MOOC,Python
+硬件测试_7,硬件测试,Linux系统管理,嵌入式Linux设备测试需Linux基础。,https://www.icourse163.org/learn/OUCC-1002337008,视频课程,入门,中国大学MOOC,Linux
+硬件测试_8,硬件测试,质量管理,硬件测试与质量检验紧密相关，讲解QC方法与标准。,https://www.icourse163.org/learn/BIT-1003377002,视频课程,入门,中国大学MOOC,质量管理
+硬件测试_9,硬件测试,Arduino文档中心,开源硬件平台官方文档，了解硬件原型开发与测试。,https://docs.arduino.cc/,文档教程,入门,Arduino官方,Arduino
+硬件测试_10,硬件测试,Six Sigma入门,iSixSigma平台Six Sigma概念与方法论入门。,https://www.isixsigma.com/new-to-six-sigma/getting-started/,文档教程,进阶,iSixSigma,Six Sigma
+硬件测试_11,硬件测试,ISO 9001概览,ISO官方网站质量管理体系标准介绍，硬件质量检验行业参考。,https://www.iso.org/iso-9001-quality-management.html,文档教程,进阶,ISO,行业标准
+硬件测试_12,硬件测试,Pro Git第二版（中文版）,测试脚本与固件代码版本管理。,https://git-scm.com/book/zh/v2,文档教程,入门,Git官方,Git版本控制
+硬件测试_13,硬件测试,统计学,测试数据分析与质量统计方法基础。,https://www.icourse163.org/learn/RUC-1002537001,视频课程,进阶,中国大学MOOC,统计学
+BD经理_1,BD经理,市场营销,市场营销基本理论、环境分析、消费者行为与营销组合策略。,https://www.icourse163.org/learn/ZBVC-1003007001,视频课程,入门,中国大学MOOC,市场营销
+BD经理_2,BD经理,销售管理,销售组织、团队管理、客户关系与绩效评价。,https://www.icourse163.org/learn/HZAU-1003244009,视频课程,进阶,中国大学MOOC,销售管理
+BD经理_3,BD经理,推销原理与实务,推销流程、网络销售技巧与数字化推销方法。,https://www.icourse163.org/learn/JSJZY-1206744802,视频课程,入门,中国大学MOOC,推销技巧
+BD经理_4,BD经理,商务沟通,商务谈判、危机沟通与高效沟通技巧。,https://www.icourse163.org/learn/AHDX-1460887167,视频课程,入门,中国大学MOOC,商务沟通
+BD经理_5,BD经理,汽车销售技巧,销售流程、客户异议处理与交车技巧实战。,https://www.icourse163.org/learn/HEPSVE-1002329014,视频课程,入门,中国大学MOOC,销售技巧
+BD经理_6,BD经理,网络营销,搜索引擎、新媒体、短视频与直播等网络营销工具。,https://www.icourse163.org/learn/CZU-1206816806,视频课程,进阶,中国大学MOOC,网络营销
+BD经理_7,BD经理,营销策划,市场机会分析、定位、产品/价格/渠道/促销策划。,https://www.icourse163.org/learn/NBCC-1001616007,视频课程,进阶,中国大学MOOC,营销策划
+BD经理_8,BD经理,沟通技巧,有效沟通是销售岗位核心软技能。,https://www.icourse163.org/learn/THU-1002537002,视频课程,入门,中国大学MOOC,沟通技巧
+BD经理_9,BD经理,Office办公软件应用,Excel客户管理、PPT方案制作等日常办公技能。,https://www.icourse163.org/learn/WHU-1002537001,视频课程,入门,中国大学MOOC,Office办公
+BD经理_10,BD经理,HubSpot Inbound Sales,HubSpot Academy入站销售免费课程，覆盖销售流程与客户开发。,https://academy.hubspot.com/courses/inbound-sales,文档教程,进阶,HubSpot,Inbound销售
+BD经理_11,BD经理,Salesforce Trailhead,Salesforce官方免费学习平台，覆盖CRM与销售技能模块。,https://trailhead.salesforce.com/,文档教程,入门,Salesforce,CRM销售
+BD经理_12,BD经理,HubSpot CRM免费教程,HubSpot Academy CRM与销售流程管理免费课程入口。,https://academy.hubspot.com/courses/crm,文档教程,入门,HubSpot,CRM
+BD经理_13,BD经理,Google数字营销认证,Google Skillshop数字营销与广告基础学习路径。,https://skillshop.exceedlms.com/student/catalog/list?category_ids=6431-google-ads,文档教程,进阶,Google,数字营销
+大客户代表_1,大客户代表,市场营销,市场营销基本理论、环境分析、消费者行为与营销组合策略。,https://www.icourse163.org/learn/ZBVC-1003007001,视频课程,入门,中国大学MOOC,市场营销
+大客户代表_2,大客户代表,销售管理,销售组织、团队管理、客户关系与绩效评价。,https://www.icourse163.org/learn/HZAU-1003244009,视频课程,进阶,中国大学MOOC,销售管理
+大客户代表_3,大客户代表,推销原理与实务,推销流程、网络销售技巧与数字化推销方法。,https://www.icourse163.org/learn/JSJZY-1206744802,视频课程,入门,中国大学MOOC,推销技巧
+大客户代表_4,大客户代表,商务沟通,商务谈判、危机沟通与高效沟通技巧。,https://www.icourse163.org/learn/AHDX-1460887167,视频课程,入门,中国大学MOOC,商务沟通
+大客户代表_5,大客户代表,汽车销售技巧,销售流程、客户异议处理与交车技巧实战。,https://www.icourse163.org/learn/HEPSVE-1002329014,视频课程,入门,中国大学MOOC,销售技巧
+大客户代表_6,大客户代表,网络营销,搜索引擎、新媒体、短视频与直播等网络营销工具。,https://www.icourse163.org/learn/CZU-1206816806,视频课程,进阶,中国大学MOOC,网络营销
+大客户代表_7,大客户代表,营销策划,市场机会分析、定位、产品/价格/渠道/促销策划。,https://www.icourse163.org/learn/NBCC-1001616007,视频课程,进阶,中国大学MOOC,营销策划
+大客户代表_8,大客户代表,沟通技巧,有效沟通是销售岗位核心软技能。,https://www.icourse163.org/learn/THU-1002537002,视频课程,入门,中国大学MOOC,沟通技巧
+大客户代表_9,大客户代表,Office办公软件应用,Excel客户管理、PPT方案制作等日常办公技能。,https://www.icourse163.org/learn/WHU-1002537001,视频课程,入门,中国大学MOOC,Office办公
+大客户代表_10,大客户代表,HubSpot Inbound Sales,HubSpot Academy入站销售免费课程，覆盖销售流程与客户开发。,https://academy.hubspot.com/courses/inbound-sales,文档教程,进阶,HubSpot,Inbound销售
+大客户代表_11,大客户代表,Salesforce Trailhead,Salesforce官方免费学习平台，覆盖CRM与销售技能模块。,https://trailhead.salesforce.com/,文档教程,入门,Salesforce,CRM销售
+大客户代表_12,大客户代表,HubSpot CRM免费教程,HubSpot Academy CRM与销售流程管理免费课程入口。,https://academy.hubspot.com/courses/crm,文档教程,入门,HubSpot,CRM
+大客户代表_13,大客户代表,Google数字营销认证,Google Skillshop数字营销与广告基础学习路径。,https://skillshop.exceedlms.com/student/catalog/list?category_ids=6431-google-ads,文档教程,进阶,Google,数字营销
+广告销售_1,广告销售,市场营销,市场营销基本理论、环境分析、消费者行为与营销组合策略。,https://www.icourse163.org/learn/ZBVC-1003007001,视频课程,入门,中国大学MOOC,市场营销
+广告销售_2,广告销售,销售管理,销售组织、团队管理、客户关系与绩效评价。,https://www.icourse163.org/learn/HZAU-1003244009,视频课程,进阶,中国大学MOOC,销售管理
+广告销售_3,广告销售,推销原理与实务,推销流程、网络销售技巧与数字化推销方法。,https://www.icourse163.org/learn/JSJZY-1206744802,视频课程,入门,中国大学MOOC,推销技巧
+广告销售_4,广告销售,商务沟通,商务谈判、危机沟通与高效沟通技巧。,https://www.icourse163.org/learn/AHDX-1460887167,视频课程,入门,中国大学MOOC,商务沟通
+广告销售_5,广告销售,汽车销售技巧,销售流程、客户异议处理与交车技巧实战。,https://www.icourse163.org/learn/HEPSVE-1002329014,视频课程,入门,中国大学MOOC,销售技巧
+广告销售_6,广告销售,网络营销,搜索引擎、新媒体、短视频与直播等网络营销工具。,https://www.icourse163.org/learn/CZU-1206816806,视频课程,进阶,中国大学MOOC,网络营销
+广告销售_7,广告销售,营销策划,市场机会分析、定位、产品/价格/渠道/促销策划。,https://www.icourse163.org/learn/NBCC-1001616007,视频课程,进阶,中国大学MOOC,营销策划
+广告销售_8,广告销售,沟通技巧,有效沟通是销售岗位核心软技能。,https://www.icourse163.org/learn/THU-1002537002,视频课程,入门,中国大学MOOC,沟通技巧
+广告销售_9,广告销售,Office办公软件应用,Excel客户管理、PPT方案制作等日常办公技能。,https://www.icourse163.org/learn/WHU-1002537001,视频课程,入门,中国大学MOOC,Office办公
+广告销售_10,广告销售,HubSpot Inbound Sales,HubSpot Academy入站销售免费课程，覆盖销售流程与客户开发。,https://academy.hubspot.com/courses/inbound-sales,文档教程,进阶,HubSpot,Inbound销售
+广告销售_11,广告销售,Salesforce Trailhead,Salesforce官方免费学习平台，覆盖CRM与销售技能模块。,https://trailhead.salesforce.com/,文档教程,入门,Salesforce,CRM销售
+广告销售_12,广告销售,HubSpot CRM免费教程,HubSpot Academy CRM与销售流程管理免费课程入口。,https://academy.hubspot.com/courses/crm,文档教程,入门,HubSpot,CRM
+广告销售_13,广告销售,Google数字营销认证,Google Skillshop数字营销与广告基础学习路径。,https://skillshop.exceedlms.com/student/catalog/list?category_ids=6431-google-ads,文档教程,进阶,Google,数字营销
+电话销售_1,电话销售,市场营销,市场营销基本理论、环境分析、消费者行为与营销组合策略。,https://www.icourse163.org/learn/ZBVC-1003007001,视频课程,入门,中国大学MOOC,市场营销
+电话销售_2,电话销售,销售管理,销售组织、团队管理、客户关系与绩效评价。,https://www.icourse163.org/learn/HZAU-1003244009,视频课程,进阶,中国大学MOOC,销售管理
+电话销售_3,电话销售,推销原理与实务,推销流程、网络销售技巧与数字化推销方法。,https://www.icourse163.org/learn/JSJZY-1206744802,视频课程,入门,中国大学MOOC,推销技巧
+电话销售_4,电话销售,商务沟通,商务谈判、危机沟通与高效沟通技巧。,https://www.icourse163.org/learn/AHDX-1460887167,视频课程,入门,中国大学MOOC,商务沟通
+电话销售_5,电话销售,汽车销售技巧,销售流程、客户异议处理与交车技巧实战。,https://www.icourse163.org/learn/HEPSVE-1002329014,视频课程,入门,中国大学MOOC,销售技巧
+电话销售_6,电话销售,网络营销,搜索引擎、新媒体、短视频与直播等网络营销工具。,https://www.icourse163.org/learn/CZU-1206816806,视频课程,进阶,中国大学MOOC,网络营销
+电话销售_7,电话销售,营销策划,市场机会分析、定位、产品/价格/渠道/促销策划。,https://www.icourse163.org/learn/NBCC-1001616007,视频课程,进阶,中国大学MOOC,营销策划
+电话销售_8,电话销售,沟通技巧,有效沟通是销售岗位核心软技能。,https://www.icourse163.org/learn/THU-1002537002,视频课程,入门,中国大学MOOC,沟通技巧
+电话销售_9,电话销售,Office办公软件应用,Excel客户管理、PPT方案制作等日常办公技能。,https://www.icourse163.org/learn/WHU-1002537001,视频课程,入门,中国大学MOOC,Office办公
+电话销售_10,电话销售,HubSpot Inbound Sales,HubSpot Academy入站销售免费课程，覆盖销售流程与客户开发。,https://academy.hubspot.com/courses/inbound-sales,文档教程,进阶,HubSpot,Inbound销售
+电话销售_11,电话销售,Salesforce Trailhead,Salesforce官方免费学习平台，覆盖CRM与销售技能模块。,https://trailhead.salesforce.com/,文档教程,入门,Salesforce,CRM销售
+电话销售_12,电话销售,HubSpot CRM免费教程,HubSpot Academy CRM与销售流程管理免费课程入口。,https://academy.hubspot.com/courses/crm,文档教程,入门,HubSpot,CRM
+电话销售_13,电话销售,Google数字营销认证,Google Skillshop数字营销与广告基础学习路径。,https://skillshop.exceedlms.com/student/catalog/list?category_ids=6431-google-ads,文档教程,进阶,Google,数字营销
+网络销售_1,网络销售,市场营销,市场营销基本理论、环境分析、消费者行为与营销组合策略。,https://www.icourse163.org/learn/ZBVC-1003007001,视频课程,入门,中国大学MOOC,市场营销
+网络销售_2,网络销售,销售管理,销售组织、团队管理、客户关系与绩效评价。,https://www.icourse163.org/learn/HZAU-1003244009,视频课程,进阶,中国大学MOOC,销售管理
+网络销售_3,网络销售,推销原理与实务,推销流程、网络销售技巧与数字化推销方法。,https://www.icourse163.org/learn/JSJZY-1206744802,视频课程,入门,中国大学MOOC,推销技巧
+网络销售_4,网络销售,商务沟通,商务谈判、危机沟通与高效沟通技巧。,https://www.icourse163.org/learn/AHDX-1460887167,视频课程,入门,中国大学MOOC,商务沟通
+网络销售_5,网络销售,汽车销售技巧,销售流程、客户异议处理与交车技巧实战。,https://www.icourse163.org/learn/HEPSVE-1002329014,视频课程,入门,中国大学MOOC,销售技巧
+网络销售_6,网络销售,网络营销,搜索引擎、新媒体、短视频与直播等网络营销工具。,https://www.icourse163.org/learn/CZU-1206816806,视频课程,进阶,中国大学MOOC,网络营销
+网络销售_7,网络销售,营销策划,市场机会分析、定位、产品/价格/渠道/促销策划。,https://www.icourse163.org/learn/NBCC-1001616007,视频课程,进阶,中国大学MOOC,营销策划
+网络销售_8,网络销售,沟通技巧,有效沟通是销售岗位核心软技能。,https://www.icourse163.org/learn/THU-1002537002,视频课程,入门,中国大学MOOC,沟通技巧
+网络销售_9,网络销售,Office办公软件应用,Excel客户管理、PPT方案制作等日常办公技能。,https://www.icourse163.org/learn/WHU-1002537001,视频课程,入门,中国大学MOOC,Office办公
+网络销售_10,网络销售,HubSpot Inbound Sales,HubSpot Academy入站销售免费课程，覆盖销售流程与客户开发。,https://academy.hubspot.com/courses/inbound-sales,文档教程,进阶,HubSpot,Inbound销售
+网络销售_11,网络销售,Salesforce Trailhead,Salesforce官方免费学习平台，覆盖CRM与销售技能模块。,https://trailhead.salesforce.com/,文档教程,入门,Salesforce,CRM销售
+网络销售_12,网络销售,HubSpot CRM免费教程,HubSpot Academy CRM与销售流程管理免费课程入口。,https://academy.hubspot.com/courses/crm,文档教程,入门,HubSpot,CRM
+网络销售_13,网络销售,Google数字营销认证,Google Skillshop数字营销与广告基础学习路径。,https://skillshop.exceedlms.com/student/catalog/list?category_ids=6431-google-ads,文档教程,进阶,Google,数字营销
+销售助理_1,销售助理,市场营销,市场营销基本理论、环境分析、消费者行为与营销组合策略。,https://www.icourse163.org/learn/ZBVC-1003007001,视频课程,入门,中国大学MOOC,市场营销
+销售助理_2,销售助理,销售管理,销售组织、团队管理、客户关系与绩效评价。,https://www.icourse163.org/learn/HZAU-1003244009,视频课程,进阶,中国大学MOOC,销售管理
+销售助理_3,销售助理,推销原理与实务,推销流程、网络销售技巧与数字化推销方法。,https://www.icourse163.org/learn/JSJZY-1206744802,视频课程,入门,中国大学MOOC,推销技巧
+销售助理_4,销售助理,商务沟通,商务谈判、危机沟通与高效沟通技巧。,https://www.icourse163.org/learn/AHDX-1460887167,视频课程,入门,中国大学MOOC,商务沟通
+销售助理_5,销售助理,汽车销售技巧,销售流程、客户异议处理与交车技巧实战。,https://www.icourse163.org/learn/HEPSVE-1002329014,视频课程,入门,中国大学MOOC,销售技巧
+销售助理_6,销售助理,网络营销,搜索引擎、新媒体、短视频与直播等网络营销工具。,https://www.icourse163.org/learn/CZU-1206816806,视频课程,进阶,中国大学MOOC,网络营销
+销售助理_7,销售助理,营销策划,市场机会分析、定位、产品/价格/渠道/促销策划。,https://www.icourse163.org/learn/NBCC-1001616007,视频课程,进阶,中国大学MOOC,营销策划
+销售助理_8,销售助理,沟通技巧,有效沟通是销售岗位核心软技能。,https://www.icourse163.org/learn/THU-1002537002,视频课程,入门,中国大学MOOC,沟通技巧
+销售助理_9,销售助理,Office办公软件应用,Excel客户管理、PPT方案制作等日常办公技能。,https://www.icourse163.org/learn/WHU-1002537001,视频课程,入门,中国大学MOOC,Office办公
+销售助理_10,销售助理,HubSpot Inbound Sales,HubSpot Academy入站销售免费课程，覆盖销售流程与客户开发。,https://academy.hubspot.com/courses/inbound-sales,文档教程,进阶,HubSpot,Inbound销售
+销售助理_11,销售助理,Salesforce Trailhead,Salesforce官方免费学习平台，覆盖CRM与销售技能模块。,https://trailhead.salesforce.com/,文档教程,入门,Salesforce,CRM销售
+销售助理_12,销售助理,HubSpot CRM免费教程,HubSpot Academy CRM与销售流程管理免费课程入口。,https://academy.hubspot.com/courses/crm,文档教程,入门,HubSpot,CRM
+销售助理_13,销售助理,Google数字营销认证,Google Skillshop数字营销与广告基础学习路径。,https://skillshop.exceedlms.com/student/catalog/list?category_ids=6431-google-ads,文档教程,进阶,Google,数字营销
+销售工程师_1,销售工程师,市场营销,市场营销基本理论、环境分析、消费者行为与营销组合策略。,https://www.icourse163.org/learn/ZBVC-1003007001,视频课程,入门,中国大学MOOC,市场营销
+销售工程师_2,销售工程师,销售管理,销售组织、团队管理、客户关系与绩效评价。,https://www.icourse163.org/learn/HZAU-1003244009,视频课程,进阶,中国大学MOOC,销售管理
+销售工程师_3,销售工程师,推销原理与实务,推销流程、网络销售技巧与数字化推销方法。,https://www.icourse163.org/learn/JSJZY-1206744802,视频课程,入门,中国大学MOOC,推销技巧
+销售工程师_4,销售工程师,商务沟通,商务谈判、危机沟通与高效沟通技巧。,https://www.icourse163.org/learn/AHDX-1460887167,视频课程,入门,中国大学MOOC,商务沟通
+销售工程师_5,销售工程师,汽车销售技巧,销售流程、客户异议处理与交车技巧实战。,https://www.icourse163.org/learn/HEPSVE-1002329014,视频课程,入门,中国大学MOOC,销售技巧
+销售工程师_6,销售工程师,网络营销,搜索引擎、新媒体、短视频与直播等网络营销工具。,https://www.icourse163.org/learn/CZU-1206816806,视频课程,进阶,中国大学MOOC,网络营销
+销售工程师_7,销售工程师,营销策划,市场机会分析、定位、产品/价格/渠道/促销策划。,https://www.icourse163.org/learn/NBCC-1001616007,视频课程,进阶,中国大学MOOC,营销策划
+销售工程师_8,销售工程师,沟通技巧,有效沟通是销售岗位核心软技能。,https://www.icourse163.org/learn/THU-1002537002,视频课程,入门,中国大学MOOC,沟通技巧
+销售工程师_9,销售工程师,Office办公软件应用,Excel客户管理、PPT方案制作等日常办公技能。,https://www.icourse163.org/learn/WHU-1002537001,视频课程,入门,中国大学MOOC,Office办公
+销售工程师_10,销售工程师,HubSpot Inbound Sales,HubSpot Academy入站销售免费课程，覆盖销售流程与客户开发。,https://academy.hubspot.com/courses/inbound-sales,文档教程,进阶,HubSpot,Inbound销售
+销售工程师_11,销售工程师,Salesforce Trailhead,Salesforce官方免费学习平台，覆盖CRM与销售技能模块。,https://trailhead.salesforce.com/,文档教程,入门,Salesforce,CRM销售
+销售工程师_12,销售工程师,HubSpot CRM免费教程,HubSpot Academy CRM与销售流程管理免费课程入口。,https://academy.hubspot.com/courses/crm,文档教程,入门,HubSpot,CRM
+销售工程师_13,销售工程师,Google数字营销认证,Google Skillshop数字营销与广告基础学习路径。,https://skillshop.exceedlms.com/student/catalog/list?category_ids=6431-google-ads,文档教程,进阶,Google,数字营销
+储备干部_1,储备干部,管理学原理,管理学基本理论、组织行为与决策方法，管理岗位入门。,https://www.icourse163.org/learn/BIT-1002537001,视频课程,入门,中国大学MOOC,管理学
+储备干部_2,储备干部,人力资源管理,选人用人育人留人，理解企业人才管理核心模块。,https://www.icourse163.org/learn/USTB-1206417815,视频课程,入门,中国大学MOOC,人力资源管理
+储备干部_3,储备干部,市场营销,理解市场环境与营销战略，培养商业思维。,https://www.icourse163.org/learn/ZBVC-1003007001,视频课程,入门,中国大学MOOC,市场营销
+储备干部_4,储备干部,项目管理,系统掌握项目计划、进度控制与团队管理。,https://www.icourse163.org/learn/NWPU-1003729004,视频课程,进阶,中国大学MOOC,项目管理
+储备干部_5,储备干部,沟通技巧,管理者必备的高效沟通与协调能力。,https://www.icourse163.org/learn/THU-1002537002,视频课程,入门,中国大学MOOC,沟通技巧
+储备干部_6,储备干部,商务沟通,商务谈判与跨部门协作沟通技巧。,https://www.icourse163.org/learn/AHDX-1460887167,视频课程,入门,中国大学MOOC,商务沟通
+储备干部_7,储备干部,Office办公软件应用,Excel数据分析与PPT汇报等办公技能。,https://www.icourse163.org/learn/WHU-1002537001,视频课程,入门,中国大学MOOC,Office办公
+储备干部_8,储备干部,统计学,数据分析与决策支持的统计基础。,https://www.icourse163.org/learn/RUC-1002537001,视频课程,进阶,中国大学MOOC,统计学
+储备干部_9,储备干部,财务分析与决策,非财务人员需理解的财务报表与经营分析。,https://www.icourse163.org/learn/TONGJI-46008,视频课程,进阶,中国大学MOOC,财务分析
+储备干部_10,储备干部,edX管理学课程,edX平台管理学免费课程集合，培养领导力与团队管理思维。,https://www.edx.org/learn/management,文档教程,进阶,edX,管理技能
+储备干部_11,储备干部,Learning How to Learn,Coursera经典学习科学课程，提升学习效率与知识吸收能力。,https://www.coursera.org/learn/learning-how-to-learn,视频课程,入门,Coursera,学习方法
+储备干部_12,储备干部,Pro Git第二版（中文版）,团队协作与文档版本管理基础。,https://git-scm.com/book/zh/v2,文档教程,入门,Git官方,Git版本控制
+储备干部_13,储备干部,Atlassian Agile入门,Atlassian敏捷开发入门，理解现代团队协作方式。,https://www.atlassian.com/agile,文档教程,入门,Atlassian,敏捷管理
+储备经理人_1,储备经理人,管理学原理,管理学基本理论、组织行为与决策方法，管理岗位入门。,https://www.icourse163.org/learn/BIT-1002537001,视频课程,入门,中国大学MOOC,管理学
+储备经理人_2,储备经理人,人力资源管理,选人用人育人留人，理解企业人才管理核心模块。,https://www.icourse163.org/learn/USTB-1206417815,视频课程,入门,中国大学MOOC,人力资源管理
+储备经理人_3,储备经理人,市场营销,理解市场环境与营销战略，培养商业思维。,https://www.icourse163.org/learn/ZBVC-1003007001,视频课程,入门,中国大学MOOC,市场营销
+储备经理人_4,储备经理人,项目管理,系统掌握项目计划、进度控制与团队管理。,https://www.icourse163.org/learn/NWPU-1003729004,视频课程,进阶,中国大学MOOC,项目管理
+储备经理人_5,储备经理人,沟通技巧,管理者必备的高效沟通与协调能力。,https://www.icourse163.org/learn/THU-1002537002,视频课程,入门,中国大学MOOC,沟通技巧
+储备经理人_6,储备经理人,商务沟通,商务谈判与跨部门协作沟通技巧。,https://www.icourse163.org/learn/AHDX-1460887167,视频课程,入门,中国大学MOOC,商务沟通
+储备经理人_7,储备经理人,Office办公软件应用,Excel数据分析与PPT汇报等办公技能。,https://www.icourse163.org/learn/WHU-1002537001,视频课程,入门,中国大学MOOC,Office办公
+储备经理人_8,储备经理人,统计学,数据分析与决策支持的统计基础。,https://www.icourse163.org/learn/RUC-1002537001,视频课程,进阶,中国大学MOOC,统计学
+储备经理人_9,储备经理人,财务分析与决策,非财务人员需理解的财务报表与经营分析。,https://www.icourse163.org/learn/TONGJI-46008,视频课程,进阶,中国大学MOOC,财务分析
+储备经理人_10,储备经理人,edX管理学课程,edX平台管理学免费课程集合，培养领导力与团队管理思维。,https://www.edx.org/learn/management,文档教程,进阶,edX,管理技能
+储备经理人_11,储备经理人,Learning How to Learn,Coursera经典学习科学课程，提升学习效率与知识吸收能力。,https://www.coursera.org/learn/learning-how-to-learn,视频课程,入门,Coursera,学习方法
+储备经理人_12,储备经理人,Pro Git第二版（中文版）,团队协作与文档版本管理基础。,https://git-scm.com/book/zh/v2,文档教程,入门,Git官方,Git版本控制
+储备经理人_13,储备经理人,Atlassian Agile入门,Atlassian敏捷开发入门，理解现代团队协作方式。,https://www.atlassian.com/agile,文档教程,入门,Atlassian,敏捷管理
+管培生_储备干部_1,管培生/储备干部,管理学原理,管理学基本理论、组织行为与决策方法，管理岗位入门。,https://www.icourse163.org/learn/BIT-1002537001,视频课程,入门,中国大学MOOC,管理学
+管培生_储备干部_2,管培生/储备干部,人力资源管理,选人用人育人留人，理解企业人才管理核心模块。,https://www.icourse163.org/learn/USTB-1206417815,视频课程,入门,中国大学MOOC,人力资源管理
+管培生_储备干部_3,管培生/储备干部,市场营销,理解市场环境与营销战略，培养商业思维。,https://www.icourse163.org/learn/ZBVC-1003007001,视频课程,入门,中国大学MOOC,市场营销
+管培生_储备干部_4,管培生/储备干部,项目管理,系统掌握项目计划、进度控制与团队管理。,https://www.icourse163.org/learn/NWPU-1003729004,视频课程,进阶,中国大学MOOC,项目管理
+管培生_储备干部_5,管培生/储备干部,沟通技巧,管理者必备的高效沟通与协调能力。,https://www.icourse163.org/learn/THU-1002537002,视频课程,入门,中国大学MOOC,沟通技巧
+管培生_储备干部_6,管培生/储备干部,商务沟通,商务谈判与跨部门协作沟通技巧。,https://www.icourse163.org/learn/AHDX-1460887167,视频课程,入门,中国大学MOOC,商务沟通
+管培生_储备干部_7,管培生/储备干部,Office办公软件应用,Excel数据分析与PPT汇报等办公技能。,https://www.icourse163.org/learn/WHU-1002537001,视频课程,入门,中国大学MOOC,Office办公
+管培生_储备干部_8,管培生/储备干部,统计学,数据分析与决策支持的统计基础。,https://www.icourse163.org/learn/RUC-1002537001,视频课程,进阶,中国大学MOOC,统计学
+管培生_储备干部_9,管培生/储备干部,财务分析与决策,非财务人员需理解的财务报表与经营分析。,https://www.icourse163.org/learn/TONGJI-46008,视频课程,进阶,中国大学MOOC,财务分析
+管培生_储备干部_10,管培生/储备干部,edX管理学课程,edX平台管理学免费课程集合，培养领导力与团队管理思维。,https://www.edx.org/learn/management,文档教程,进阶,edX,管理技能
+管培生_储备干部_11,管培生/储备干部,Learning How to Learn,Coursera经典学习科学课程，提升学习效率与知识吸收能力。,https://www.coursera.org/learn/learning-how-to-learn,视频课程,入门,Coursera,学习方法
+管培生_储备干部_12,管培生/储备干部,Pro Git第二版（中文版）,团队协作与文档版本管理基础。,https://git-scm.com/book/zh/v2,文档教程,入门,Git官方,Git版本控制
+管培生_储备干部_13,管培生/储备干部,Atlassian Agile入门,Atlassian敏捷开发入门，理解现代团队协作方式。,https://www.atlassian.com/agile,文档教程,入门,Atlassian,敏捷管理
+售后客服_1,售后客服,客户服务与管理,服务流程、投诉处理与客户满意度管理。,https://www.icourse163.org/learn/BIT-1003377001,视频课程,入门,中国大学MOOC,客户服务
+售后客服_2,售后客服,沟通技巧,有效倾听、表达与冲突处理，客服核心软技能。,https://www.icourse163.org/learn/THU-1002537002,视频课程,入门,中国大学MOOC,沟通技巧
+售后客服_3,售后客服,商务沟通,商务场景下的专业沟通与谈判技巧。,https://www.icourse163.org/learn/AHDX-1460887167,视频课程,入门,中国大学MOOC,商务沟通
+售后客服_4,售后客服,心理学概论,理解客户情绪与消费心理，提升服务质量。,https://www.icourse163.org/learn/BNU-1003377001,视频课程,入门,中国大学MOOC,心理学
+售后客服_5,售后客服,Office办公软件应用,工单记录、数据统计与报告撰写。,https://www.icourse163.org/learn/WHU-1002537001,视频课程,入门,中国大学MOOC,Office办公
+售后客服_6,售后客服,CRM客户关系管理,HubSpot CRM免费教程，客户信息管理与跟进。,https://academy.hubspot.com/courses/crm,文档教程,入门,HubSpot,CRM
+售后客服_7,售后客服,Zendesk客服技能指南,Zendesk官方客户服务核心技能与最佳实践文章。,https://www.zendesk.com/blog/customer-service-skills/,文档教程,入门,Zendesk,客服培训
+售后客服_8,售后客服,W3Schools SQL教程,W3Schools SQL入门教程，客服数据统计查询基础。,https://www.w3schools.com/sql/,文档教程,入门,W3Schools,SQL基础
+售后客服_9,售后客服,电商客服规范,阿里巴巴电商客服服务标准与培训资源。,https://rulechannel.taobao.com/,文档教程,入门,淘宝规则,电商客服
+售后客服_10,售后客服,Learning How to Learn,Coursera经典学习科学课程，提升工作效率与时间管理。,https://www.coursera.org/learn/learning-how-to-learn,视频课程,入门,Coursera,时间管理
+网络客服_1,网络客服,客户服务与管理,服务流程、投诉处理与客户满意度管理。,https://www.icourse163.org/learn/BIT-1003377001,视频课程,入门,中国大学MOOC,客户服务
+网络客服_2,网络客服,沟通技巧,有效倾听、表达与冲突处理，客服核心软技能。,https://www.icourse163.org/learn/THU-1002537002,视频课程,入门,中国大学MOOC,沟通技巧
+网络客服_3,网络客服,商务沟通,商务场景下的专业沟通与谈判技巧。,https://www.icourse163.org/learn/AHDX-1460887167,视频课程,入门,中国大学MOOC,商务沟通
+网络客服_4,网络客服,心理学概论,理解客户情绪与消费心理，提升服务质量。,https://www.icourse163.org/learn/BNU-1003377001,视频课程,入门,中国大学MOOC,心理学
+网络客服_5,网络客服,Office办公软件应用,工单记录、数据统计与报告撰写。,https://www.icourse163.org/learn/WHU-1002537001,视频课程,入门,中国大学MOOC,Office办公
+网络客服_6,网络客服,CRM客户关系管理,HubSpot CRM免费教程，客户信息管理与跟进。,https://academy.hubspot.com/courses/crm,文档教程,入门,HubSpot,CRM
+网络客服_7,网络客服,Zendesk客服技能指南,Zendesk官方客户服务核心技能与最佳实践文章。,https://www.zendesk.com/blog/customer-service-skills/,文档教程,入门,Zendesk,客服培训
+网络客服_8,网络客服,W3Schools SQL教程,W3Schools SQL入门教程，客服数据统计查询基础。,https://www.w3schools.com/sql/,文档教程,入门,W3Schools,SQL基础
+网络客服_9,网络客服,电商客服规范,阿里巴巴电商客服服务标准与培训资源。,https://rulechannel.taobao.com/,文档教程,入门,淘宝规则,电商客服
+网络客服_10,网络客服,Learning How to Learn,Coursera经典学习科学课程，提升工作效率与时间管理。,https://www.coursera.org/learn/learning-how-to-learn,视频课程,入门,Coursera,时间管理
+电话客服_1,电话客服,客户服务与管理,服务流程、投诉处理与客户满意度管理。,https://www.icourse163.org/learn/BIT-1003377001,视频课程,入门,中国大学MOOC,客户服务
+电话客服_2,电话客服,沟通技巧,有效倾听、表达与冲突处理，客服核心软技能。,https://www.icourse163.org/learn/THU-1002537002,视频课程,入门,中国大学MOOC,沟通技巧
+电话客服_3,电话客服,商务沟通,商务场景下的专业沟通与谈判技巧。,https://www.icourse163.org/learn/AHDX-1460887167,视频课程,入门,中国大学MOOC,商务沟通
+电话客服_4,电话客服,心理学概论,理解客户情绪与消费心理，提升服务质量。,https://www.icourse163.org/learn/BNU-1003377001,视频课程,入门,中国大学MOOC,心理学
+电话客服_5,电话客服,Office办公软件应用,工单记录、数据统计与报告撰写。,https://www.icourse163.org/learn/WHU-1002537001,视频课程,入门,中国大学MOOC,Office办公
+电话客服_6,电话客服,CRM客户关系管理,HubSpot CRM免费教程，客户信息管理与跟进。,https://academy.hubspot.com/courses/crm,文档教程,入门,HubSpot,CRM
+电话客服_7,电话客服,Zendesk客服技能指南,Zendesk官方客户服务核心技能与最佳实践文章。,https://www.zendesk.com/blog/customer-service-skills/,文档教程,入门,Zendesk,客服培训
+电话客服_8,电话客服,W3Schools SQL教程,W3Schools SQL入门教程，客服数据统计查询基础。,https://www.w3schools.com/sql/,文档教程,入门,W3Schools,SQL基础
+电话客服_9,电话客服,电商客服规范,阿里巴巴电商客服服务标准与培训资源。,https://rulechannel.taobao.com/,文档教程,入门,淘宝规则,电商客服
+电话客服_10,电话客服,Learning How to Learn,Coursera经典学习科学课程，提升工作效率与时间管理。,https://www.coursera.org/learn/learning-how-to-learn,视频课程,入门,Coursera,时间管理
+社区运营_1,社区运营,网络营销,搜索引擎、微信微博、短视频与直播等新媒体运营。,https://www.icourse163.org/learn/CZU-1206816806,视频课程,入门,中国大学MOOC,网络营销
+社区运营_2,社区运营,营销策划,市场分析、品牌策划与促销推广方案设计。,https://www.icourse163.org/learn/NBCC-1001616007,视频课程,进阶,中国大学MOOC,营销策划
+社区运营_3,社区运营,市场营销,营销环境分析、消费者行为与4P策略。,https://www.icourse163.org/learn/ZBVC-1003007001,视频课程,入门,中国大学MOOC,市场营销
+社区运营_4,社区运营,数据分析与挖掘,运营数据分析与用户行为洞察基础。,https://www.icourse163.org/learn/RUC-1002537001,视频课程,进阶,中国大学MOOC,数据分析
+社区运营_5,社区运营,Office办公软件应用,Excel数据处理与运营报表制作。,https://www.icourse163.org/learn/WHU-1002537001,视频课程,入门,中国大学MOOC,Office办公
+社区运营_6,社区运营,Python语言程序设计,运营数据处理与自动化脚本编写。,https://www.icourse163.org/learn/PKU-1002525007,视频课程,入门,中国大学MOOC,Python
+社区运营_7,社区运营,沟通技巧,跨部门协作与用户沟通的核心软技能。,https://www.icourse163.org/learn/THU-1002537002,视频课程,入门,中国大学MOOC,沟通技巧
+社区运营_8,社区运营,HubSpot内容营销,HubSpot Academy内容营销免费课程。,https://academy.hubspot.com/courses/content-marketing,文档教程,入门,HubSpot,内容营销
+社区运营_9,社区运营,Skillshop Google Ads,Google Skillshop广告与数字营销认证学习平台。,https://skillshop.exceedlms.com/student/catalog/list?category_ids=6431-google-ads,文档教程,进阶,Google,广告投放
+社区运营_10,社区运营,Pro Git第二版（中文版）,运营文档与协作版本管理。,https://git-scm.com/book/zh/v2,文档教程,入门,Git官方,Git版本控制
+社区运营_11,社区运营,Atlassian Agile指南,Atlassian敏捷方法论指南，理解迭代运营与团队协作。,https://www.atlassian.com/agile,文档教程,进阶,Atlassian,增长运营
+运营助理_专员_1,运营助理/专员,网络营销,搜索引擎、微信微博、短视频与直播等新媒体运营。,https://www.icourse163.org/learn/CZU-1206816806,视频课程,入门,中国大学MOOC,网络营销
+运营助理_专员_2,运营助理/专员,营销策划,市场分析、品牌策划与促销推广方案设计。,https://www.icourse163.org/learn/NBCC-1001616007,视频课程,进阶,中国大学MOOC,营销策划
+运营助理_专员_3,运营助理/专员,市场营销,营销环境分析、消费者行为与4P策略。,https://www.icourse163.org/learn/ZBVC-1003007001,视频课程,入门,中国大学MOOC,市场营销
+运营助理_专员_4,运营助理/专员,数据分析与挖掘,运营数据分析与用户行为洞察基础。,https://www.icourse163.org/learn/RUC-1002537001,视频课程,进阶,中国大学MOOC,数据分析
+运营助理_专员_5,运营助理/专员,Office办公软件应用,Excel数据处理与运营报表制作。,https://www.icourse163.org/learn/WHU-1002537001,视频课程,入门,中国大学MOOC,Office办公
+运营助理_专员_6,运营助理/专员,Python语言程序设计,运营数据处理与自动化脚本编写。,https://www.icourse163.org/learn/PKU-1002525007,视频课程,入门,中国大学MOOC,Python
+运营助理_专员_7,运营助理/专员,沟通技巧,跨部门协作与用户沟通的核心软技能。,https://www.icourse163.org/learn/THU-1002537002,视频课程,入门,中国大学MOOC,沟通技巧
+运营助理_专员_8,运营助理/专员,HubSpot内容营销,HubSpot Academy内容营销免费课程。,https://academy.hubspot.com/courses/content-marketing,文档教程,入门,HubSpot,内容营销
+运营助理_专员_9,运营助理/专员,Skillshop Google Ads,Google Skillshop广告与数字营销认证学习平台。,https://skillshop.exceedlms.com/student/catalog/list?category_ids=6431-google-ads,文档教程,进阶,Google,广告投放
+运营助理_专员_10,运营助理/专员,Pro Git第二版（中文版）,运营文档与协作版本管理。,https://git-scm.com/book/zh/v2,文档教程,入门,Git官方,Git版本控制
+运营助理_专员_11,运营助理/专员,Atlassian Agile指南,Atlassian敏捷方法论指南，理解迭代运营与团队协作。,https://www.atlassian.com/agile,文档教程,进阶,Atlassian,增长运营
+游戏运营_1,游戏运营,网络营销,搜索引擎、微信微博、短视频与直播等新媒体运营。,https://www.icourse163.org/learn/CZU-1206816806,视频课程,入门,中国大学MOOC,网络营销
+游戏运营_2,游戏运营,营销策划,市场分析、品牌策划与促销推广方案设计。,https://www.icourse163.org/learn/NBCC-1001616007,视频课程,进阶,中国大学MOOC,营销策划
+游戏运营_3,游戏运营,市场营销,营销环境分析、消费者行为与4P策略。,https://www.icourse163.org/learn/ZBVC-1003007001,视频课程,入门,中国大学MOOC,市场营销
+游戏运营_4,游戏运营,数据分析与挖掘,运营数据分析与用户行为洞察基础。,https://www.icourse163.org/learn/RUC-1002537001,视频课程,进阶,中国大学MOOC,数据分析
+游戏运营_5,游戏运营,Office办公软件应用,Excel数据处理与运营报表制作。,https://www.icourse163.org/learn/WHU-1002537001,视频课程,入门,中国大学MOOC,Office办公
+游戏运营_6,游戏运营,Python语言程序设计,运营数据处理与自动化脚本编写。,https://www.icourse163.org/learn/PKU-1002525007,视频课程,入门,中国大学MOOC,Python
+游戏运营_7,游戏运营,沟通技巧,跨部门协作与用户沟通的核心软技能。,https://www.icourse163.org/learn/THU-1002537002,视频课程,入门,中国大学MOOC,沟通技巧
+游戏运营_8,游戏运营,HubSpot内容营销,HubSpot Academy内容营销免费课程。,https://academy.hubspot.com/courses/content-marketing,文档教程,入门,HubSpot,内容营销
+游戏运营_9,游戏运营,Skillshop Google Ads,Google Skillshop广告与数字营销认证学习平台。,https://skillshop.exceedlms.com/student/catalog/list?category_ids=6431-google-ads,文档教程,进阶,Google,广告投放
+游戏运营_10,游戏运营,Pro Git第二版（中文版）,运营文档与协作版本管理。,https://git-scm.com/book/zh/v2,文档教程,入门,Git官方,Git版本控制
+游戏运营_11,游戏运营,Atlassian Agile指南,Atlassian敏捷方法论指南，理解迭代运营与团队协作。,https://www.atlassian.com/agile,文档教程,进阶,Atlassian,增长运营
+游戏推广_1,游戏推广,网络营销,搜索引擎、微信微博、短视频与直播等新媒体运营。,https://www.icourse163.org/learn/CZU-1206816806,视频课程,入门,中国大学MOOC,网络营销
+游戏推广_2,游戏推广,营销策划,市场分析、品牌策划与促销推广方案设计。,https://www.icourse163.org/learn/NBCC-1001616007,视频课程,进阶,中国大学MOOC,营销策划
+游戏推广_3,游戏推广,市场营销,营销环境分析、消费者行为与4P策略。,https://www.icourse163.org/learn/ZBVC-1003007001,视频课程,入门,中国大学MOOC,市场营销
+游戏推广_4,游戏推广,数据分析与挖掘,运营数据分析与用户行为洞察基础。,https://www.icourse163.org/learn/RUC-1002537001,视频课程,进阶,中国大学MOOC,数据分析
+游戏推广_5,游戏推广,Office办公软件应用,Excel数据处理与运营报表制作。,https://www.icourse163.org/learn/WHU-1002537001,视频课程,入门,中国大学MOOC,Office办公
+游戏推广_6,游戏推广,Python语言程序设计,运营数据处理与自动化脚本编写。,https://www.icourse163.org/learn/PKU-1002525007,视频课程,入门,中国大学MOOC,Python
+游戏推广_7,游戏推广,沟通技巧,跨部门协作与用户沟通的核心软技能。,https://www.icourse163.org/learn/THU-1002537002,视频课程,入门,中国大学MOOC,沟通技巧
+游戏推广_8,游戏推广,HubSpot内容营销,HubSpot Academy内容营销免费课程。,https://academy.hubspot.com/courses/content-marketing,文档教程,入门,HubSpot,内容营销
+游戏推广_9,游戏推广,Skillshop Google Ads,Google Skillshop广告与数字营销认证学习平台。,https://skillshop.exceedlms.com/student/catalog/list?category_ids=6431-google-ads,文档教程,进阶,Google,广告投放
+游戏推广_10,游戏推广,Pro Git第二版（中文版）,运营文档与协作版本管理。,https://git-scm.com/book/zh/v2,文档教程,入门,Git官方,Git版本控制
+游戏推广_11,游戏推广,Atlassian Agile指南,Atlassian敏捷方法论指南，理解迭代运营与团队协作。,https://www.atlassian.com/agile,文档教程,进阶,Atlassian,增长运营
+APP推广_1,APP推广,网络营销,搜索引擎、微信微博、短视频与直播等新媒体运营。,https://www.icourse163.org/learn/CZU-1206816806,视频课程,入门,中国大学MOOC,网络营销
+APP推广_2,APP推广,营销策划,市场分析、品牌策划与促销推广方案设计。,https://www.icourse163.org/learn/NBCC-1001616007,视频课程,进阶,中国大学MOOC,营销策划
+APP推广_3,APP推广,市场营销,营销环境分析、消费者行为与4P策略。,https://www.icourse163.org/learn/ZBVC-1003007001,视频课程,入门,中国大学MOOC,市场营销
+APP推广_4,APP推广,数据分析与挖掘,运营数据分析与用户行为洞察基础。,https://www.icourse163.org/learn/RUC-1002537001,视频课程,进阶,中国大学MOOC,数据分析
+APP推广_5,APP推广,Office办公软件应用,Excel数据处理与运营报表制作。,https://www.icourse163.org/learn/WHU-1002537001,视频课程,入门,中国大学MOOC,Office办公
+APP推广_6,APP推广,Python语言程序设计,运营数据处理与自动化脚本编写。,https://www.icourse163.org/learn/PKU-1002525007,视频课程,入门,中国大学MOOC,Python
+APP推广_7,APP推广,沟通技巧,跨部门协作与用户沟通的核心软技能。,https://www.icourse163.org/learn/THU-1002537002,视频课程,入门,中国大学MOOC,沟通技巧
+APP推广_8,APP推广,HubSpot内容营销,HubSpot Academy内容营销免费课程。,https://academy.hubspot.com/courses/content-marketing,文档教程,入门,HubSpot,内容营销
+APP推广_9,APP推广,Skillshop Google Ads,Google Skillshop广告与数字营销认证学习平台。,https://skillshop.exceedlms.com/student/catalog/list?category_ids=6431-google-ads,文档教程,进阶,Google,广告投放
+APP推广_10,APP推广,Pro Git第二版（中文版）,运营文档与协作版本管理。,https://git-scm.com/book/zh/v2,文档教程,入门,Git官方,Git版本控制
+APP推广_11,APP推广,Atlassian Agile指南,Atlassian敏捷方法论指南，理解迭代运营与团队协作。,https://www.atlassian.com/agile,文档教程,进阶,Atlassian,增长运营
+律师_1,律师,民法总论,江苏警官学院民法总论课程，讲解民事主体、权利与法律行为。,https://www.icourse163.org/learn/JSPI-1449756161,视频课程,入门,中国大学MOOC,民法
+律师_2,律师,民法总论（广外）,广东外语外贸大学民法总论，理论与案例结合。,https://www.icourse163.org/learn/GDUFS-1206561807,视频课程,入门,中国大学MOOC,民法
+律师_3,律师,经济法,经济法基本理论与市场主体法律制度。,https://www.icourse163.org/learn/BIT-1003377002,视频课程,进阶,中国大学MOOC,经济法
+律师_4,律师,刑法总论,刑法基本原则、犯罪构成与刑罚体系。,https://www.icourse163.org/learn/BNU-1003377001,视频课程,进阶,中国大学MOOC,刑法
+律师_5,律师,法律检索方法与资源,北大法宝法律数据库使用与法规检索方法。,https://www.pkulaw.com/,文档教程,入门,北大法宝,法律检索
+律师_6,律师,中国裁判文书网,最高人民法院裁判文书公开平台，案例研究必备。,https://wenshu.court.gov.cn/,文档教程,入门,最高法,案例检索
+律师_7,律师,国家法律法规数据库,全国人大常委会法律法规官方查询平台。,https://flk.npc.gov.cn/,文档教程,入门,全国人大,法规查询
+律师_8,律师,WIPO知识产权指南,世界知识产权组织IP入门指南与资源。,https://www.wipo.int/ip-outreach/en/ipday/,文档教程,入门,WIPO,知识产权
+律师_9,律师,法律英语,英汉汉英商务翻译课程中的法律文本翻译模块。,https://www.icourse163.org/learn/HDZF-1450724235,视频课程,进阶,中国大学MOOC,法律英语
+律师_10,律师,Office办公软件应用,法律文档排版与办公技能。,https://www.icourse163.org/learn/WHU-1002537001,视频课程,入门,中国大学MOOC,Office办公
+律师_11,律师,沟通技巧,律师与客户沟通、庭审表达的基础软技能。,https://www.icourse163.org/learn/THU-1002537002,视频课程,入门,中国大学MOOC,沟通技巧
+律师助理_1,律师助理,民法总论,江苏警官学院民法总论课程，讲解民事主体、权利与法律行为。,https://www.icourse163.org/learn/JSPI-1449756161,视频课程,入门,中国大学MOOC,民法
+律师助理_2,律师助理,民法总论（广外）,广东外语外贸大学民法总论，理论与案例结合。,https://www.icourse163.org/learn/GDUFS-1206561807,视频课程,入门,中国大学MOOC,民法
+律师助理_3,律师助理,经济法,经济法基本理论与市场主体法律制度。,https://www.icourse163.org/learn/BIT-1003377002,视频课程,进阶,中国大学MOOC,经济法
+律师助理_4,律师助理,刑法总论,刑法基本原则、犯罪构成与刑罚体系。,https://www.icourse163.org/learn/BNU-1003377001,视频课程,进阶,中国大学MOOC,刑法
+律师助理_5,律师助理,法律检索方法与资源,北大法宝法律数据库使用与法规检索方法。,https://www.pkulaw.com/,文档教程,入门,北大法宝,法律检索
+律师助理_6,律师助理,中国裁判文书网,最高人民法院裁判文书公开平台，案例研究必备。,https://wenshu.court.gov.cn/,文档教程,入门,最高法,案例检索
+律师助理_7,律师助理,国家法律法规数据库,全国人大常委会法律法规官方查询平台。,https://flk.npc.gov.cn/,文档教程,入门,全国人大,法规查询
+律师助理_8,律师助理,WIPO知识产权指南,世界知识产权组织IP入门指南与资源。,https://www.wipo.int/ip-outreach/en/ipday/,文档教程,入门,WIPO,知识产权
+律师助理_9,律师助理,法律英语,英汉汉英商务翻译课程中的法律文本翻译模块。,https://www.icourse163.org/learn/HDZF-1450724235,视频课程,进阶,中国大学MOOC,法律英语
+律师助理_10,律师助理,Office办公软件应用,法律文档排版与办公技能。,https://www.icourse163.org/learn/WHU-1002537001,视频课程,入门,中国大学MOOC,Office办公
+律师助理_11,律师助理,沟通技巧,律师与客户沟通、庭审表达的基础软技能。,https://www.icourse163.org/learn/THU-1002537002,视频课程,入门,中国大学MOOC,沟通技巧
+法务专员_助理_1,法务专员/助理,民法总论,江苏警官学院民法总论课程，讲解民事主体、权利与法律行为。,https://www.icourse163.org/learn/JSPI-1449756161,视频课程,入门,中国大学MOOC,民法
+法务专员_助理_2,法务专员/助理,民法总论（广外）,广东外语外贸大学民法总论，理论与案例结合。,https://www.icourse163.org/learn/GDUFS-1206561807,视频课程,入门,中国大学MOOC,民法
+法务专员_助理_3,法务专员/助理,经济法,经济法基本理论与市场主体法律制度。,https://www.icourse163.org/learn/BIT-1003377002,视频课程,进阶,中国大学MOOC,经济法
+法务专员_助理_4,法务专员/助理,刑法总论,刑法基本原则、犯罪构成与刑罚体系。,https://www.icourse163.org/learn/BNU-1003377001,视频课程,进阶,中国大学MOOC,刑法
+法务专员_助理_5,法务专员/助理,法律检索方法与资源,北大法宝法律数据库使用与法规检索方法。,https://www.pkulaw.com/,文档教程,入门,北大法宝,法律检索
+法务专员_助理_6,法务专员/助理,中国裁判文书网,最高人民法院裁判文书公开平台，案例研究必备。,https://wenshu.court.gov.cn/,文档教程,入门,最高法,案例检索
+法务专员_助理_7,法务专员/助理,国家法律法规数据库,全国人大常委会法律法规官方查询平台。,https://flk.npc.gov.cn/,文档教程,入门,全国人大,法规查询
+法务专员_助理_8,法务专员/助理,WIPO知识产权指南,世界知识产权组织IP入门指南与资源。,https://www.wipo.int/ip-outreach/en/ipday/,文档教程,入门,WIPO,知识产权
+法务专员_助理_9,法务专员/助理,法律英语,英汉汉英商务翻译课程中的法律文本翻译模块。,https://www.icourse163.org/learn/HDZF-1450724235,视频课程,进阶,中国大学MOOC,法律英语
+法务专员_助理_10,法务专员/助理,Office办公软件应用,法律文档排版与办公技能。,https://www.icourse163.org/learn/WHU-1002537001,视频课程,入门,中国大学MOOC,Office办公
+法务专员_助理_11,法务专员/助理,沟通技巧,律师与客户沟通、庭审表达的基础软技能。,https://www.icourse163.org/learn/THU-1002537002,视频课程,入门,中国大学MOOC,沟通技巧
+知识产权_专利代理_1,知识产权/专利代理,民法总论,江苏警官学院民法总论课程，讲解民事主体、权利与法律行为。,https://www.icourse163.org/learn/JSPI-1449756161,视频课程,入门,中国大学MOOC,民法
+知识产权_专利代理_2,知识产权/专利代理,民法总论（广外）,广东外语外贸大学民法总论，理论与案例结合。,https://www.icourse163.org/learn/GDUFS-1206561807,视频课程,入门,中国大学MOOC,民法
+知识产权_专利代理_3,知识产权/专利代理,经济法,经济法基本理论与市场主体法律制度。,https://www.icourse163.org/learn/BIT-1003377002,视频课程,进阶,中国大学MOOC,经济法
+知识产权_专利代理_4,知识产权/专利代理,刑法总论,刑法基本原则、犯罪构成与刑罚体系。,https://www.icourse163.org/learn/BNU-1003377001,视频课程,进阶,中国大学MOOC,刑法
+知识产权_专利代理_5,知识产权/专利代理,法律检索方法与资源,北大法宝法律数据库使用与法规检索方法。,https://www.pkulaw.com/,文档教程,入门,北大法宝,法律检索
+知识产权_专利代理_6,知识产权/专利代理,中国裁判文书网,最高人民法院裁判文书公开平台，案例研究必备。,https://wenshu.court.gov.cn/,文档教程,入门,最高法,案例检索
+知识产权_专利代理_7,知识产权/专利代理,国家法律法规数据库,全国人大常委会法律法规官方查询平台。,https://flk.npc.gov.cn/,文档教程,入门,全国人大,法规查询
+知识产权_专利代理_8,知识产权/专利代理,WIPO知识产权指南,世界知识产权组织IP入门指南与资源。,https://www.wipo.int/ip-outreach/en/ipday/,文档教程,入门,WIPO,知识产权
+知识产权_专利代理_9,知识产权/专利代理,法律英语,英汉汉英商务翻译课程中的法律文本翻译模块。,https://www.icourse163.org/learn/HDZF-1450724235,视频课程,进阶,中国大学MOOC,法律英语
+知识产权_专利代理_10,知识产权/专利代理,Office办公软件应用,法律文档排版与办公技能。,https://www.icourse163.org/learn/WHU-1002537001,视频课程,入门,中国大学MOOC,Office办公
+知识产权_专利代理_11,知识产权/专利代理,沟通技巧,律师与客户沟通、庭审表达的基础软技能。,https://www.icourse163.org/learn/THU-1002537002,视频课程,入门,中国大学MOOC,沟通技巧
+招聘专员_助理_1,招聘专员/助理,人力资源管理,北京科技大学HR课程，涵盖招聘甄选、绩效、薪酬与培训。,https://www.icourse163.org/learn/USTB-1206417815,视频课程,入门,中国大学MOOC,人力资源管理
+招聘专员_助理_2,招聘专员/助理,人力资源管理（央财）,中央财经大学HR课程，招聘面试与人才激励专题。,https://www.icourse163.org/learn/CUFE-1003438001,视频课程,进阶,中国大学MOOC,人力资源管理
+招聘专员_助理_3,招聘专员/助理,组织行为学,理解员工行为、团队动力与组织文化。,https://www.icourse163.org/learn/BIT-1002537001,视频课程,入门,中国大学MOOC,组织行为学
+招聘专员_助理_4,招聘专员/助理,沟通技巧,招聘面试与员工沟通的核心软技能。,https://www.icourse163.org/learn/THU-1002537002,视频课程,入门,中国大学MOOC,沟通技巧
+招聘专员_助理_5,招聘专员/助理,商务沟通,薪酬谈判与劳资沟通技巧。,https://www.icourse163.org/learn/AHDX-1460887167,视频课程,入门,中国大学MOOC,商务沟通
+招聘专员_助理_6,招聘专员/助理,劳动法实务,劳动合同、社保与劳动争议处理基础知识。,https://www.icourse163.org/learn/JSPI-1449756161,视频课程,进阶,中国大学MOOC,劳动法
+招聘专员_助理_7,招聘专员/助理,Office办公软件应用,HR表格管理与报表制作。,https://www.icourse163.org/learn/WHU-1002537001,视频课程,入门,中国大学MOOC,Office办公
+招聘专员_助理_8,招聘专员/助理,SHRM HR资源,SHRM人力资源管理专业资源与学习路径。,https://www.shrm.org/topics-tools,文档教程,进阶,SHRM,HR专业
+招聘专员_助理_9,招聘专员/助理,LinkedIn Recruiter指南,LinkedIn Talent Solutions招聘工具使用指南。,https://business.linkedin.com/talent-solutions,文档教程,进阶,LinkedIn,招聘工具
+招聘专员_助理_10,招聘专员/助理,统计学,HR数据分析与人才测评的统计基础。,https://www.icourse163.org/learn/RUC-1002537001,视频课程,进阶,中国大学MOOC,数据分析
+猎头顾问_1,猎头顾问,人力资源管理,北京科技大学HR课程，涵盖招聘甄选、绩效、薪酬与培训。,https://www.icourse163.org/learn/USTB-1206417815,视频课程,入门,中国大学MOOC,人力资源管理
+猎头顾问_2,猎头顾问,人力资源管理（央财）,中央财经大学HR课程，招聘面试与人才激励专题。,https://www.icourse163.org/learn/CUFE-1003438001,视频课程,进阶,中国大学MOOC,人力资源管理
+猎头顾问_3,猎头顾问,组织行为学,理解员工行为、团队动力与组织文化。,https://www.icourse163.org/learn/BIT-1002537001,视频课程,入门,中国大学MOOC,组织行为学
+猎头顾问_4,猎头顾问,沟通技巧,招聘面试与员工沟通的核心软技能。,https://www.icourse163.org/learn/THU-1002537002,视频课程,入门,中国大学MOOC,沟通技巧
+猎头顾问_5,猎头顾问,商务沟通,薪酬谈判与劳资沟通技巧。,https://www.icourse163.org/learn/AHDX-1460887167,视频课程,入门,中国大学MOOC,商务沟通
+猎头顾问_6,猎头顾问,劳动法实务,劳动合同、社保与劳动争议处理基础知识。,https://www.icourse163.org/learn/JSPI-1449756161,视频课程,进阶,中国大学MOOC,劳动法
+猎头顾问_7,猎头顾问,Office办公软件应用,HR表格管理与报表制作。,https://www.icourse163.org/learn/WHU-1002537001,视频课程,入门,中国大学MOOC,Office办公
+猎头顾问_8,猎头顾问,SHRM HR资源,SHRM人力资源管理专业资源与学习路径。,https://www.shrm.org/topics-tools,文档教程,进阶,SHRM,HR专业
+猎头顾问_9,猎头顾问,LinkedIn Recruiter指南,LinkedIn Talent Solutions招聘工具使用指南。,https://business.linkedin.com/talent-solutions,文档教程,进阶,LinkedIn,招聘工具
+猎头顾问_10,猎头顾问,统计学,HR数据分析与人才测评的统计基础。,https://www.icourse163.org/learn/RUC-1002537001,视频课程,进阶,中国大学MOOC,数据分析
+英语翻译_1,英语翻译,职场口笔译,福建师范大学口笔译课程，职场翻译技巧与项目管理。,https://www.icourse163.org/learn/FJNU-1003218001,视频课程,进阶,中国大学MOOC,口笔译
+英语翻译_2,英语翻译,商务英语笔译,上海外国语大学商务笔译，常见商务文体翻译方法。,https://www.icourse163.org/learn/-1206447810,视频课程,进阶,中国大学MOOC,商务笔译
+英语翻译_3,英语翻译,英汉汉英商务翻译,华东政法大学商务翻译理论与技巧。,https://www.icourse163.org/learn/HDZF-1450724235,视频课程,进阶,中国大学MOOC,商务翻译
+英语翻译_4,英语翻译,科技英语翻译,南京航空航天大学科技英语翻译技巧与词汇。,https://www.icourse163.org/learn/NUAA-1450299572,视频课程,进阶,中国大学MOOC,科技翻译
+英语翻译_5,英语翻译,科技英语翻译（西电）,西安电子科技大学科技英语翻译系统课程。,https://www.icourse163.org/learn/XDU-1205726803,视频课程,进阶,中国大学MOOC,科技翻译
+英语翻译_6,英语翻译,CATTI考试介绍,中国翻译专业资格水平考试官网信息与大纲。,https://www.catticenter.com/,文档教程,进阶,CATTI,翻译认证
+英语翻译_7,英语翻译,TAC翻译技术,翻译记忆与术语管理工具入门资源。,https://www.memoq.com/resources,文档教程,进阶,memoQ,翻译工具
+英语翻译_8,英语翻译,Grammarly写作指南,Grammarly官方英语写作与语法指南。,https://www.grammarly.com/blog/,文档教程,入门,Grammarly,英语写作
+英语翻译_9,英语翻译,Merriam-Webster词典,权威英语词典与词汇学习资源。,https://www.merriam-webster.com/,文档教程,入门,Merriam-Webster,英语词汇
+英语翻译_10,英语翻译,联合国语料库,UN Parallel Corpus多语种平行语料参考。,https://www.un.org/en/,文档教程,进阶,联合国,平行语料
+英语翻译_11,英语翻译,商务沟通,跨文化商务沟通与口译场景技巧。,https://www.icourse163.org/learn/AHDX-1460887167,视频课程,入门,中国大学MOOC,商务沟通
+英语翻译_12,英语翻译,Office办公软件应用,翻译文档排版与格式处理。,https://www.icourse163.org/learn/WHU-1002537001,视频课程,入门,中国大学MOOC,Office办公
+英语翻译_13,英语翻译,Pro Git第二版（中文版）,翻译项目文件版本管理与协作。,https://git-scm.com/book/zh/v2,文档教程,入门,Git官方,Git版本控制
+日语翻译_1,日语翻译,日语入门,日语基础语法与假名学习，翻译岗位语言基础。,https://www.icourse163.org/learn/FJNU-1003218001,视频课程,入门,中国大学MOOC,日语基础
+日语翻译_2,日语翻译,商务日语,商务场景日语表达与礼仪。,https://www.icourse163.org/learn/HDZF-1450724235,视频课程,进阶,中国大学MOOC,商务日语
+日语翻译_3,日语翻译,日语翻译技巧,日汉互译基本方法与常见文体处理。,https://www.icourse163.org/learn/NUAA-1450299572,视频课程,进阶,中国大学MOOC,日汉翻译
+日语翻译_4,日语翻译,JLPT考试信息,日本语能力测试官方信息与考试大纲。,https://www.jlpt.jp/e/,文档教程,进阶,JLPT,日语认证
+日语翻译_5,日语翻译,Jisho在线词典,日语综合在线词典与例句查询。,https://jisho.org/,文档教程,入门,Jisho,日语词典
+日语翻译_6,日语翻译,Weblio辞书,日语在线辞书与用例检索。,https://www.weblio.jp/,文档教程,入门,Weblio,日语词典
+日语翻译_7,日语翻译,日本文化概论,理解日本文化背景有助于准确翻译。,https://www.icourse163.org/learn/BNU-1003377001,视频课程,入门,中国大学MOOC,日本文化
+日语翻译_8,日语翻译,CATTI日语方向,中国翻译专业资格水平考试日语方向信息。,https://www.catticenter.com/,文档教程,进阶,CATTI,翻译认证
+日语翻译_9,日语翻译,商务沟通,跨文化沟通与商务礼仪。,https://www.icourse163.org/learn/AHDX-1460887167,视频课程,入门,中国大学MOOC,商务沟通
+日语翻译_10,日语翻译,科技英语翻译,科技文献翻译方法可迁移至日语科技翻译。,https://www.icourse163.org/learn/XDU-1205726803,视频课程,进阶,中国大学MOOC,科技翻译
+日语翻译_11,日语翻译,Pro Git第二版（中文版）,翻译项目文件版本管理。,https://git-scm.com/book/zh/v2,文档教程,入门,Git官方,Git版本控制
+项目经理_主管_1,项目经理/主管,项目管理,西北工业大学项目管理课程，系统掌握项目管理理念与方法。,https://www.icourse163.org/learn/NWPU-1003729004,视频课程,入门,中国大学MOOC,项目管理
+项目经理_主管_2,项目经理/主管,工程项目管理,同济大学国家精品工程项目管理课程。,https://www.icourse163.org/learn/TONGJI-46008,视频课程,进阶,中国大学MOOC,工程项目管理
+项目经理_主管_3,项目经理/主管,软件项目管理,黄淮学院软件项目管理，贴近IT项目场景。,https://www.icourse163.org/learn/HHUN-1449771166,视频课程,进阶,中国大学MOOC,软件项目管理
+项目经理_主管_4,项目经理/主管,软件工程,理解软件开发生命周期与项目管理结合。,https://www.icourse163.org/learn/PKU-1002525006,视频课程,入门,中国大学MOOC,软件工程
+项目经理_主管_5,项目经理/主管,沟通技巧,项目干系人沟通与团队协调。,https://www.icourse163.org/learn/THU-1002537002,视频课程,入门,中国大学MOOC,沟通技巧
+项目经理_主管_6,项目经理/主管,Office办公软件应用,项目计划、进度表与汇报文档制作。,https://www.icourse163.org/learn/WHU-1002537001,视频课程,入门,中国大学MOOC,Office办公
+项目经理_主管_7,项目经理/主管,Atlassian Agile入门,Atlassian敏捷项目管理入门资源。,https://www.atlassian.com/agile,文档教程,入门,Atlassian,PMP
+项目经理_主管_8,项目经理/主管,Agile Manifesto,敏捷宣言官方网站，敏捷项目管理基础。,https://agilemanifesto.org/,文档教程,入门,Agile,敏捷管理
+项目经理_主管_9,项目经理/主管,Scrum Guide,Scrum官方指南，敏捷框架核心参考。,https://scrumguides.org/,文档教程,进阶,Scrum,Scrum
+项目经理_主管_10,项目经理/主管,Microsoft Project帮助,Microsoft Project项目管理软件官方帮助文档。,https://support.microsoft.com/en-us/project,文档教程,进阶,Microsoft,Project工具
+项目经理_主管_11,项目经理/主管,Pro Git第二版（中文版）,项目文档与代码版本管理。,https://git-scm.com/book/zh/v2,文档教程,入门,Git官方,Git版本控制
+项目经理_主管_12,项目经理/主管,需求分析与软件设计,项目需求管理与范围控制基础。,https://www.icourse163.org/learn/BFU-1003377002,视频课程,进阶,中国大学MOOC,需求分析
+项目专员_助理_1,项目专员/助理,项目管理,西北工业大学项目管理课程，系统掌握项目管理理念与方法。,https://www.icourse163.org/learn/NWPU-1003729004,视频课程,入门,中国大学MOOC,项目管理
+项目专员_助理_2,项目专员/助理,工程项目管理,同济大学国家精品工程项目管理课程。,https://www.icourse163.org/learn/TONGJI-46008,视频课程,进阶,中国大学MOOC,工程项目管理
+项目专员_助理_3,项目专员/助理,软件项目管理,黄淮学院软件项目管理，贴近IT项目场景。,https://www.icourse163.org/learn/HHUN-1449771166,视频课程,进阶,中国大学MOOC,软件项目管理
+项目专员_助理_4,项目专员/助理,软件工程,理解软件开发生命周期与项目管理结合。,https://www.icourse163.org/learn/PKU-1002525006,视频课程,入门,中国大学MOOC,软件工程
+项目专员_助理_5,项目专员/助理,沟通技巧,项目干系人沟通与团队协调。,https://www.icourse163.org/learn/THU-1002537002,视频课程,入门,中国大学MOOC,沟通技巧
+项目专员_助理_6,项目专员/助理,Office办公软件应用,项目计划、进度表与汇报文档制作。,https://www.icourse163.org/learn/WHU-1002537001,视频课程,入门,中国大学MOOC,Office办公
+项目专员_助理_7,项目专员/助理,Atlassian Agile入门,Atlassian敏捷项目管理入门资源。,https://www.atlassian.com/agile,文档教程,入门,Atlassian,PMP
+项目专员_助理_8,项目专员/助理,Agile Manifesto,敏捷宣言官方网站，敏捷项目管理基础。,https://agilemanifesto.org/,文档教程,入门,Agile,敏捷管理
+项目专员_助理_9,项目专员/助理,Scrum Guide,Scrum官方指南，敏捷框架核心参考。,https://scrumguides.org/,文档教程,进阶,Scrum,Scrum
+项目专员_助理_10,项目专员/助理,Microsoft Project帮助,Microsoft Project项目管理软件官方帮助文档。,https://support.microsoft.com/en-us/project,文档教程,进阶,Microsoft,Project工具
+项目专员_助理_11,项目专员/助理,Pro Git第二版（中文版）,项目文档与代码版本管理。,https://git-scm.com/book/zh/v2,文档教程,入门,Git官方,Git版本控制
+项目专员_助理_12,项目专员/助理,需求分析与软件设计,项目需求管理与范围控制基础。,https://www.icourse163.org/learn/BFU-1003377002,视频课程,进阶,中国大学MOOC,需求分析
+项目招投标_1,项目招投标,项目管理,西北工业大学项目管理课程，系统掌握项目管理理念与方法。,https://www.icourse163.org/learn/NWPU-1003729004,视频课程,入门,中国大学MOOC,项目管理
+项目招投标_2,项目招投标,工程项目管理,同济大学国家精品工程项目管理课程。,https://www.icourse163.org/learn/TONGJI-46008,视频课程,进阶,中国大学MOOC,工程项目管理
+项目招投标_3,项目招投标,软件项目管理,黄淮学院软件项目管理，贴近IT项目场景。,https://www.icourse163.org/learn/HHUN-1449771166,视频课程,进阶,中国大学MOOC,软件项目管理
+项目招投标_4,项目招投标,软件工程,理解软件开发生命周期与项目管理结合。,https://www.icourse163.org/learn/PKU-1002525006,视频课程,入门,中国大学MOOC,软件工程
+项目招投标_5,项目招投标,沟通技巧,项目干系人沟通与团队协调。,https://www.icourse163.org/learn/THU-1002537002,视频课程,入门,中国大学MOOC,沟通技巧
+项目招投标_6,项目招投标,Office办公软件应用,项目计划、进度表与汇报文档制作。,https://www.icourse163.org/learn/WHU-1002537001,视频课程,入门,中国大学MOOC,Office办公
+项目招投标_7,项目招投标,Atlassian Agile入门,Atlassian敏捷项目管理入门资源。,https://www.atlassian.com/agile,文档教程,入门,Atlassian,PMP
+项目招投标_8,项目招投标,Agile Manifesto,敏捷宣言官方网站，敏捷项目管理基础。,https://agilemanifesto.org/,文档教程,入门,Agile,敏捷管理
+项目招投标_9,项目招投标,Scrum Guide,Scrum官方指南，敏捷框架核心参考。,https://scrumguides.org/,文档教程,进阶,Scrum,Scrum
+项目招投标_10,项目招投标,Microsoft Project帮助,Microsoft Project项目管理软件官方帮助文档。,https://support.microsoft.com/en-us/project,文档教程,进阶,Microsoft,Project工具
+项目招投标_11,项目招投标,Pro Git第二版（中文版）,项目文档与代码版本管理。,https://git-scm.com/book/zh/v2,文档教程,入门,Git官方,Git版本控制
+项目招投标_12,项目招投标,需求分析与软件设计,项目需求管理与范围控制基础。,https://www.icourse163.org/learn/BFU-1003377002,视频课程,进阶,中国大学MOOC,需求分析
+质量管理_测试_1,质量管理/测试,质量管理,北京理工大学质量管理课程，QC方法与质量标准。,https://www.icourse163.org/learn/BIT-1003377002,视频课程,入门,中国大学MOOC,质量管理
+质量管理_测试_2,质量管理/测试,软件测试,软件质量保障与测试方法论。,https://www.icourse163.org/learn/BUAA-1002537001,视频课程,入门,中国大学MOOC,软件测试理论
+质量管理_测试_3,质量管理/测试,统计学,质量统计分析与过程控制基础。,https://www.icourse163.org/learn/RUC-1002537001,视频课程,进阶,中国大学MOOC,统计学
+质量管理_测试_4,质量管理/测试,Six Sigma入门,iSixSigma平台Six Sigma概念与DMAIC方法论。,https://www.isixsigma.com/new-to-six-sigma/getting-started/,文档教程,进阶,iSixSigma,Six Sigma
+质量管理_测试_5,质量管理/测试,ISO 9001概览,ISO官方网站质量管理体系标准介绍。,https://www.iso.org/iso-9001-quality-management.html,文档教程,进阶,ISO,ISO9001
+质量管理_测试_6,质量管理/测试,ISTQB软件测试认证,国际软件测试资质认证体系。,https://www.istqb.org/,文档教程,进阶,ISTQB,测试认证
+质量管理_测试_7,质量管理/测试,Apache JMeter用户手册,性能与负载测试工具官方手册。,https://jmeter.apache.org/usermanual/index.html,文档教程,进阶,Apache,性能测试
+质量管理_测试_8,质量管理/测试,Office办公软件应用,质量报告与检验记录文档制作。,https://www.icourse163.org/learn/WHU-1002537001,视频课程,入门,中国大学MOOC,Office办公
+质量管理_测试_9,质量管理/测试,Linux系统管理,测试环境搭建与系统日志分析。,https://www.icourse163.org/learn/OUCC-1002337008,视频课程,入门,中国大学MOOC,Linux
+质量管理_测试_10,质量管理/测试,Python语言程序设计,质量数据分析与自动化检测脚本。,https://www.icourse163.org/learn/PKU-1002525007,视频课程,入门,中国大学MOOC,Python
+质量管理_测试_11,质量管理/测试,Pro Git第二版（中文版）,测试文档与代码版本管理。,https://git-scm.com/book/zh/v2,文档教程,入门,Git官方,Git版本控制
+质量管理_测试_12,质量管理/测试,沟通技巧,质量问题反馈与跨部门协调。,https://www.icourse163.org/learn/THU-1002537002,视频课程,入门,中国大学MOOC,沟通技巧
+质量管理_测试_13,质量管理/测试,软件工程,理解软件质量保障在开发流程中的位置。,https://www.icourse163.org/learn/PKU-1002525006,视频课程,入门,中国大学MOOC,软件工程
+质检员_1,质检员,质量管理,北京理工大学质量管理课程，QC方法与质量标准。,https://www.icourse163.org/learn/BIT-1003377002,视频课程,入门,中国大学MOOC,质量管理
+质检员_2,质检员,软件测试,软件质量保障与测试方法论。,https://www.icourse163.org/learn/BUAA-1002537001,视频课程,入门,中国大学MOOC,软件测试理论
+质检员_3,质检员,统计学,质量统计分析与过程控制基础。,https://www.icourse163.org/learn/RUC-1002537001,视频课程,进阶,中国大学MOOC,统计学
+质检员_4,质检员,Six Sigma入门,iSixSigma平台Six Sigma概念与DMAIC方法论。,https://www.isixsigma.com/new-to-six-sigma/getting-started/,文档教程,进阶,iSixSigma,Six Sigma
+质检员_5,质检员,ISO 9001概览,ISO官方网站质量管理体系标准介绍。,https://www.iso.org/iso-9001-quality-management.html,文档教程,进阶,ISO,ISO9001
+质检员_6,质检员,ISTQB软件测试认证,国际软件测试资质认证体系。,https://www.istqb.org/,文档教程,进阶,ISTQB,测试认证
+质检员_7,质检员,Apache JMeter用户手册,性能与负载测试工具官方手册。,https://jmeter.apache.org/usermanual/index.html,文档教程,进阶,Apache,性能测试
+质检员_8,质检员,Office办公软件应用,质量报告与检验记录文档制作。,https://www.icourse163.org/learn/WHU-1002537001,视频课程,入门,中国大学MOOC,Office办公
+质检员_9,质检员,Linux系统管理,测试环境搭建与系统日志分析。,https://www.icourse163.org/learn/OUCC-1002337008,视频课程,入门,中国大学MOOC,Linux
+质检员_10,质检员,Python语言程序设计,质量数据分析与自动化检测脚本。,https://www.icourse163.org/learn/PKU-1002525007,视频课程,入门,中国大学MOOC,Python
+质检员_11,质检员,Pro Git第二版（中文版）,测试文档与代码版本管理。,https://git-scm.com/book/zh/v2,文档教程,入门,Git官方,Git版本控制
+质检员_12,质检员,沟通技巧,质量问题反馈与跨部门协调。,https://www.icourse163.org/learn/THU-1002537002,视频课程,入门,中国大学MOOC,沟通技巧
+质检员_13,质检员,软件工程,理解软件质量保障在开发流程中的位置。,https://www.icourse163.org/learn/PKU-1002525006,视频课程,入门,中国大学MOOC,软件工程
+档案管理_1,档案管理,档案管理学,武汉大学档案学课程，档案收集、整理、鉴定与保管。,https://www.icourse163.org/learn/WHU-1002537001,视频课程,入门,中国大学MOOC,档案管理
+档案管理_2,档案管理,信息管理概论,信息组织、检索与管理基础理论。,https://www.icourse163.org/learn/BIT-1002537001,视频课程,入门,中国大学MOOC,信息管理
+档案管理_3,档案管理,沟通技巧,档案借阅服务与部门协调沟通。,https://www.icourse163.org/learn/THU-1002537002,视频课程,入门,中国大学MOOC,沟通技巧
+档案管理_4,档案管理,国家档案局标准,国家档案局官方网站标准与规范查询。,https://www.saac.gov.cn/,文档教程,进阶,国家档案局,档案标准
+档案管理_5,档案管理,PDF/A标准,ISO PDF/A长期归档格式标准介绍。,https://www.iso.org/standard/51502.html,文档教程,进阶,ISO,文档归档
+档案管理_6,档案管理,Pro Git第二版（中文版）,电子档案版本管理与变更追踪。,https://git-scm.com/book/zh/v2,文档教程,入门,Git官方,Git版本控制
+档案管理_7,档案管理,Python语言程序设计,档案批量处理与自动化脚本。,https://www.icourse163.org/learn/PKU-1002525007,视频课程,入门,中国大学MOOC,Python
+档案管理_8,档案管理,信息安全概论,档案保密与信息安全管理。,https://www.icourse163.org/learn/NJU-1002537001,视频课程,进阶,中国大学MOOC,信息安全
+档案管理_9,档案管理,统计学,档案统计与数据分析。,https://www.icourse163.org/learn/RUC-1002537001,视频课程,进阶,中国大学MOOC,统计学
+档案管理_10,档案管理,Docker官方入门,档案系统部署与容器化运维基础。,https://docs.docker.com/get-started/,文档教程,入门,Docker官方,Docker
+档案管理_11,档案管理,MySQL数据库设计与应用,档案数据库设计与查询。,https://www.icourse163.org/learn/KMUST-1206687836,视频课程,进阶,中国大学MOOC,MySQL
+资料管理_1,资料管理,档案管理学,武汉大学档案学课程，档案收集、整理、鉴定与保管。,https://www.icourse163.org/learn/WHU-1002537001,视频课程,入门,中国大学MOOC,档案管理
+资料管理_2,资料管理,信息管理概论,信息组织、检索与管理基础理论。,https://www.icourse163.org/learn/BIT-1002537001,视频课程,入门,中国大学MOOC,信息管理
+资料管理_3,资料管理,沟通技巧,档案借阅服务与部门协调沟通。,https://www.icourse163.org/learn/THU-1002537002,视频课程,入门,中国大学MOOC,沟通技巧
+资料管理_4,资料管理,国家档案局标准,国家档案局官方网站标准与规范查询。,https://www.saac.gov.cn/,文档教程,进阶,国家档案局,档案标准
+资料管理_5,资料管理,PDF/A标准,ISO PDF/A长期归档格式标准介绍。,https://www.iso.org/standard/51502.html,文档教程,进阶,ISO,文档归档
+资料管理_6,资料管理,Pro Git第二版（中文版）,电子档案版本管理与变更追踪。,https://git-scm.com/book/zh/v2,文档教程,入门,Git官方,Git版本控制
+资料管理_7,资料管理,Python语言程序设计,档案批量处理与自动化脚本。,https://www.icourse163.org/learn/PKU-1002525007,视频课程,入门,中国大学MOOC,Python
+资料管理_8,资料管理,信息安全概论,档案保密与信息安全管理。,https://www.icourse163.org/learn/NJU-1002537001,视频课程,进阶,中国大学MOOC,信息安全
+资料管理_9,资料管理,统计学,档案统计与数据分析。,https://www.icourse163.org/learn/RUC-1002537001,视频课程,进阶,中国大学MOOC,统计学
+资料管理_10,资料管理,Docker官方入门,档案系统部署与容器化运维基础。,https://docs.docker.com/get-started/,文档教程,入门,Docker官方,Docker
+资料管理_11,资料管理,MySQL数据库设计与应用,档案数据库设计与查询。,https://www.icourse163.org/learn/KMUST-1206687836,视频课程,进阶,中国大学MOOC,MySQL
+商务专员_1,商务专员,商务沟通,商务谈判、危机沟通与高效沟通技巧。,https://www.icourse163.org/learn/AHDX-1460887167,视频课程,入门,中国大学MOOC,商务沟通
+商务专员_2,商务专员,市场营销,市场分析与营销组合策略。,https://www.icourse163.org/learn/ZBVC-1003007001,视频课程,入门,中国大学MOOC,市场营销
+商务专员_3,商务专员,推销原理与实务,推销流程与商务洽谈技巧。,https://www.icourse163.org/learn/JSJZY-1206744802,视频课程,入门,中国大学MOOC,推销技巧
+商务专员_4,商务专员,Office办公软件应用,商务文档与合同排版。,https://www.icourse163.org/learn/WHU-1002537001,视频课程,入门,中国大学MOOC,Office办公
+商务专员_5,商务专员,英汉汉英商务翻译,商务函电与合同翻译能力。,https://www.icourse163.org/learn/HDZF-1450724235,视频课程,进阶,中国大学MOOC,商务翻译
+商务专员_6,商务专员,沟通技巧,跨部门商务协调沟通。,https://www.icourse163.org/learn/THU-1002537002,视频课程,入门,中国大学MOOC,沟通技巧
+商务专员_7,商务专员,项目管理,商务项目跟进与进度管理。,https://www.icourse163.org/learn/NWPU-1003729004,视频课程,进阶,中国大学MOOC,项目管理
+商务专员_8,商务专员,民法总论,商务合同相关法律基础。,https://www.icourse163.org/learn/GDUFS-1206561807,视频课程,进阶,中国大学MOOC,合同法
+商务专员_9,商务专员,HubSpot CRM教程,客户关系管理与商务跟进。,https://academy.hubspot.com/courses/crm,文档教程,入门,HubSpot,CRM
+商务专员_10,商务专员,Excel数据分析,商务数据分析与报表制作。,https://www.icourse163.org/learn/RUC-1002537001,视频课程,进阶,中国大学MOOC,数据分析
+商务专员_11,商务专员,Pro Git第二版（中文版）,商务文档版本管理。,https://git-scm.com/book/zh/v2,文档教程,入门,Git官方,Git版本控制
+商务专员_12,商务专员,Atlassian Agile指南,敏捷协作与项目优先级管理方法。,https://www.atlassian.com/agile,文档教程,入门,Atlassian,战略分析
+商务专员_13,商务专员,营销策划,宁波城市职业技术学院营销策划，PPT与宣传素材策划能力。,https://www.icourse163.org/learn/NBCC-1001616007,视频课程,进阶,中国大学MOOC,设计制作
+内容审核_1,内容审核,信息安全概论,内容安全与网络信息治理基础。,https://www.icourse163.org/learn/NJU-1002537001,视频课程,入门,中国大学MOOC,信息安全
+内容审核_2,内容审核,传播学概论,媒体传播规律与内容审核标准理解。,https://www.icourse163.org/learn/BNU-1003377001,视频课程,入门,中国大学MOOC,传播学
+内容审核_3,内容审核,民法总论,内容审核中侵权与法律责任基础。,https://www.icourse163.org/learn/JSPI-1449756161,视频课程,进阶,中国大学MOOC,法律基础
+内容审核_4,内容审核,沟通技巧,审核反馈与用户沟通技巧。,https://www.icourse163.org/learn/THU-1002537002,视频课程,入门,中国大学MOOC,沟通技巧
+内容审核_5,内容审核,Office办公软件应用,审核记录与报表制作。,https://www.icourse163.org/learn/WHU-1002537001,视频课程,入门,中国大学MOOC,Office办公
+内容审核_6,内容审核,国家法律法规数据库,内容审核相关法规查询。,https://flk.npc.gov.cn/,文档教程,入门,全国人大,法规查询
+内容审核_7,内容审核,Python语言程序设计,审核辅助脚本与自动化工具。,https://www.icourse163.org/learn/PKU-1002525007,视频课程,入门,中国大学MOOC,Python
+内容审核_8,内容审核,Linux系统管理,审核系统运维基础。,https://www.icourse163.org/learn/OUCC-1002337008,视频课程,入门,中国大学MOOC,Linux
+内容审核_9,内容审核,Pro Git第二版（中文版）,审核规则文档版本管理。,https://git-scm.com/book/zh/v2,文档教程,入门,Git官方,Git版本控制
+内容审核_10,内容审核,Learning How to Learn,Coursera学习科学课程，提升审核工作效率。,https://www.coursera.org/learn/learning-how-to-learn,视频课程,入门,Coursera,时间管理
+内容审核_11,内容审核,统计学,审核数据分析与质量监控。,https://www.icourse163.org/learn/RUC-1002537001,视频课程,进阶,中国大学MOOC,数据分析
+总助_CEO助理_董事长助理_1,总助/CEO助理/董事长助理,管理学原理,企业管理基本理论与决策方法。,https://www.icourse163.org/learn/BIT-1002537001,视频课程,入门,中国大学MOOC,管理学
+总助_CEO助理_董事长助理_2,总助/CEO助理/董事长助理,人力资源管理,协助高管进行人才管理与组织建设。,https://www.icourse163.org/learn/USTB-1206417815,视频课程,入门,中国大学MOOC,人力资源管理
+总助_CEO助理_董事长助理_3,总助/CEO助理/董事长助理,项目管理,协助高管跟进重点项目进度。,https://www.icourse163.org/learn/NWPU-1003729004,视频课程,进阶,中国大学MOOC,项目管理
+总助_CEO助理_董事长助理_4,总助/CEO助理/董事长助理,商务沟通,高层商务沟通与会议协调。,https://www.icourse163.org/learn/AHDX-1460887167,视频课程,入门,中国大学MOOC,商务沟通
+总助_CEO助理_董事长助理_5,总助/CEO助理/董事长助理,沟通技巧,高管日程协调与内外部沟通。,https://www.icourse163.org/learn/THU-1002537002,视频课程,入门,中国大学MOOC,沟通技巧
+总助_CEO助理_董事长助理_6,总助/CEO助理/董事长助理,Office办公软件应用,高级Excel、PPT与文档处理。,https://www.icourse163.org/learn/WHU-1002537001,视频课程,入门,中国大学MOOC,Office办公
+总助_CEO助理_董事长助理_7,总助/CEO助理/董事长助理,市场营销,理解公司战略与市场环境。,https://www.icourse163.org/learn/ZBVC-1003007001,视频课程,入门,中国大学MOOC,市场营销
+总助_CEO助理_董事长助理_8,总助/CEO助理/董事长助理,统计学,经营数据分析与报告撰写。,https://www.icourse163.org/learn/RUC-1002537001,视频课程,进阶,中国大学MOOC,数据分析
+总助_CEO助理_董事长助理_9,总助/CEO助理/董事长助理,edX管理学课程,edX管理学课程，培养高管助理所需的管理视野。,https://www.edx.org/learn/management,文档教程,进阶,edX,管理技能
+总助_CEO助理_董事长助理_10,总助/CEO助理/董事长助理,Learning How to Learn,Coursera学习科学课程，提升日程管理与学习效率。,https://www.coursera.org/learn/learning-how-to-learn,视频课程,入门,Coursera,时间管理
+总助_CEO助理_董事长助理_11,总助/CEO助理/董事长助理,Pro Git第二版（中文版）,文档与协作版本管理。,https://git-scm.com/book/zh/v2,文档教程,入门,Git官方,Git版本控制
+总助_CEO助理_董事长助理_12,总助/CEO助理/董事长助理,营销策划,汇报PPT与视觉材料策划能力。,https://www.icourse163.org/learn/NBCC-1001616007,视频课程,进阶,中国大学MOOC,设计制作
+总助_CEO助理_董事长助理_13,总助/CEO助理/董事长助理,工程项目管理,大型项目协调与进度跟踪。,https://www.icourse163.org/learn/TONGJI-46008,视频课程,进阶,中国大学MOOC,项目管理
+统计员_1,统计员,统计学,中国人民大学统计学系统课程。,https://www.icourse163.org/learn/RUC-1002537001,视频课程,入门,中国大学MOOC,统计学
+统计员_2,统计员,Python语言程序设计,统计数据处理与自动化分析。,https://www.icourse163.org/learn/PKU-1002525007,视频课程,入门,中国大学MOOC,Python
+统计员_3,统计员,Office办公软件应用,Excel高级函数与数据透视表。,https://www.icourse163.org/learn/WHU-1002537001,视频课程,入门,中国大学MOOC,Office办公
+统计员_4,统计员,MySQL数据库设计与应用,统计数据存储与SQL查询。,https://www.icourse163.org/learn/KMUST-1206687836,视频课程,进阶,中国大学MOOC,MySQL
+统计员_5,统计员,Pandas入门指南,Python数据分析核心库。,https://pandas.pydata.org/docs/getting_started/index.html,文档教程,进阶,Pandas官方,Pandas
+统计员_6,统计员,NumPy用户指南,Python数值计算基础库。,https://numpy.org/doc/stable/user/index.html,文档教程,进阶,NumPy官方,NumPy
+统计员_7,统计员,Matplotlib教程,统计图表可视化。,https://matplotlib.org/stable/tutorials/index.html,文档教程,进阶,Matplotlib官方,数据可视化
+统计员_8,统计员,SPSS教程,IBM SPSS Statistics官方文档入门。,https://www.ibm.com/docs/en/spss-statistics,文档教程,进阶,IBM,SPSS
+统计员_9,统计员,R语言统计,Coursera R语言统计入门课程集合。,https://www.coursera.org/courses?query=r%20statistics,文档教程,进阶,Coursera,R语言
+统计员_10,统计员,W3Schools SQL教程,SQL数据查询与统计报表基础。,https://www.w3schools.com/sql/,文档教程,入门,W3Schools,SQL基础
+统计员_11,统计员,Runoob Python3教程,Python数据处理入门，统计自动化脚本参考。,https://www.runoob.com/python3/python3-tutorial.html,文档教程,入门,Runoob,Python
+统计员_12,统计员,Six Sigma入门,质量统计与过程控制方法。,https://www.isixsigma.com/new-to-six-sigma/getting-started/,文档教程,进阶,iSixSigma,Six Sigma
+统计员_13,统计员,沟通技巧,统计报告撰写与汇报表达。,https://www.icourse163.org/learn/THU-1002537002,视频课程,入门,中国大学MOOC,沟通技巧
+统计员_14,统计员,Pro Git第二版（中文版）,统计脚本与文档版本管理。,https://git-scm.com/book/zh/v2,文档教程,入门,Git官方,Git版本控制
+培训师_1,培训师,培训师培训,企业内训师技能与课程设计方法。,https://www.icourse163.org/learn/THU-1002537002,视频课程,入门,中国大学MOOC,培训技巧
+培训师_2,培训师,人力资源管理,培训需求分析与培训体系设计。,https://www.icourse163.org/learn/USTB-1206417815,视频课程,进阶,中国大学MOOC,培训体系
+培训师_3,培训师,Office办公软件应用,培训PPT与讲义制作。,https://www.icourse163.org/learn/WHU-1002537001,视频课程,入门,中国大学MOOC,Office办公
+培训师_4,培训师,营销策划,培训视觉材料与课件策划设计。,https://www.icourse163.org/learn/NBCC-1001616007,视频课程,进阶,中国大学MOOC,设计制作
+培训师_5,培训师,Learning How to Learn,Coursera学习科学课程，理解成人学习规律。,https://www.coursera.org/learn/learning-how-to-learn,视频课程,入门,Coursera,课程设计
+培训师_6,培训师,Coursera UX设计基础,Coursera Google UX设计入门，培训体验设计参考。,https://www.coursera.org/learn/foundations-user-experience-design,视频课程,进阶,Coursera,培训评估
+培训师_7,培训师,Coursera教学设计,Coursera Instructional Design课程集合。,https://www.coursera.org/courses?query=instructional%20design,文档教程,进阶,Coursera,教学设计
+培训师_8,培训师,心理学概论,理解学员学习心理与动机。,https://www.icourse163.org/learn/BNU-1003377001,视频课程,入门,中国大学MOOC,心理学
+培训师_9,培训师,Pro Git第二版（中文版）,培训材料版本管理。,https://git-scm.com/book/zh/v2,文档教程,入门,Git官方,Git版本控制
+培训师_10,培训师,edX管理学课程,edX管理学课程，提升培训管理与组织能力。,https://www.edx.org/learn/management,文档教程,进阶,edX,演讲技巧
+培训师_11,培训师,Zoom培训资源,Zoom官方在线培训与虚拟教室指南。,https://support.zoom.com/hc/en,文档教程,入门,Zoom,在线培训
+培训师_12,培训师,Articulate E-Learning,Articulate在线课程开发资源中心。,https://community.articulate.com/,文档教程,进阶,Articulate,在线课程
+咨询顾问_1,咨询顾问,管理学原理,企业管理诊断与咨询方法论基础。,https://www.icourse163.org/learn/BIT-1002537001,视频课程,入门,中国大学MOOC,管理学
+咨询顾问_2,咨询顾问,市场营销,市场战略与营销咨询分析框架。,https://www.icourse163.org/learn/ZBVC-1003007001,视频课程,入门,中国大学MOOC,市场营销
+咨询顾问_3,咨询顾问,项目管理,咨询项目交付与进度管理。,https://www.icourse163.org/learn/NWPU-1003729004,视频课程,进阶,中国大学MOOC,项目管理
+咨询顾问_4,咨询顾问,商务沟通,客户沟通、方案汇报与谈判技巧。,https://www.icourse163.org/learn/AHDX-1460887167,视频课程,入门,中国大学MOOC,商务沟通
+咨询顾问_5,咨询顾问,沟通技巧,咨询访谈与需求挖掘技巧。,https://www.icourse163.org/learn/THU-1002537002,视频课程,入门,中国大学MOOC,沟通技巧
+咨询顾问_6,咨询顾问,统计学,咨询数据分析与量化研究。,https://www.icourse163.org/learn/RUC-1002537001,视频课程,进阶,中国大学MOOC,数据分析
+咨询顾问_7,咨询顾问,Office办公软件应用,咨询报告与Excel模型制作。,https://www.icourse163.org/learn/WHU-1002537001,视频课程,入门,中国大学MOOC,Office办公
+咨询顾问_8,咨询顾问,Atlassian Agile指南,敏捷咨询与迭代交付方法论。,https://www.atlassian.com/agile,文档教程,入门,Atlassian,SWOT分析
+咨询顾问_9,咨询顾问,edX管理学课程,edX管理学课程，战略与管理咨询基础。,https://www.edx.org/learn/management,文档教程,进阶,edX,咨询方法
+咨询顾问_10,咨询顾问,Learning How to Learn,Coursera学习科学课程，提升分析与解决问题能力。,https://www.coursera.org/learn/learning-how-to-learn,视频课程,入门,Coursera,思维方法
+咨询顾问_11,咨询顾问,Scrum Guide,Scrum官方指南，现代组织敏捷咨询常用框架。,https://scrumguides.org/,文档教程,进阶,Scrum,战略咨询
+咨询顾问_12,咨询顾问,Pro Git第二版（中文版）,咨询文档版本管理。,https://git-scm.com/book/zh/v2,文档教程,入门,Git官方,Git版本控制
+咨询顾问_13,咨询顾问,营销策划,咨询汇报PPT与方案策划能力。,https://www.icourse163.org/learn/NBCC-1001616007,视频课程,进阶,中国大学MOOC,设计制作
+产品专员_助理_1,产品专员/助理,软件工程,理解软件产品开发流程与需求管理。,https://www.icourse163.org/learn/PKU-1002525006,视频课程,入门,中国大学MOOC,软件工程
+产品专员_助理_2,产品专员/助理,需求分析与软件设计,产品需求分析与原型设计基础。,https://www.icourse163.org/learn/BFU-1003377002,视频课程,进阶,中国大学MOOC,需求分析
+产品专员_助理_3,产品专员/助理,用户体验设计,产品交互与用户体验设计入门。,https://www.icourse163.org/learn/BIT-1002537001,视频课程,入门,中国大学MOOC,UX设计
+产品专员_助理_4,产品专员/助理,市场营销,产品定位与市场分析。,https://www.icourse163.org/learn/ZBVC-1003007001,视频课程,入门,中国大学MOOC,市场营销
+产品专员_助理_5,产品专员/助理,网络营销,产品推广与新媒体运营。,https://www.icourse163.org/learn/CZU-1206816806,视频课程,进阶,中国大学MOOC,产品推广
+产品专员_助理_6,产品专员/助理,Python语言程序设计,产品数据分析基础。,https://www.icourse163.org/learn/PKU-1002525007,视频课程,入门,中国大学MOOC,Python
+产品专员_助理_7,产品专员/助理,Office办公软件应用,产品文档与PRD撰写。,https://www.icourse163.org/learn/WHU-1002537001,视频课程,入门,中国大学MOOC,Office办公
+产品专员_助理_8,产品专员/助理,沟通技巧,跨团队沟通与需求传达。,https://www.icourse163.org/learn/THU-1002537002,视频课程,入门,中国大学MOOC,沟通技巧
+产品专员_助理_9,产品专员/助理,Coursera UX设计基础,Coursera Google UX设计入门，用户研究与原型设计。,https://www.coursera.org/learn/foundations-user-experience-design,视频课程,进阶,Coursera,数据分析
+产品专员_助理_10,产品专员/助理,Figma Help Center,Figma官方产品设计协作教程。,https://help.figma.com/hc/en-us,文档教程,进阶,Figma,原型设计
+产品专员_助理_11,产品专员/助理,Agile Manifesto,敏捷产品开发基础理念。,https://agilemanifesto.org/,文档教程,入门,Agile,敏捷管理
+产品专员_助理_12,产品专员/助理,Scrum Guide,Scrum框架与产品Backlog管理。,https://scrumguides.org/,文档教程,进阶,Scrum,Scrum
+产品专员_助理_13,产品专员/助理,Pro Git第二版（中文版）,产品文档版本管理。,https://git-scm.com/book/zh/v2,文档教程,入门,Git官方,Git版本控制
+风电工程师_1,风电工程师,风力发电原理,风能转换与风力机基本原理。,https://www.icourse163.org/learn/XJTU-1002537001,视频课程,入门,中国大学MOOC,风力发电
+风电工程师_2,风电工程师,电气工程基础,电力系统与电气设备基础知识。,https://www.icourse163.org/learn/HIT-1002537001,视频课程,进阶,中国大学MOOC,电气工程
+风电工程师_3,风电工程师,机械设计基础,风力机机械结构与传动设计。,https://www.icourse163.org/learn/BIT-1002537003,视频课程,进阶,中国大学MOOC,机械设计
+风电工程师_4,风电工程师,项目管理,风电项目工程管理与进度控制。,https://www.icourse163.org/learn/NWPU-1003729004,视频课程,进阶,中国大学MOOC,项目管理
+风电工程师_5,风电工程师,工程项目管理,大型风电场建设项目管理。,https://www.icourse163.org/learn/TONGJI-46008,视频课程,进阶,中国大学MOOC,工程项目管理
+风电工程师_6,风电工程师,Linux系统管理,风电SCADA系统运维基础。,https://www.icourse163.org/learn/OUCC-1002337008,视频课程,入门,中国大学MOOC,Linux
+风电工程师_7,风电工程师,Python语言程序设计,风电数据分析与监控脚本。,https://www.icourse163.org/learn/PKU-1002525007,视频课程,入门,中国大学MOOC,Python
+风电工程师_8,风电工程师,质量管理,风电设备质量检验与标准。,https://www.icourse163.org/learn/BIT-1003377002,视频课程,入门,中国大学MOOC,质量管理
+风电工程师_9,风电工程师,GWEC全球风能理事会,全球风能理事会官方资源与行业报告。,https://gwec.net/,文档教程,进阶,GWEC,行业报告
+风电工程师_10,风电工程师,IEA Wind TCP,国际能源署风能技术合作计划资源。,https://iea-wind.org/about/,文档教程,进阶,IEA,风能技术
+风电工程师_11,风电工程师,ISO 9001概览,ISO质量管理体系标准，风电设备质量检验参考。,https://www.iso.org/iso-9001-quality-management.html,文档教程,进阶,ISO,质量标准
+风电工程师_12,风电工程师,Pro Git第二版（中文版）,工程文档版本管理。,https://git-scm.com/book/zh/v2,文档教程,入门,Git官方,Git版本控制
+风电工程师_13,风电工程师,Office办公软件应用,工程报告与技术文档制作。,https://www.icourse163.org/learn/WHU-1002537001,视频课程,入门,中国大学MOOC,Office办公
+销售运营_1,销售运营,销售管理,销售组织、团队管理与绩效评价。,https://www.icourse163.org/learn/HZAU-1003244009,视频课程,进阶,中国大学MOOC,销售管理
+销售运营_2,销售运营,市场营销,市场分析与营销组合策略。,https://www.icourse163.org/learn/ZBVC-1003007001,视频课程,入门,中国大学MOOC,市场营销
+销售运营_3,销售运营,网络营销,新媒体运营与数字化推广工具。,https://www.icourse163.org/learn/CZU-1206816806,视频课程,进阶,中国大学MOOC,网络营销
+销售运营_4,销售运营,推销原理与实务,推销流程与网络销售技巧。,https://www.icourse163.org/learn/JSJZY-1206744802,视频课程,入门,中国大学MOOC,推销技巧
+销售运营_5,销售运营,商务沟通,销售与运营跨部门沟通协作。,https://www.icourse163.org/learn/AHDX-1460887167,视频课程,入门,中国大学MOOC,商务沟通
+销售运营_6,销售运营,Office办公软件应用,销售数据报表与运营分析。,https://www.icourse163.org/learn/WHU-1002537001,视频课程,入门,中国大学MOOC,Office办公
+销售运营_7,销售运营,Python语言程序设计,销售运营数据处理自动化。,https://www.icourse163.org/learn/PKU-1002525007,视频课程,入门,中国大学MOOC,Python
+销售运营_8,销售运营,HubSpot CRM教程,CRM与销售流程管理。,https://academy.hubspot.com/courses/crm,文档教程,入门,HubSpot,CRM
+销售运营_9,销售运营,HubSpot Inbound Sales,HubSpot入站销售免费课程。,https://academy.hubspot.com/courses/inbound-sales,文档教程,进阶,HubSpot,Inbound销售
+销售运营_10,销售运营,Salesforce Trailhead,Salesforce CRM与销售技能学习平台。,https://trailhead.salesforce.com/,文档教程,入门,Salesforce,CRM销售
+销售运营_11,销售运营,Skillshop Google Ads,Google广告与数字营销认证学习。,https://skillshop.exceedlms.com/student/catalog/list?category_ids=6431-google-ads,文档教程,进阶,Google,数字营销
+销售运营_12,销售运营,Statistics基础,中国人民大学统计学，支撑运营数据分析。,https://www.icourse163.org/learn/RUC-1002537001,视频课程,进阶,中国大学MOOC,数据分析
+销售运营_13,销售运营,Pro Git第二版（中文版）,销售运营文档版本管理。,https://git-scm.com/book/zh/v2,文档教程,入门,Git官方,Git版本控制
+job_interview1,ALL,大学生职业发展与就业指导,福州大学就业指导课，涵盖生涯规划、职业化简历撰写、笔试与面试应对及求职礼仪，适合各岗位通用求职准备。,https://www.icourse163.org/learn/FZU-1001743004,视频课程,入门,中国大学MOOC,求职指导
+job_interview2,ALL,求职OMG-大学生就业指导与技能开发,中国海洋大学国家级一流课程，以OMG求职法讲解网申、笔试、群面、单面等环节，帮助提升 offer 成功率。,https://www.icourse163.org/learn/ouc-1001769006,视频课程,入门,中国大学MOOC,面试技巧
+job_interview3,ALL,年轻人的第一堂就业指导课,兄弟连教育就业课，覆盖简历投递、面试形式与礼仪、自我介绍及常见面试题应答技巧。,https://www.icourse163.org/learn/itxdl-1002597008,视频课程,入门,中国大学MOOC,面试技巧
+job_interview4,ALL,从大学生到职场精英的通关秘籍,湖南铁道职业技术学院职业发展课，系统讲解求职定位、应聘材料、面试方法与职场适应。,https://www.icourse163.org/learn/HNRPC-1002586003,视频课程,入门,中国大学MOOC,求职指导
+job_interview5,ALL,求职攻略,南京信息职业技术学院求职实践课，含简历制作、模拟面试互评与求职陷阱防范，强化应试实战。,https://www.icourse163.org/learn/NJCIT-1449790164,视频课程,入门,中国大学MOOC,简历撰写
+job_interview6,ALL,职场菜鸟礼仪指南,昆明理工大学礼仪课，专设求职面试礼仪模块，涵盖着装、举止、位次与商务沟通等应试形象规范。,https://www.icourse163.org/learn/KMUST-1206706806,视频课程,入门,中国大学MOOC,面试礼仪
+job_interview7,ALL,沟通技巧,清华大学沟通课程，训练倾听表达与临场沟通，适用于结构化面试、无领导小组讨论等场景。,https://www.icourse163.org/learn/THU-1002537002,视频课程,入门,中国大学MOOC,沟通技巧
+job_interview8,ALL,面试沟通技巧,福建师范大学求职力课程，从认知准备、沟通技能与心理调适三模块训练自我呈现、克服紧张及线上面试应对。,https://www.icourse163.org/learn/FJNU-1206682820,视频课程,入门,中国大学MOOC,面试技巧
+job_interview9,ALL,人力资源管理,中央财经大学HR慕课，专题讲解招聘选拔、面试设计与人才评估，帮助理解考官关注点并提升结构化应答能力。,https://www.icourse163.org/learn/CUFE-1003438001,视频课程,进阶,中国大学MOOC,面试技巧
+job_interview10,ALL,牛客网笔试面试题库,牛客网求职练习平台，提供名企笔试真题、面试经验与专项题库，支撑综合应试与技术面准备。,https://www.nowcoder.com/exam/intelligent,在线练习,进阶,牛客网,笔试面试

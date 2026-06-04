@@ -40,6 +40,20 @@
 	};
 	const LINE_COLORS = ["#3b82f6", "#8b5cf6", "#10b981", "#f59e0b", "#ef4444"];
 
+	const PHASE_PERIOD_DEFAULTS: Record<"early" | "mid" | "late", string> = {
+		early: "0-3个月",
+		mid: "3-9个月",
+		late: "9-12个月",
+	};
+
+	function phasePeriodDisplay(key: "early" | "mid" | "late", period?: string): string {
+		const p = (period || "").trim();
+		if (!p) return PHASE_PERIOD_DEFAULTS[key];
+		if (key === "mid" && (p.includes("3-12") || p === "3-12个月")) return PHASE_PERIOD_DEFAULTS.mid;
+		if (key === "late" && (p.includes("12个月+") || /^12/.test(p))) return PHASE_PERIOD_DEFAULTS.late;
+		return p;
+	}
+
 	/** 一键填充：覆盖常见复盘维度，便于 DeepSeek 量化 */
 	const REVIEW_TEMPLATE = `本周期（写一下具体日期或第几周）：
 
@@ -88,6 +102,26 @@
 	let reviewInfo = $state("");
 	let reviewText = $state("");
 	let exportingPdf = $state(false);
+	let activeJobId = $state("");
+	let activePhase = $state<"early" | "mid" | "late">("early");
+	let configRailCollapsed = $state(false);
+
+	const plansByTarget = $derived.by(() => generatedReport?.plans_by_target ?? []);
+	const usePerJobPlan = $derived.by(() => plansByTarget.length > 0);
+	const activePlan = $derived.by(
+		() => plansByTarget.find((p) => p.job_id === activeJobId) ?? plansByTarget[0] ?? null,
+	);
+	const activePhaseBlock = $derived.by(() => {
+		const p = activePlan;
+		if (!p?.phases) return null;
+		return p.phases[activePhase] ?? null;
+	});
+	const activeTargetRow = $derived.by(() => {
+		if (!generatedReport?.targets?.length) return null;
+		return (
+			generatedReport.targets.find((t) => t.id === activeJobId) ?? generatedReport.targets[0] ?? null
+		);
+	});
 
 	const focusTarget = $derived.by(() => {
 		if (!generatedReport?.targets?.length) return null;
@@ -134,7 +168,43 @@
 	});
 
 	const lineNodes = $derived.by(() => generatedReport?.development_lines.lines || []);
-	const activeLineId = $derived.by(() => focusLineId || lineNodes[0]?.line_id || "");
+	const activeLineId = $derived.by(() => {
+		if (activePlan?.line_id) return activePlan.line_id;
+		return focusLineId || lineNodes[0]?.line_id || "";
+	});
+
+	$effect(() => {
+		const plans = plansByTarget;
+		if (!plans.length) return;
+		if (!plans.some((p) => p.job_id === activeJobId)) {
+			activeJobId = plans[0]?.job_id ?? "";
+		}
+		const plan = plans.find((p) => p.job_id === activeJobId) ?? plans[0];
+		if (plan?.line_id && focusLineId !== plan.line_id) {
+			focusLineId = plan.line_id;
+		}
+	});
+
+	function selectActiveJob(jobId: string): void {
+		activeJobId = jobId;
+		const plan = plansByTarget.find((p) => p.job_id === jobId);
+		if (plan?.line_id) {
+			focusLineId = plan.line_id;
+		}
+		selectedTimelineReviewId = null;
+		const adjs = (generatedReport?.development_lines?.adjustments || []).filter(
+			(a) => a.line_id === (plan?.line_id || focusLineId),
+		);
+		selectedAdjustmentId = adjs[0]?.id || "";
+	}
+
+	const activeGapBars = $derived.by(() => {
+		const gaps = activeTargetRow?.match_preview?.dimension_gaps || activePlan?.dimension_gaps || {};
+		return Object.entries(gaps)
+			.sort((a, b) => Number(b[1] || 0) - Number(a[1] || 0))
+			.slice(0, 5)
+			.map(([k, v]) => ({ key: k, label: DIMENSION_LABELS[k] || k, value: Number(v || 0) }));
+	});
 
 	const CHART = { w: 700, h: 300, l: 50, r: 18, t: 26, b: 46 };
 
@@ -275,6 +345,8 @@
 
 	const shortPlanItems = $derived.by(() => (generatedReport?.growth_plan.short_term || []).slice(0, 6));
 	const midPlanItems = $derived.by(() => (generatedReport?.growth_plan.mid_term || []).slice(0, 6));
+
+	const activeTrendRow = $derived.by(() => activeTargetRow);
 
 	const linePlanSummary = $derived.by(() => {
 		const lines = generatedReport?.development_lines?.lines || [];
@@ -497,7 +569,13 @@ function metricDisplayLabel(metric: { code?: string; label?: string }): string {
 			generatedReportId = data?.report_id || null;
 			generatedReport = data?.report || null;
 			selectedTimelineReviewId = null;
-			focusLineId = generatedReport?.development_lines?.lines?.[0]?.line_id || "";
+			activeJobId = generatedReport?.targets?.[0]?.id || "";
+			activePhase = "early";
+			focusLineId =
+				generatedReport?.plans_by_target?.[0]?.line_id ||
+				generatedReport?.development_lines?.lines?.[0]?.line_id ||
+				"";
+			configRailCollapsed = true;
 			const firstLineId = focusLineId;
 			const firstAdjG = (generatedReport?.development_lines?.adjustments || []).find(
 				(a) => a.line_id === firstLineId,
@@ -520,7 +598,13 @@ function metricDisplayLabel(metric: { code?: string; label?: string }): string {
 		generatedReportId = data?.report_id || null;
 		generatedReport = data?.report || null;
 		selectedTimelineReviewId = null;
-		focusLineId = generatedReport?.development_lines?.lines?.[0]?.line_id || "";
+		activeJobId = generatedReport?.targets?.[0]?.id || "";
+		activePhase = "early";
+		focusLineId =
+			generatedReport?.plans_by_target?.[0]?.line_id ||
+			generatedReport?.development_lines?.lines?.[0]?.line_id ||
+			"";
+		configRailCollapsed = true;
 		const firstAdjH = generatedReport?.development_lines?.adjustments?.find(
 			(a) => a.line_id === focusLineId,
 		);
@@ -601,9 +685,400 @@ function metricDisplayLabel(metric: { code?: string; label?: string }): string {
 	}
 </script>
 
+{#snippet developmentCanvas(embedded)}
+	<div class="line-canvas-wrap" class:embedded={embedded}>
+					<svg viewBox="0 0 700 300" class="line-canvas" aria-label="进步度时间曲线">
+						<!-- 网格 -->
+						{#each [3, 6, 9] as gx}
+							{@const gx1 = scalePoint(gx, chartLayout.ax.yMin).x}
+							<line
+								x1={gx1}
+								y1={CHART.t}
+								x2={gx1}
+								y2={CHART.t + chartLayout.ph}
+								class="grid-line"
+							/>
+						{/each}
+						{#each [25, 50, 75] as gy}
+							{@const gy1 = CHART.t + chartLayout.ph - (gy / 100) * chartLayout.ph}
+							<line x1={CHART.l} y1={gy1} x2={CHART.l + chartLayout.pw} y2={gy1} class="grid-line" />
+						{/each}
+						<!-- 坐标轴 -->
+						<line
+							x1={CHART.l}
+							y1={CHART.t + chartLayout.ph}
+							x2={CHART.l + chartLayout.pw}
+							y2={CHART.t + chartLayout.ph}
+							class="axis-main"
+						/>
+						<line x1={CHART.l} y1={CHART.t} x2={CHART.l} y2={CHART.t + chartLayout.ph} class="axis-main" />
+						<!-- Y 刻度 -->
+						{#each [0, 25, 50, 75, 100] as tick}
+							{@const yy = CHART.t + chartLayout.ph - (tick / 100) * chartLayout.ph}
+							<line x1={CHART.l - 5} y1={yy} x2={CHART.l} y2={yy} class="axis-tick" />
+							<text x={CHART.l - 8} y={yy + 3} text-anchor="end" class="axis-num">{tick}</text>
+						{/each}
+						<!-- X 刻度 -->
+						{#each [0, 3, 6, 9, 12] as xm}
+							{@const xx = scalePoint(xm, 0).x}
+							<line x1={xx} y1={CHART.t + chartLayout.ph} x2={xx} y2={CHART.t + chartLayout.ph + 6} class="axis-tick" />
+							<text x={xx} y={CHART.t + chartLayout.ph + 18} text-anchor="middle" class="axis-num">{xm}</text>
+						{/each}
+						<text x={CHART.l + chartLayout.pw / 2} y={CHART.h - 4} text-anchor="middle" class="axis-title">
+							{chartLayout.ax.xLabel}
+						</text>
+						<text
+							x="16"
+							y={CHART.t + chartLayout.ph / 2}
+							text-anchor="middle"
+							class="axis-title"
+							transform={`rotate(-90,16,${CHART.t + chartLayout.ph / 2})`}
+						>
+							{chartLayout.ax.yLabel}
+						</text>
+
+						{#if activeTimeline.length >= 2}
+							<polyline
+								points={timelinePolylineString()}
+								fill="none"
+								stroke={LINE_COLORS[activeLineIndex % LINE_COLORS.length]}
+								stroke-width="3"
+								stroke-linejoin="round"
+								stroke-linecap="round"
+							/>
+						{/if}
+						{#each activeTimeline as t, ti (`tl-${ti}-${t.month}`)}
+							{@const p = scalePoint(t.month, t.progress)}
+							{#if t.kind === "review"}
+								<g
+									class="hit-review-point"
+									class:selected={selectedTimelineReviewId === t.review_id}
+									role="button"
+									tabindex="0"
+									aria-label={`查看第${Math.round(t.month)}月复盘详情`}
+									onclick={() => selectTimelineReview(t.review_id)}
+									onkeydown={(e) => {
+										if (e.key === "Enter" || e.key === " ") {
+											e.preventDefault();
+											selectTimelineReview(t.review_id);
+										}
+									}}
+								>
+									<circle cx={p.x} cy={p.y} r="10" fill="transparent" class="hit-pad" />
+									<circle
+										cx={p.x}
+										cy={p.y}
+										r="5.2"
+										fill={LINE_COLORS[activeLineIndex % LINE_COLORS.length]}
+										stroke="#ffffff"
+										stroke-width={selectedTimelineReviewId === t.review_id ? "2.4" : "1.2"}
+									/>
+									{#if t.label}
+										<text x={p.x} y={p.y - 10} text-anchor="middle" class="point-label">{t.label}</text>
+									{/if}
+								</g>
+							{:else}
+								<circle
+									cx={p.x}
+									cy={p.y}
+									r={t.kind === "origin" ? "3.8" : "4.2"}
+									fill={LINE_COLORS[activeLineIndex % LINE_COLORS.length]}
+									stroke={t.kind === "origin" ? "#ffffff" : "none"}
+									stroke-width={t.kind === "origin" ? "1.2" : "0"}
+								/>
+							{/if}
+						{/each}
+
+						{#each adjustmentsForActiveLine as adj (adj.id)}
+							{@const pt = adjChartPoint(adj)}
+							<rect
+								x={pt.x - 5}
+								y={pt.y - 5}
+								width="10"
+								height="10"
+								transform={`rotate(45 ${pt.x} ${pt.y})`}
+								fill={selectedAdjustmentId === adj.id ? "#d97706" : "#f59e0b"}
+								fill-opacity={selectedAdjustmentId && selectedAdjustmentId !== adj.id ? "0.45" : "0.95"}
+								stroke={selectedAdjustmentId === adj.id ? "#111827" : "#ffffff"}
+								stroke-width={selectedAdjustmentId === adj.id ? "1.8" : "1.2"}
+								class="adjust-node"
+								role="button"
+								tabindex="0"
+								aria-label={`查看调整节点 ${adj.label}`}
+								onclick={() => selectAdjustment(adj.id)}
+								onkeydown={(e) => {
+									if (e.key === "Enter" || e.key === " ") selectAdjustment(adj.id);
+								}}
+							/>
+						{/each}
+					</svg>
+				</div>
+
+				{#if selectedTimelinePoint?.kind === "review"}
+					<div class="timeline-detail-panel" class:compact={embedded}>
+						<div class="timeline-detail-head">
+							<h4>{selectedTimelinePoint.label || `第${Math.round(selectedTimelinePoint.month)}月复盘`}</h4>
+							<button type="button" class="text-btn" onclick={() => (selectedTimelineReviewId = null)}>关闭</button>
+						</div>
+						{#if selectedTimelinePoint.detail}
+							<p class="detail-pass">
+								通过率 {Math.round((selectedTimelinePoint.detail.pass_rate ?? 0) * 100)}% · {selectedTimelinePoint.detail
+									.all_passed
+									? "全部达标"
+									: "存在未达标项"}
+							</p>
+							{#if selectedTimelinePoint.detail.llm_summary}
+								<p class="detail-block">
+									<span class="sub">DeepSeek 小结</span>{selectedTimelinePoint.detail.llm_summary}
+								</p>
+							{/if}
+							{#if selectedTimelinePoint.detail.review_text}
+								<p class="detail-block">
+									<span class="sub">你的复盘原文</span><span class="pre">{selectedTimelinePoint.detail.review_text}</span>
+								</p>
+							{/if}
+							{#if selectedTimelinePoint.detail.submitted}
+								<p class="detail-block">
+									<span class="sub">量化结果</span>
+									缺口收敛 {Number(selectedTimelinePoint.detail.submitted.dim_gap_reduction ?? 0).toFixed(1)}% · 项目完成
+									{Number(selectedTimelinePoint.detail.submitted.project_completion ?? 0).toFixed(1)}% · 匹配变化
+									{Number(selectedTimelinePoint.detail.submitted.match_score_change ?? 0).toFixed(1)} 分 · 成果
+									{Math.round(Number(selectedTimelinePoint.detail.submitted.delivery_output ?? 0))} 项
+								</p>
+							{/if}
+						{:else}
+							<p class="text-sm text-50">暂无详情数据，请重新加载报告后再试。</p>
+						{/if}
+					</div>
+				{/if}
+
+				{#if selectedAdjustmentDetail}
+	<div class="canvas-side-cards" class:compact={embedded}>
+						<article class="insight-mini-card insight-mini-card--adjust">
+							<h4 class="insight-mini-card-title">
+								{selectedAdjustmentDetail.kind === "initial_plan"
+									? "起步执行安排（第 0 月）"
+									: "下一月执行安排"}
+							</h4>
+							<div class="adjustment-detail">
+								<p class="title">{selectedAdjustmentDetail.focus_label || "能力补齐"} · {selectedAdjustmentDetail.label}</p>
+								<p>所属发展线：{selectedAdjustmentDetail.line_name}</p>
+								<p>
+									时间定位：目标执行<strong
+										>第 {selectedAdjustmentDetail.plan_month ??
+											Math.max(1, Math.round(Number(selectedAdjustmentDetail.month) || 1))} 月</strong>
+									{#if selectedAdjustmentDetail.anchor_review_month != null && selectedAdjustmentDetail.anchor_review_month !== undefined}
+										（复盘锚点：第 {Math.round(Number(selectedAdjustmentDetail.anchor_review_month))} 月）
+									{/if}
+									· 阶段 {STAGE_LABELS[selectedAdjustmentDetail.stage] ?? selectedAdjustmentDetail.stage}
+								</p>
+								{#if selectedAdjustmentDetail.execution_hints?.length}
+									<p class="subhead">细化落地</p>
+									<ul class="adjustment-hint-list">
+										{#each selectedAdjustmentDetail.execution_hints as hint, hi (`h-${hi}`)}
+											<li>{hint}</li>
+										{/each}
+									</ul>
+								{/if}
+								{#if selectedAdjustmentDetail.created_at}
+									<p>触发时间：{selectedAdjustmentDetail.created_at}</p>
+								{/if}
+								{#if selectedAdjustmentDetail.failed_rows?.length}
+									<p class="subhead">关联未达标指标</p>
+									<ul>
+										{#each selectedAdjustmentDetail.failed_rows as r (r.code)}
+											<li>
+												<button type="button" class="metric-link" onclick={() => focusMetric(r.code)}>
+													{r.label}：实际 {r.actual_value} / 目标 {r.target_raw}
+												</button>
+											</li>
+										{/each}
+									</ul>
+								{:else if selectedAdjustmentDetail.kind !== "initial_plan"}
+									<p class="hint">暂无可关联的指标失败记录，可能来自更早一次自动调整。</p>
+								{/if}
+								{#if selectedAdjustmentDetail.review_created_at}
+									<p class="hint">最近评估时间：{selectedAdjustmentDetail.review_created_at}</p>
+								{/if}
+							</div>
+						</article>
+					</div>
+				{/if}
+{/snippet}
+{#snippet insightPanel()}
+			{#if generatedReport}
+				{#if usePerJobPlan && activeGapBars.length}
+					<div class="mini-title">当前岗位能力缺口</div>
+					<div class="gap-bars">
+						{#each activeGapBars as g (g.key)}
+							<div class="gap-bar-row">
+								<span>{g.label}</span>
+								<div class="bar-track">
+									<div class="bar gap" style={`width:${Math.min(100, (g.value / maxGapValue) * 100)}%`}></div>
+								</div>
+							</div>
+						{/each}
+					</div>
+				{/if}
+				<div class="mini-title">职业趋势强度{usePerJobPlan ? "（当前岗）" : ""}</div>
+				{#if trendOverview && !usePerJobPlan}
+					<div class="trend-overview">
+						<p class="summary">{trendOverview.tone}</p>
+						<p class="meta">
+							平均需求 {trendOverview.demandAvg} · 平均增长 {trendOverview.growthAvg} · 平均波动
+							{trendOverview.volatilityAvg}（{trendOverview.stable}）
+						</p>
+						<p class="meta">说明：需求越高代表岗位机会越多；增长越高代表未来空间更大；波动越高代表路径不确定性更强。</p>
+					</div>
+				{/if}
+				{#if generatedReport?.trend_meta}
+					<p class="trend-meta-note">
+						{generatedReport.trend_meta.ok
+							? `趋势由 DeepSeek 增强分析（${generatedReport.trend_meta.model || "model"}），更新 ${generatedReport.trend_meta.updated || 0} 个目标。`
+							: `趋势使用启发式估算（未启用或调用失败：${generatedReport.trend_meta.reason || "unknown"}）。`}
+					</p>
+				{/if}
+				<div class="trend-chart">
+					{#each usePerJobPlan && activeTrendRow ? [activeTrendRow] : trendRows as row (row.id)}
+						<div class="trend-row">
+							<div class="trend-name">{row.display_title || `${row.title} · ${row.company || "未知公司"}`}</div>
+							<div class="trend-bars">
+								<div class="bar-item">
+									<span>需求</span>
+									<div class="bar-track"><div class="bar demand" style={`width:${barWidth(row.trend.demand_index_0_100, maxTrend)}`}></div></div>
+								</div>
+								<div class="bar-item">
+									<span>增长</span>
+									<div class="bar-track"><div class="bar growth" style={`width:${barWidth(row.trend.growth_signal_0_100, maxTrend)}`}></div></div>
+								</div>
+								<div class="bar-item">
+									<span>波动</span>
+									<div class="bar-track"><div class="bar risk" style={`width:${barWidth(row.trend.volatility_0_100, maxTrend)}`}></div></div>
+								</div>
+							</div>
+							<p class="trend-text">
+								需求{trendLevelText(row.trend.demand_index_0_100)} / 增长{trendLevelText(
+									row.trend.growth_signal_0_100,
+								)}
+								/ 波动{trendLevelText(row.trend.volatility_0_100)}：{trendInterpretation(row)}
+							</p>
+						</div>
+					{/each}
+				</div>
+
+				{#if !usePerJobPlan}
+					<div class="mini-title">能力缺口热力矩阵</div>
+					<div class="heatmap">
+						<div class="heat-header">
+							<span>职业</span>
+							{#each heatmapDimensions as dim (dim)}
+								<span>{DIMENSION_LABELS[dim] || dim}</span>
+							{/each}
+						</div>
+						{#each generatedReport.targets as t (t.id)}
+							<div class="heat-row">
+								<span class="job-cell">{t.display_title || `${t.title} · ${t.company || "未知公司"}`}</span>
+								{#each heatmapDimensions as dim (dim)}
+									{@const value = Number(t.match_preview.dimension_gaps?.[dim] || 0)}
+									<span class="gap-cell" style={heatColor(value)}>{value.toFixed(1)}</span>
+								{/each}
+							</div>
+						{/each}
+					</div>
+				{/if}
+
+				<div class="mini-title">这段时间重点看什么</div>
+				<div class="metric-list">
+					{#each generatedReport.evaluation.metrics as metric (metric.code)}
+						<div
+							class="metric-item"
+							class:metric-highlight={highlightedMetricCode === metric.code}
+							data-metric-code={metric.code}
+						>
+							<p>{metricDisplayLabel(metric)}</p>
+							<p class="meta">{readableCycleText(metric.cycle)} · 希望达到 {readableTargetText(metric.target)}</p>
+						</div>
+					{/each}
+				</div>
+
+				{#if reviewTrend.length}
+					<div class="mini-title">评估趋势（通过率）</div>
+					<div class="review-trend">
+						<svg viewBox="0 0 320 98" aria-label="评估趋势折线图">
+							<line x1="18" y1="84" x2="305" y2="84" class="axis" />
+							<line x1="18" y1="20" x2="18" y2="84" class="axis" />
+							<polyline
+								points={reviewTrend.map((p) => `${p.x},${p.y}`).join(" ")}
+								fill="none"
+								stroke="var(--primary)"
+								stroke-width="2.4"
+							/>
+							{#each reviewTrend as p (p.reviewId)}
+								<circle cx={p.x} cy={p.y} r="3.2" fill="var(--primary)" />
+								<text x={p.x} y={p.y - 6} text-anchor="middle" class="pt">
+									{Math.round(p.passRate * 100)}%
+								</text>
+							{/each}
+						</svg>
+					</div>
+				{/if}
+
+				{#if generatedReport.evaluation.latest_review}
+					<div class="mini-title">最近一次评估结果</div>
+					<div class="latest-review">
+						<p>
+							通过率 {Math.round((generatedReport.evaluation.latest_review.evaluation.pass_rate || 0) * 100)}%
+							· {generatedReport.evaluation.latest_review.evaluation.all_passed ? "全部达标" : "存在未达标项"}
+						</p>
+						{#if generatedReport.evaluation.latest_review.llm_extract?.summary}
+							<p>
+								自动复盘结论：{generatedReport.evaluation.latest_review.llm_extract.summary}
+							</p>
+						{/if}
+						{#if generatedReport.evaluation.latest_review.review_text}
+							<p class="review-text">
+								复盘输入：{generatedReport.evaluation.latest_review.review_text}
+							</p>
+						{/if}
+						<p class="meta-line">
+							量化指标：缺口收敛 {Number(generatedReport.evaluation.latest_review.submitted_metrics?.dim_gap_reduction ?? 0).toFixed(1)}% ·
+							项目完成 {Number(generatedReport.evaluation.latest_review.submitted_metrics?.project_completion ?? 0).toFixed(1)}% ·
+							匹配变化 {Number(generatedReport.evaluation.latest_review.submitted_metrics?.match_score_change ?? 0).toFixed(1)} 分 ·
+							成果 {Math.round(Number(generatedReport.evaluation.latest_review.submitted_metrics?.delivery_output ?? 0))} 项
+						</p>
+						{#if generatedReport.evaluation.latest_review.adjustment.auto_adjustment.triggered}
+							<div class="auto-adjust">
+								<p class="font-medium">已触发自动重规划</p>
+								<p>{generatedReport.evaluation.latest_review.adjustment.auto_adjustment.reason}</p>
+								{#if generatedReport.evaluation.latest_review.adjustment.auto_adjustment.focus_labels?.length}
+									<p>
+										聚焦维度：
+										{generatedReport.evaluation.latest_review.adjustment.auto_adjustment.focus_labels.join("、")}
+									</p>
+								{/if}
+								{#if generatedReport.evaluation.latest_review.adjustment.auto_adjustment.extra_actions?.length}
+									<ul>
+										{#each generatedReport.evaluation.latest_review.adjustment.auto_adjustment.extra_actions as act (act)}
+											<li>{act}</li>
+										{/each}
+									</ul>
+								{/if}
+							</div>
+						{/if}
+					</div>
+				{/if}
+			{:else}
+				<div class="empty-side">
+					<p>生成报告后，这里会显示趋势图、热力矩阵与评估指标。</p>
+				</div>
+			{/if}
+{/snippet}
+
+
+
 <section class="report-workbench">
 	<div class="report-grid">
-		<aside class="control-rail">
+		<aside class="control-rail" class:collapsed={configRailCollapsed && !!generatedReport}>
 			<div class="rail-card">
 				<div class="rail-head">
 					<h3>目标职业配置</h3>
@@ -755,16 +1230,29 @@ function metricDisplayLabel(metric: { code?: string; label?: string }): string {
 						先在上排卡片选择要看的岗位。横轴为<strong>第 n 月</strong>（每月一次复盘），纵轴为进步度（0–100）。未提交前只有起点 (0,0)；每月提交后在该月横坐标处新增一点并连线。点击<strong>蓝色复盘圆点</strong>可展开本次输入与量化结果；橙色菱形为自动重规划插入点。
 					</p>
 				</div>
-				{#if generatedReportId}
-					<button
-						type="button"
-						class="ghost"
-						disabled={exportingPdf}
-						onclick={() => void exportPdf()}
-					>
-						{exportingPdf ? "导出中..." : "导出 PDF"}
-					</button>
-				{/if}
+				<div class="canvas-head-actions">
+					{#if generatedReport}
+						<button
+							type="button"
+							class="ghost"
+							onclick={() => {
+								configRailCollapsed = !configRailCollapsed;
+							}}
+						>
+							{configRailCollapsed ? "展开配置" : "收起配置"}
+						</button>
+					{/if}
+					{#if generatedReportId}
+						<button
+							type="button"
+							class="ghost"
+							disabled={exportingPdf}
+							onclick={() => void exportPdf()}
+						>
+							{exportingPdf ? "导出中..." : "导出 PDF"}
+						</button>
+					{/if}
+				</div>
 			</div>
 
 			{#if generatedReport}
@@ -775,10 +1263,186 @@ function metricDisplayLabel(metric: { code?: string; label?: string }): string {
 					<span>复盘节奏 {generatedReport.evaluation.cycle.default === "monthly" ? "每月" : generatedReport.evaluation.cycle.default}</span>
 				</div>
 
-				<div class="planning-main">
+				{#if error}
+					<div class="generate-error" role="alert">{error}</div>
+				{/if}
+				{#if info}
+					<div class="generate-info">{info}</div>
+				{/if}
+
+				{#if usePerJobPlan && activePlan}
+					<div class="job-workspace">
+						<div class="job-tabs" role="tablist" aria-label="目标岗位切换">
+							{#each plansByTarget as plan, idx (plan.job_id)}
+								<button
+									type="button"
+									role="tab"
+									class="job-tab"
+									class:active={activeJobId === plan.job_id}
+									aria-selected={activeJobId === plan.job_id}
+									onclick={() => selectActiveJob(plan.job_id)}
+								>
+									<span class="swatch" style={`background:${LINE_COLORS[idx % LINE_COLORS.length]};`}></span>
+									<span class="job-tab-text">
+										<strong>{plan.job_title_name || "岗位"}</strong>
+										<small>{plan.company || "未知公司"}</small>
+									</span>
+									<span class="job-tab-score">{Math.round(plan.match_score ?? 0)}分</span>
+								</button>
+							{/each}
+						</div>
+
+						<div class="job-hero">
+							<div>
+								<h4>{activePlan.display_title}</h4>
+								<p class="hero-meta">
+									{activePlan.location || "未知地点"} · 岗位名 {activePlan.job_title_name} · 匹配分
+									<strong>{Math.round(activePlan.match_score ?? 0)}</strong>
+								</p>
+								{#if activePlan.top_gap_labels?.length}
+									<p class="hero-gaps">重点缺口：{activePlan.top_gap_labels.join("、")}</p>
+								{/if}
+							</div>
+							{#if activePlan.narrative}
+								<div class="hero-narrative">
+									{#if activePlan.narrative.provider === "doubao"}
+										<span class="narrative-badge">豆包 · 本岗叙事</span>
+									{/if}
+									<p>{activePlan.narrative.path_advice}</p>
+									<p class="meta">{activePlan.narrative.execution_reminder}</p>
+								</div>
+							{/if}
+						</div>
+
+						<div class="phase-stepper" role="tablist" aria-label="成长阶段">
+							{#each ["early", "mid", "late"] as ph}
+								{@const pb = activePlan.phases[ph as "early" | "mid" | "late"]}
+								<button
+									type="button"
+									role="tab"
+									class="phase-step"
+									class:active={activePhase === ph}
+									onclick={() => {
+										activePhase = ph as "early" | "mid" | "late";
+									}}
+								>
+									<span class="phase-label">{pb?.label || ph}</span>
+									<span class="phase-period">{phasePeriodDisplay(ph as "early" | "mid" | "late", pb?.period)}</span>
+								</button>
+							{/each}
+						</div>
+
+						<div class="job-body-grid">
+							<section class="phase-detail-panel">
+								{#if activePhaseBlock}
+									<h5>{activePhaseBlock.label} · {phasePeriodDisplay(activePhase, activePhaseBlock.period)}</h5>
+									<p class="phase-summary">{activePhaseBlock.summary}</p>
+									<div class="plan-items spacious">
+										{#each activePhaseBlock.items as item (`${activePhase}-${item.order}-${item.focus_dimension}`)}
+											<article class="plan-item rich">
+												<p class="title">{item.focus_label}</p>
+												<p class="milestone">里程碑：{item.milestone}</p>
+												{#if item.learning_path?.length}
+													<p class="meta">学习：{item.learning_path.join("；")}</p>
+												{/if}
+												{#if item.learning_path_refs?.length}
+													<ul class="ref-links">
+														{#each item.learning_path_refs as ref (`ph-lr-${ref.id}`)}
+															<li>
+																{#if ref.url}
+																	<a href={ref.url} target="_blank" rel="noopener noreferrer">{ref.label || ref.id}</a>
+																{:else}
+																	{ref.label || ref.id}
+																{/if}
+																{#if ref.rationale}<span class="ref-why">{ref.rationale}</span>{/if}
+															</li>
+														{/each}
+													</ul>
+												{/if}
+												{#if item.practice_plan_refs?.length}
+													<ul class="ref-links practice">
+														{#each item.practice_plan_refs as ref (`ph-cp-${ref.id}`)}
+															<li>
+																{#if ref.url}
+																	<a href={ref.url} target="_blank" rel="noopener noreferrer">{ref.label || ref.id}</a>
+																{:else}
+																	{ref.label || ref.id}
+																{/if}
+															</li>
+														{/each}
+													</ul>
+												{/if}
+											</article>
+										{/each}
+									</div>
+								{/if}
+							</section>
+
+							<section class="canvas-panel">
+								<h5>本岗位发展线</h5>
+								<p class="canvas-panel-hint">
+									横轴为月份复盘，纵轴为进步度。点击曲线圆点查看复盘，橙色菱形为调整节点。
+								</p>
+								{@render developmentCanvas(true)}
+							</section>
+
+							<section class="insight-embed-panel">
+								<h5>趋势与评估</h5>
+								<p class="insight-embed-hint">
+									当前选中岗位的趋势、缺口与评估指标。
+								</p>
+								{@render insightPanel()}
+							</section>
+						</div>
+
+						{#if activePlan.recommendations}
+							<section class="resource-deck">
+								<h5>图谱推荐资源（本岗位）</h5>
+								<div class="rec-grid">
+									<div class="rec-col">
+										<h6>学习资源</h6>
+										{#each activePlan.recommendations.learning_resources || [] as lr (`deck-lr-${lr.resource_id}`)}
+											<article class="rec-card rich">
+												<p class="rec-title">
+													<a href={lr.resource_url} target="_blank" rel="noopener noreferrer">{lr.resource_name}</a>
+												</p>
+												<p class="rec-meta">
+													{lr.resource_type} · {lr.difficulty} · {lr.skill_tag}
+												</p>
+												{#if lr.resource_desc}
+													<p class="rec-desc">{lr.resource_desc.slice(0, 120)}{lr.resource_desc.length > 120 ? "…" : ""}</p>
+												{/if}
+												{#if lr.rationale}<p class="rec-why">{lr.rationale}</p>{/if}
+											</article>
+										{:else}
+											<p class="meta">暂无</p>
+										{/each}
+									</div>
+									<div class="rec-col">
+										<h6>竞赛</h6>
+										{#each activePlan.recommendations.competitions || [] as cp (`deck-cp-${cp.competition_id}`)}
+											<article class="rec-card rich">
+												<p class="rec-title">
+													<a href={cp.official_url} target="_blank" rel="noopener noreferrer">{cp.competition_name}</a>
+												</p>
+												<p class="rec-meta">
+													{cp.competition_type} · {cp.difficulty} · {cp.award_level}
+												</p>
+												{#if cp.rationale}<p class="rec-why">{cp.rationale}</p>{/if}
+											</article>
+										{:else}
+											<p class="meta">暂无</p>
+										{/each}
+									</div>
+								</div>
+							</section>
+						{/if}
+					</div>
+				{:else}
+				<div class="planning-main legacy-plan">
 					<div class="planning-head">
-						<h4>个性化成长规划（分阶段）</h4>
-						<p>先看策略和任务，再结合下方发展线与趋势图验证可行性。</p>
+						<h4>个性化成长规划（汇总版 · 旧报告）</h4>
+						<p>本报告无分岗计划数据，显示多岗汇总规划。请重新生成报告以启用分岗三阶段视图。</p>
 					</div>
 
 					<div class="planning-grid">
@@ -800,10 +1464,36 @@ function metricDisplayLabel(metric: { code?: string; label?: string }): string {
 									{#each shortPlanItems as item (`sp-${item.order}-${item.focus_dimension}`)}
 										<article class="plan-item">
 											<p class="title">{item.focus_label} · 里程碑：{item.milestone}</p>
-											{#if item.learning_path?.length}
+											{#if item.learning_path_refs?.length}
+												<ul class="ref-links">
+													{#each item.learning_path_refs as ref (`sp-lr-${ref.id}`)}
+														<li>
+															{#if ref.url}
+																<a href={ref.url} target="_blank" rel="noopener noreferrer">{ref.label || ref.id}</a>
+															{:else}
+																{ref.label || ref.id}
+															{/if}
+															<span class="ref-tag">图谱</span>
+														</li>
+													{/each}
+												</ul>
+											{:else if item.learning_path?.length}
 												<p class="meta">学习路径：{item.learning_path.join("；")}</p>
 											{/if}
-											{#if item.practice_plan?.length}
+											{#if item.practice_plan_refs?.length}
+												<ul class="ref-links">
+													{#each item.practice_plan_refs as ref (`sp-cp-${ref.id}`)}
+														<li>
+															{#if ref.url}
+																<a href={ref.url} target="_blank" rel="noopener noreferrer">{ref.label || ref.id}</a>
+															{:else}
+																{ref.label || ref.id}
+															{/if}
+															<span class="ref-tag">竞赛</span>
+														</li>
+													{/each}
+												</ul>
+											{:else if item.practice_plan?.length}
 												<p class="meta">实践安排：{item.practice_plan.join("；")}</p>
 											{/if}
 										</article>
@@ -821,10 +1511,36 @@ function metricDisplayLabel(metric: { code?: string; label?: string }): string {
 									{#each midPlanItems as item (`mp-${item.order}-${item.focus_dimension}`)}
 										<article class="plan-item">
 											<p class="title">{item.focus_label} · 里程碑：{item.milestone}</p>
-											{#if item.learning_path?.length}
+											{#if item.learning_path_refs?.length}
+												<ul class="ref-links">
+													{#each item.learning_path_refs as ref (`mp-lr-${ref.id}`)}
+														<li>
+															{#if ref.url}
+																<a href={ref.url} target="_blank" rel="noopener noreferrer">{ref.label || ref.id}</a>
+															{:else}
+																{ref.label || ref.id}
+															{/if}
+															<span class="ref-tag">图谱</span>
+														</li>
+													{/each}
+												</ul>
+											{:else if item.learning_path?.length}
 												<p class="meta">学习路径：{item.learning_path.join("；")}</p>
 											{/if}
-											{#if item.practice_plan?.length}
+											{#if item.practice_plan_refs?.length}
+												<ul class="ref-links">
+													{#each item.practice_plan_refs as ref (`mp-cp-${ref.id}`)}
+														<li>
+															{#if ref.url}
+																<a href={ref.url} target="_blank" rel="noopener noreferrer">{ref.label || ref.id}</a>
+															{:else}
+																{ref.label || ref.id}
+															{/if}
+															<span class="ref-tag">竞赛</span>
+														</li>
+													{/each}
+												</ul>
+											{:else if item.practice_plan?.length}
 												<p class="meta">实践安排：{item.practice_plan.join("；")}</p>
 											{/if}
 										</article>
@@ -835,270 +1551,44 @@ function metricDisplayLabel(metric: { code?: string; label?: string }): string {
 							{/if}
 						</section>
 
-						<section class="plan-block">
-							<h5>多岗位任务规划说明</h5>
-							{#if linePlanSummary.shared.length}
-								<div class="stack-desc">
-									<p class="sub">叠合部分（可共用）</p>
-									{#each linePlanSummary.shared as s (`shared-${s.group}`)}
-										<p class="meta">同组 {s.lines.length} 条职业线共用准备：{s.lines.join("、")}</p>
-									{/each}
-								</div>
-							{/if}
-							{#if linePlanSummary.split.length}
-								<div class="stack-desc">
-									<p class="sub">分开部分（需定向准备）</p>
-									{#each linePlanSummary.split as s (`split-${s.overlay_group}-${s.line_name}`)}
-										<p class="meta">{s.line_name} 需要单独任务线（组：{s.overlay_group}）</p>
-									{/each}
-								</div>
-							{/if}
-							{#if !linePlanSummary.shared.length && !linePlanSummary.split.length}
-								<p>暂无多职业路径说明。</p>
-							{/if}
-						</section>
 					</div>
 				</div>
+				{/if}
 
-				<div class="line-picker">
-					{#each lineNodes as line, idx (line.line_id)}
-						<button
-							type="button"
-							class="line-card"
-							class:active={activeLineId === line.line_id}
-							onclick={() => {
-								focusLineId = line.line_id;
-								selectedTimelineReviewId = null;
-								const adjs = (generatedReport?.development_lines?.adjustments || []).filter(
-									(a) => a.line_id === line.line_id,
-								);
-								selectedAdjustmentId = adjs[0]?.id || "";
-							}}
-						>
-							<span class="swatch" style={`background:${LINE_COLORS[idx % LINE_COLORS.length]};`}></span>
-							<span class="line-card-name">{line.line_name}</span>
-						</button>
-					{/each}
-				</div>
+				{#if !usePerJobPlan && generatedReport}
+					<section class="insight-embed-wide">
+						<h5>趋势与评估</h5>
+						<p class="insight-embed-hint">
+							聚合展示目标职业趋势、能力缺口与评估指标。
+						</p>
+						{@render insightPanel()}
+					</section>
+					{@render developmentCanvas(false)}
+				{/if}
 
-				<div class="line-canvas-wrap">
-					<svg viewBox="0 0 700 300" class="line-canvas" aria-label="进步度时间曲线">
-						<!-- 网格 -->
-						{#each [3, 6, 9] as gx}
-							{@const gx1 = scalePoint(gx, chartLayout.ax.yMin).x}
-							<line
-								x1={gx1}
-								y1={CHART.t}
-								x2={gx1}
-								y2={CHART.t + chartLayout.ph}
-								class="grid-line"
-							/>
-						{/each}
-						{#each [25, 50, 75] as gy}
-							{@const gy1 = CHART.t + chartLayout.ph - (gy / 100) * chartLayout.ph}
-							<line x1={CHART.l} y1={gy1} x2={CHART.l + chartLayout.pw} y2={gy1} class="grid-line" />
-						{/each}
-						<!-- 坐标轴 -->
-						<line
-							x1={CHART.l}
-							y1={CHART.t + chartLayout.ph}
-							x2={CHART.l + chartLayout.pw}
-							y2={CHART.t + chartLayout.ph}
-							class="axis-main"
-						/>
-						<line x1={CHART.l} y1={CHART.t} x2={CHART.l} y2={CHART.t + chartLayout.ph} class="axis-main" />
-						<!-- Y 刻度 -->
-						{#each [0, 25, 50, 75, 100] as tick}
-							{@const yy = CHART.t + chartLayout.ph - (tick / 100) * chartLayout.ph}
-							<line x1={CHART.l - 5} y1={yy} x2={CHART.l} y2={yy} class="axis-tick" />
-							<text x={CHART.l - 8} y={yy + 3} text-anchor="end" class="axis-num">{tick}</text>
-						{/each}
-						<!-- X 刻度 -->
-						{#each [0, 3, 6, 9, 12] as xm}
-							{@const xx = scalePoint(xm, 0).x}
-							<line x1={xx} y1={CHART.t + chartLayout.ph} x2={xx} y2={CHART.t + chartLayout.ph + 6} class="axis-tick" />
-							<text x={xx} y={CHART.t + chartLayout.ph + 18} text-anchor="middle" class="axis-num">{xm}</text>
-						{/each}
-						<text x={CHART.l + chartLayout.pw / 2} y={CHART.h - 4} text-anchor="middle" class="axis-title">
-							{chartLayout.ax.xLabel}
-						</text>
-						<text
-							x="16"
-							y={CHART.t + chartLayout.ph / 2}
-							text-anchor="middle"
-							class="axis-title"
-							transform={`rotate(-90,16,${CHART.t + chartLayout.ph / 2})`}
-						>
-							{chartLayout.ax.yLabel}
-						</text>
-
-						{#if activeTimeline.length >= 2}
-							<polyline
-								points={timelinePolylineString()}
-								fill="none"
-								stroke={LINE_COLORS[activeLineIndex % LINE_COLORS.length]}
-								stroke-width="3"
-								stroke-linejoin="round"
-								stroke-linecap="round"
-							/>
-						{/if}
-						{#each activeTimeline as t, ti (`tl-${ti}-${t.month}`)}
-							{@const p = scalePoint(t.month, t.progress)}
-							{#if t.kind === "review"}
-								<g
-									class="hit-review-point"
-									class:selected={selectedTimelineReviewId === t.review_id}
-									role="button"
-									tabindex="0"
-									aria-label={`查看第${Math.round(t.month)}月复盘详情`}
-									onclick={() => selectTimelineReview(t.review_id)}
-									onkeydown={(e) => {
-										if (e.key === "Enter" || e.key === " ") {
-											e.preventDefault();
-											selectTimelineReview(t.review_id);
-										}
-									}}
-								>
-									<circle cx={p.x} cy={p.y} r="10" fill="transparent" class="hit-pad" />
-									<circle
-										cx={p.x}
-										cy={p.y}
-										r="5.2"
-										fill={LINE_COLORS[activeLineIndex % LINE_COLORS.length]}
-										stroke="#ffffff"
-										stroke-width={selectedTimelineReviewId === t.review_id ? "2.4" : "1.2"}
-									/>
-									{#if t.label}
-										<text x={p.x} y={p.y - 10} text-anchor="middle" class="point-label">{t.label}</text>
-									{/if}
-								</g>
-							{:else}
-								<circle
-									cx={p.x}
-									cy={p.y}
-									r={t.kind === "origin" ? "3.8" : "4.2"}
-									fill={LINE_COLORS[activeLineIndex % LINE_COLORS.length]}
-									stroke={t.kind === "origin" ? "#ffffff" : "none"}
-									stroke-width={t.kind === "origin" ? "1.2" : "0"}
-								/>
-							{/if}
-						{/each}
-
-						{#each adjustmentsForActiveLine as adj (adj.id)}
-							{@const pt = adjChartPoint(adj)}
-							<rect
-								x={pt.x - 5}
-								y={pt.y - 5}
-								width="10"
-								height="10"
-								transform={`rotate(45 ${pt.x} ${pt.y})`}
-								fill={selectedAdjustmentId === adj.id ? "#d97706" : "#f59e0b"}
-								fill-opacity={selectedAdjustmentId && selectedAdjustmentId !== adj.id ? "0.45" : "0.95"}
-								stroke={selectedAdjustmentId === adj.id ? "#111827" : "#ffffff"}
-								stroke-width={selectedAdjustmentId === adj.id ? "1.8" : "1.2"}
-								class="adjust-node"
-								role="button"
-								tabindex="0"
-								aria-label={`查看调整节点 ${adj.label}`}
-								onclick={() => selectAdjustment(adj.id)}
-								onkeydown={(e) => {
-									if (e.key === "Enter" || e.key === " ") selectAdjustment(adj.id);
+				{#if !usePerJobPlan}
+					<div class="line-picker">
+						{#each lineNodes as line, idx (line.line_id)}
+							<button
+								type="button"
+								class="line-card"
+								class:active={activeLineId === line.line_id}
+								onclick={() => {
+									focusLineId = line.line_id;
+									selectedTimelineReviewId = null;
+									const adjs = (generatedReport?.development_lines?.adjustments || []).filter(
+										(a) => a.line_id === line.line_id,
+									);
+									selectedAdjustmentId = adjs[0]?.id || "";
 								}}
-							/>
+							>
+								<span class="swatch" style={`background:${LINE_COLORS[idx % LINE_COLORS.length]};`}></span>
+								<span class="line-card-name">{line.line_name}</span>
+							</button>
 						{/each}
-					</svg>
-				</div>
-
-				{#if selectedTimelinePoint?.kind === "review"}
-					<div class="timeline-detail-panel">
-						<div class="timeline-detail-head">
-							<h4>{selectedTimelinePoint.label || `第${Math.round(selectedTimelinePoint.month)}月复盘`}</h4>
-							<button type="button" class="text-btn" onclick={() => (selectedTimelineReviewId = null)}>关闭</button>
-						</div>
-						{#if selectedTimelinePoint.detail}
-							<p class="detail-pass">
-								通过率 {Math.round((selectedTimelinePoint.detail.pass_rate ?? 0) * 100)}% · {selectedTimelinePoint.detail
-									.all_passed
-									? "全部达标"
-									: "存在未达标项"}
-							</p>
-							{#if selectedTimelinePoint.detail.llm_summary}
-								<p class="detail-block">
-									<span class="sub">DeepSeek 小结</span>{selectedTimelinePoint.detail.llm_summary}
-								</p>
-							{/if}
-							{#if selectedTimelinePoint.detail.review_text}
-								<p class="detail-block">
-									<span class="sub">你的复盘原文</span><span class="pre">{selectedTimelinePoint.detail.review_text}</span>
-								</p>
-							{/if}
-							{#if selectedTimelinePoint.detail.submitted}
-								<p class="detail-block">
-									<span class="sub">量化结果</span>
-									缺口收敛 {Number(selectedTimelinePoint.detail.submitted.dim_gap_reduction ?? 0).toFixed(1)}% · 项目完成
-									{Number(selectedTimelinePoint.detail.submitted.project_completion ?? 0).toFixed(1)}% · 匹配变化
-									{Number(selectedTimelinePoint.detail.submitted.match_score_change ?? 0).toFixed(1)} 分 · 成果
-									{Math.round(Number(selectedTimelinePoint.detail.submitted.delivery_output ?? 0))} 项
-								</p>
-							{/if}
-						{:else}
-							<p class="text-sm text-50">暂无详情数据，请重新加载报告后再试。</p>
-						{/if}
 					</div>
 				{/if}
 
-				{#if selectedAdjustmentDetail}
-					<div class="canvas-side-cards">
-						<article class="insight-mini-card insight-mini-card--adjust">
-							<h4 class="insight-mini-card-title">
-								{selectedAdjustmentDetail.kind === "initial_plan"
-									? "起步执行安排（第 0 月）"
-									: "下一月执行安排"}
-							</h4>
-							<div class="adjustment-detail">
-								<p class="title">{selectedAdjustmentDetail.focus_label || "能力补齐"} · {selectedAdjustmentDetail.label}</p>
-								<p>所属发展线：{selectedAdjustmentDetail.line_name}</p>
-								<p>
-									时间定位：目标执行<strong
-										>第 {selectedAdjustmentDetail.plan_month ??
-											Math.max(1, Math.round(Number(selectedAdjustmentDetail.month) || 1))} 月</strong>
-									{#if selectedAdjustmentDetail.anchor_review_month != null && selectedAdjustmentDetail.anchor_review_month !== undefined}
-										（复盘锚点：第 {Math.round(Number(selectedAdjustmentDetail.anchor_review_month))} 月）
-									{/if}
-									· 阶段 {STAGE_LABELS[selectedAdjustmentDetail.stage] ?? selectedAdjustmentDetail.stage}
-								</p>
-								{#if selectedAdjustmentDetail.execution_hints?.length}
-									<p class="subhead">细化落地</p>
-									<ul class="adjustment-hint-list">
-										{#each selectedAdjustmentDetail.execution_hints as hint, hi (`h-${hi}`)}
-											<li>{hint}</li>
-										{/each}
-									</ul>
-								{/if}
-								{#if selectedAdjustmentDetail.created_at}
-									<p>触发时间：{selectedAdjustmentDetail.created_at}</p>
-								{/if}
-								{#if selectedAdjustmentDetail.failed_rows?.length}
-									<p class="subhead">关联未达标指标</p>
-									<ul>
-										{#each selectedAdjustmentDetail.failed_rows as r (r.code)}
-											<li>
-												<button type="button" class="metric-link" onclick={() => focusMetric(r.code)}>
-													{r.label}：实际 {r.actual_value} / 目标 {r.target_raw}
-												</button>
-											</li>
-										{/each}
-									</ul>
-								{:else if selectedAdjustmentDetail.kind !== "initial_plan"}
-									<p class="hint">暂无可关联的指标失败记录，可能来自更早一次自动调整。</p>
-								{/if}
-								{#if selectedAdjustmentDetail.review_created_at}
-									<p class="hint">最近评估时间：{selectedAdjustmentDetail.review_created_at}</p>
-								{/if}
-							</div>
-						</article>
-					</div>
-				{/if}
 			{:else}
 				<div class="empty-canvas">
 					<p>先在左侧配置目标职业并生成报告，发展线画布会在这里显示。</p>
@@ -1106,164 +1596,6 @@ function metricDisplayLabel(metric: { code?: string; label?: string }): string {
 			{/if}
 		</div>
 
-		<aside class="insight-rail">
-			<div class="rail-head">
-				<h3>趋势与评估</h3>
-				<p>聚合展示目标职业趋势、能力缺口与评估指标。</p>
-			</div>
-
-			{#if generatedReport}
-				<div class="mini-title">职业趋势强度</div>
-				{#if trendOverview}
-					<div class="trend-overview">
-						<p class="summary">{trendOverview.tone}</p>
-						<p class="meta">
-							平均需求 {trendOverview.demandAvg} · 平均增长 {trendOverview.growthAvg} · 平均波动
-							{trendOverview.volatilityAvg}（{trendOverview.stable}）
-						</p>
-						<p class="meta">说明：需求越高代表岗位机会越多；增长越高代表未来空间更大；波动越高代表路径不确定性更强。</p>
-					</div>
-				{/if}
-				{#if generatedReport?.trend_meta}
-					<p class="trend-meta-note">
-						{generatedReport.trend_meta.ok
-							? `趋势由 DeepSeek 增强分析（${generatedReport.trend_meta.model || "model"}），更新 ${generatedReport.trend_meta.updated || 0} 个目标。`
-							: `趋势使用启发式估算（未启用或调用失败：${generatedReport.trend_meta.reason || "unknown"}）。`}
-					</p>
-				{/if}
-				<div class="trend-chart">
-					{#each trendRows as row (row.id)}
-						<div class="trend-row">
-							<div class="trend-name">{row.display_title || `${row.title} · ${row.company || "未知公司"}`}</div>
-							<div class="trend-bars">
-								<div class="bar-item">
-									<span>需求</span>
-									<div class="bar-track"><div class="bar demand" style={`width:${barWidth(row.trend.demand_index_0_100, maxTrend)}`}></div></div>
-								</div>
-								<div class="bar-item">
-									<span>增长</span>
-									<div class="bar-track"><div class="bar growth" style={`width:${barWidth(row.trend.growth_signal_0_100, maxTrend)}`}></div></div>
-								</div>
-								<div class="bar-item">
-									<span>波动</span>
-									<div class="bar-track"><div class="bar risk" style={`width:${barWidth(row.trend.volatility_0_100, maxTrend)}`}></div></div>
-								</div>
-							</div>
-							<p class="trend-text">
-								需求{trendLevelText(row.trend.demand_index_0_100)} / 增长{trendLevelText(
-									row.trend.growth_signal_0_100,
-								)}
-								/ 波动{trendLevelText(row.trend.volatility_0_100)}：{trendInterpretation(row)}
-							</p>
-						</div>
-					{/each}
-				</div>
-
-				<div class="mini-title">能力缺口热力矩阵</div>
-				<div class="heatmap">
-					<div class="heat-header">
-						<span>职业</span>
-						{#each heatmapDimensions as dim (dim)}
-							<span>{DIMENSION_LABELS[dim] || dim}</span>
-						{/each}
-					</div>
-					{#each generatedReport.targets as t (t.id)}
-						<div class="heat-row">
-							<span class="job-cell">{t.display_title || `${t.title} · ${t.company || "未知公司"}`}</span>
-							{#each heatmapDimensions as dim (dim)}
-								{@const value = Number(t.match_preview.dimension_gaps?.[dim] || 0)}
-								<span class="gap-cell" style={heatColor(value)}>{value.toFixed(1)}</span>
-							{/each}
-						</div>
-					{/each}
-				</div>
-
-				<div class="mini-title">这段时间重点看什么</div>
-				<div class="metric-list">
-					{#each generatedReport.evaluation.metrics as metric (metric.code)}
-						<div
-							class="metric-item"
-							class:metric-highlight={highlightedMetricCode === metric.code}
-							data-metric-code={metric.code}
-						>
-							<p>{metricDisplayLabel(metric)}</p>
-							<p class="meta">{readableCycleText(metric.cycle)} · 希望达到 {readableTargetText(metric.target)}</p>
-						</div>
-					{/each}
-				</div>
-
-				{#if reviewTrend.length}
-					<div class="mini-title">评估趋势（通过率）</div>
-					<div class="review-trend">
-						<svg viewBox="0 0 320 98" aria-label="评估趋势折线图">
-							<line x1="18" y1="84" x2="305" y2="84" class="axis" />
-							<line x1="18" y1="20" x2="18" y2="84" class="axis" />
-							<polyline
-								points={reviewTrend.map((p) => `${p.x},${p.y}`).join(" ")}
-								fill="none"
-								stroke="var(--primary)"
-								stroke-width="2.4"
-							/>
-							{#each reviewTrend as p (p.reviewId)}
-								<circle cx={p.x} cy={p.y} r="3.2" fill="var(--primary)" />
-								<text x={p.x} y={p.y - 6} text-anchor="middle" class="pt">
-									{Math.round(p.passRate * 100)}%
-								</text>
-							{/each}
-						</svg>
-					</div>
-				{/if}
-
-				{#if generatedReport.evaluation.latest_review}
-					<div class="mini-title">最近一次评估结果</div>
-					<div class="latest-review">
-						<p>
-							通过率 {Math.round((generatedReport.evaluation.latest_review.evaluation.pass_rate || 0) * 100)}%
-							· {generatedReport.evaluation.latest_review.evaluation.all_passed ? "全部达标" : "存在未达标项"}
-						</p>
-						{#if generatedReport.evaluation.latest_review.llm_extract?.summary}
-							<p>
-								自动复盘结论：{generatedReport.evaluation.latest_review.llm_extract.summary}
-							</p>
-						{/if}
-						{#if generatedReport.evaluation.latest_review.review_text}
-							<p class="review-text">
-								复盘输入：{generatedReport.evaluation.latest_review.review_text}
-							</p>
-						{/if}
-						<p class="meta-line">
-							量化指标：缺口收敛 {Number(generatedReport.evaluation.latest_review.submitted_metrics?.dim_gap_reduction ?? 0).toFixed(1)}% ·
-							项目完成 {Number(generatedReport.evaluation.latest_review.submitted_metrics?.project_completion ?? 0).toFixed(1)}% ·
-							匹配变化 {Number(generatedReport.evaluation.latest_review.submitted_metrics?.match_score_change ?? 0).toFixed(1)} 分 ·
-							成果 {Math.round(Number(generatedReport.evaluation.latest_review.submitted_metrics?.delivery_output ?? 0))} 项
-						</p>
-						{#if generatedReport.evaluation.latest_review.adjustment.auto_adjustment.triggered}
-							<div class="auto-adjust">
-								<p class="font-medium">已触发自动重规划</p>
-								<p>{generatedReport.evaluation.latest_review.adjustment.auto_adjustment.reason}</p>
-								{#if generatedReport.evaluation.latest_review.adjustment.auto_adjustment.focus_labels?.length}
-									<p>
-										聚焦维度：
-										{generatedReport.evaluation.latest_review.adjustment.auto_adjustment.focus_labels.join("、")}
-									</p>
-								{/if}
-								{#if generatedReport.evaluation.latest_review.adjustment.auto_adjustment.extra_actions?.length}
-									<ul>
-										{#each generatedReport.evaluation.latest_review.adjustment.auto_adjustment.extra_actions as act (act)}
-											<li>{act}</li>
-										{/each}
-									</ul>
-								{/if}
-							</div>
-						{/if}
-					</div>
-				{/if}
-			{:else}
-				<div class="empty-side">
-					<p>生成报告后，这里会显示趋势图、热力矩阵与评估指标。</p>
-				</div>
-			{/if}
-		</aside>
 	</div>
 
 	{#if focusTarget}
@@ -1321,7 +1653,7 @@ function metricDisplayLabel(metric: { code?: string; label?: string }): string {
 	.report-grid {
 		display: grid;
 		gap: 0.9rem;
-		grid-template-columns: 320px minmax(0, 1fr) 360px;
+		grid-template-columns: 320px minmax(0, 1fr);
 		align-items: start;
 	}
 	.control-rail {
@@ -1332,8 +1664,7 @@ function metricDisplayLabel(metric: { code?: string; label?: string }): string {
 	}
 	.rail-card,
 	.m3-card,
-	.canvas-main,
-	.insight-rail {
+	.canvas-main {
 		border: 1px solid color-mix(in oklch, currentColor 12%, transparent);
 		background: color-mix(in oklch, var(--card-bg) 94%, transparent);
 		border-radius: 1rem;
@@ -1351,6 +1682,12 @@ function metricDisplayLabel(metric: { code?: string; label?: string }): string {
 	.canvas-head p {
 		font-size: 0.78rem;
 		color: color-mix(in oklch, currentColor 55%, transparent);
+	}
+	.canvas-head-actions {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.4rem;
+		align-items: flex-start;
 	}
 	.config-module {
 		margin-top: 0.85rem;
@@ -1564,6 +1901,316 @@ function metricDisplayLabel(metric: { code?: string; label?: string }): string {
 		font-size: 0.72rem;
 		font-weight: 600;
 	}
+	.ref-links {
+		margin: 6px 0 0;
+		padding-left: 18px;
+		font-size: 12px;
+	}
+	.ref-links a {
+		color: #1d4ed8;
+		text-decoration: none;
+	}
+	.ref-links a:hover {
+		text-decoration: underline;
+	}
+	.ref-tag {
+		display: inline-block;
+		margin-left: 6px;
+		padding: 1px 6px;
+		font-size: 10px;
+		border-radius: 4px;
+		background: #e0e7ff;
+		color: #3730a3;
+		vertical-align: middle;
+	}
+	.rec-block .rec-hint {
+		font-size: 12px;
+		color: #64748b;
+		margin: 0 0 10px;
+	}
+	.rec-tabs {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 6px;
+		margin-bottom: 10px;
+	}
+	.rec-tab {
+		border: 1px solid #cbd5e1;
+		background: #fff;
+		border-radius: 6px;
+		padding: 4px 10px;
+		font-size: 12px;
+		cursor: pointer;
+	}
+	.rec-tab.active {
+		border-color: #3b82f6;
+		background: #eff6ff;
+		color: #1d4ed8;
+	}
+	.rec-grid {
+		display: grid;
+		grid-template-columns: 1fr 1fr;
+		gap: 12px;
+	}
+	@media (max-width: 900px) {
+		.rec-grid {
+			grid-template-columns: 1fr;
+		}
+	}
+	.rec-col h6 {
+		margin: 0 0 8px;
+		font-size: 13px;
+		color: #334155;
+	}
+	.rec-card {
+		border: 1px solid #e2e8f0;
+		border-radius: 8px;
+		padding: 8px 10px;
+		margin-bottom: 8px;
+		background: #fafbff;
+	}
+	.rec-title {
+		margin: 0;
+		font-size: 13px;
+		font-weight: 600;
+	}
+	.rec-title a {
+		color: #1d4ed8;
+		text-decoration: none;
+	}
+	.rec-meta,
+	.rec-why {
+		margin: 4px 0 0;
+		font-size: 11px;
+		color: #64748b;
+	}
+	.generate-error {
+		margin: 0.75rem 0;
+		padding: 0.65rem 0.85rem;
+		border-radius: 0.65rem;
+		background: color-mix(in oklch, #ef4444 12%, transparent);
+		color: #b91c1c;
+		font-size: 0.85rem;
+	}
+	.generate-info {
+		margin: 0.5rem 0;
+		font-size: 0.82rem;
+		color: color-mix(in oklch, #16a34a 80%, currentColor);
+	}
+	.control-rail.collapsed {
+		max-width: 280px;
+	}
+	.control-rail.collapsed .config-module:not(:last-child),
+	.control-rail.collapsed .selected-area {
+		display: none;
+	}
+	.job-workspace {
+		display: flex;
+		flex-direction: column;
+		gap: 1rem;
+		margin-top: 0.75rem;
+	}
+	.job-tabs {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.5rem;
+	}
+	.job-tab {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		padding: 0.45rem 0.65rem;
+		border: 1px solid color-mix(in oklch, currentColor 14%, transparent);
+		border-radius: 0.65rem;
+		background: var(--btn-regular-bg);
+		cursor: pointer;
+		max-width: 100%;
+	}
+	.job-tab.active {
+		border-color: #3b82f6;
+		background: color-mix(in oklch, #3b82f6 10%, var(--btn-regular-bg));
+	}
+	.job-tab-text {
+		display: flex;
+		flex-direction: column;
+		align-items: flex-start;
+		min-width: 0;
+		text-align: left;
+	}
+	.job-tab-text strong {
+		font-size: 0.82rem;
+	}
+	.job-tab-text small {
+		font-size: 0.72rem;
+		color: color-mix(in oklch, currentColor 55%, transparent);
+	}
+	.job-tab-score {
+		font-size: 0.78rem;
+		font-weight: 700;
+		color: #1d4ed8;
+		white-space: nowrap;
+	}
+	.job-hero {
+		display: grid;
+		gap: 0.75rem;
+		padding: 1rem;
+		border-radius: 0.85rem;
+		border: 1px solid color-mix(in oklch, currentColor 10%, transparent);
+		background: color-mix(in oklch, var(--btn-regular-bg) 50%, transparent);
+	}
+	.job-hero h4 {
+		margin: 0;
+		font-size: 1rem;
+	}
+	.hero-meta,
+	.hero-gaps {
+		margin: 0.35rem 0 0;
+		font-size: 0.8rem;
+		color: color-mix(in oklch, currentColor 58%, transparent);
+	}
+	.hero-narrative p {
+		margin: 0.25rem 0;
+		font-size: 0.82rem;
+		line-height: 1.55;
+	}
+	.phase-stepper {
+		display: grid;
+		grid-template-columns: repeat(3, 1fr);
+		gap: 0.5rem;
+	}
+	.phase-step {
+		padding: 0.65rem 0.5rem;
+		border: 1px solid color-mix(in oklch, currentColor 12%, transparent);
+		border-radius: 0.65rem;
+		background: var(--btn-regular-bg);
+		cursor: pointer;
+		text-align: center;
+	}
+	.phase-step.active {
+		border-color: #2563eb;
+		background: color-mix(in oklch, #2563eb 12%, var(--btn-regular-bg));
+	}
+	.phase-step .phase-label {
+		display: block;
+		font-weight: 700;
+		font-size: 0.9rem;
+	}
+	.phase-step .phase-period {
+		display: block;
+		font-size: 0.72rem;
+		color: color-mix(in oklch, currentColor 55%, transparent);
+		margin-top: 0.15rem;
+	}
+	.job-body-grid {
+		display: grid;
+		grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr) minmax(220px, 0.82fr);
+		gap: 1rem;
+		align-items: start;
+	}
+	@media (max-width: 1200px) {
+		.job-body-grid {
+			grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+		}
+		.job-body-grid .insight-embed-panel {
+			grid-column: 1 / -1;
+		}
+	}
+	@media (max-width: 960px) {
+		.job-body-grid {
+			grid-template-columns: 1fr;
+		}
+	}
+	.phase-detail-panel,
+	.canvas-panel,
+	.insight-embed-panel {
+		padding: 0.85rem;
+		border-radius: 0.85rem;
+		border: 1px solid color-mix(in oklch, currentColor 10%, transparent);
+		background: color-mix(in oklch, var(--card-bg) 96%, transparent);
+	}
+	.insight-embed-hint {
+		font-size: 0.72rem;
+		color: color-mix(in oklch, currentColor 55%, transparent);
+		margin: 0.2rem 0 0.65rem;
+		line-height: 1.4;
+	}
+	.insight-embed-panel h5,
+	.insight-embed-wide h5 {
+		font-size: 0.88rem;
+		font-weight: 700;
+		margin: 0;
+	}
+	.insight-embed-panel .mini-title:first-of-type,
+	.insight-embed-wide .mini-title:first-of-type {
+		margin-top: 0.35rem;
+	}
+	.insight-embed-panel .trend-chart,
+	.insight-embed-wide .trend-chart {
+		max-height: none;
+	}
+	.insight-embed-wide {
+		margin-top: 1rem;
+		padding: 0.85rem;
+		border-radius: 0.85rem;
+		border: 1px solid color-mix(in oklch, currentColor 10%, transparent);
+		background: color-mix(in oklch, var(--card-bg) 96%, transparent);
+	}
+	.insight-embed-wide .heatmap {
+		overflow-x: auto;
+	}
+	.phase-summary {
+		font-size: 0.8rem;
+		color: color-mix(in oklch, currentColor 58%, transparent);
+		margin: 0.35rem 0 0.75rem;
+	}
+	.plan-items.spacious {
+		display: flex;
+		flex-direction: column;
+		gap: 0.75rem;
+	}
+	.plan-item.rich {
+		padding: 0.75rem;
+		border-radius: 0.65rem;
+		background: color-mix(in oklch, var(--btn-regular-bg) 55%, transparent);
+	}
+	.plan-item.rich .milestone {
+		font-size: 0.78rem;
+		color: color-mix(in oklch, currentColor 62%, transparent);
+		margin: 0.25rem 0;
+	}
+	.ref-why {
+		display: block;
+		font-size: 0.72rem;
+		color: color-mix(in oklch, currentColor 52%, transparent);
+		margin-top: 0.15rem;
+	}
+	.resource-deck {
+		padding: 0.85rem 0;
+	}
+	.rec-card.rich .rec-desc {
+		font-size: 0.76rem;
+		color: color-mix(in oklch, currentColor 58%, transparent);
+		margin: 0.35rem 0;
+		line-height: 1.45;
+	}
+	.gap-bars {
+		display: flex;
+		flex-direction: column;
+		gap: 0.45rem;
+		margin-bottom: 0.85rem;
+	}
+	.gap-bar-row {
+		display: grid;
+		grid-template-columns: 4.5rem 1fr;
+		gap: 0.4rem;
+		align-items: center;
+		font-size: 0.74rem;
+	}
+	.bar.gap {
+		background: linear-gradient(90deg, #f59e0b, #ef4444);
+		height: 100%;
+		border-radius: 4px;
+	}
 	.plan-item .meta {
 		font-size: 0.68rem;
 		color: color-mix(in oklch, currentColor 58%, transparent);
@@ -1625,6 +2272,37 @@ function metricDisplayLabel(metric: { code?: string; label?: string }): string {
 		border-radius: 0.9rem;
 		padding: 0.65rem;
 		background: color-mix(in oklch, var(--btn-regular-bg) 78%, transparent);
+	}
+	.line-canvas-wrap.embedded {
+		margin-top: 0.5rem;
+		padding: 0.45rem;
+	}
+	.canvas-panel .line-canvas-wrap.embedded {
+		margin-top: 0.35rem;
+	}
+	.canvas-panel-hint {
+		font-size: 0.72rem;
+		color: color-mix(in oklch, currentColor 55%, transparent);
+		margin: 0.25rem 0 0;
+		line-height: 1.4;
+	}
+	.timeline-detail-panel.compact,
+	.canvas-side-cards.compact {
+		margin-top: 0.55rem;
+		font-size: 0.78rem;
+	}
+	.timeline-detail-panel.compact .timeline-detail-head h4 {
+		font-size: 0.82rem;
+	}
+	.narrative-badge {
+		display: inline-block;
+		font-size: 0.68rem;
+		font-weight: 600;
+		padding: 0.12rem 0.45rem;
+		border-radius: 999px;
+		margin-bottom: 0.35rem;
+		background: color-mix(in oklch, var(--primary) 18%, transparent);
+		color: color-mix(in oklch, var(--primary) 85%, black);
 	}
 	.line-canvas {
 		width: 100%;
@@ -2084,9 +2762,6 @@ function metricDisplayLabel(metric: { code?: string; label?: string }): string {
 	@media (max-width: 1280px) {
 		.report-grid {
 			grid-template-columns: 300px minmax(0, 1fr);
-		}
-		.insight-rail {
-			grid-column: 1 / -1;
 		}
 	}
 	@media (max-width: 900px) {

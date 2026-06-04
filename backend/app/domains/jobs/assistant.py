@@ -10,7 +10,15 @@ from app.db import db_cursor
 from app.infrastructure.neo4j import neo4j_driver, neo4j_settings, serialize_job_row
 from app.infrastructure.llm import call_ark_json
 from app.infrastructure.privacy import storage_safe_text
-from app.infrastructure.salary import parse_salary_range, salary_matches_target
+from app.infrastructure.salary import (
+    cypher_job_salary_display,
+    cypher_job_salary_raw,
+    parse_salary_range,
+    salary_matches_target,
+)
+
+_SALARY_DISP = cypher_job_salary_display()
+_SALARY_RAW = cypher_job_salary_raw()
 
 jobs_assistant_bp = Blueprint("jobs_assistant", __name__, url_prefix="/api/jobs/assistant")
 
@@ -260,7 +268,9 @@ def _build_filter_cypher(filters: Dict[str, Any]) -> Tuple[str, Dict[str, Any]]:
     salary_text = filters.get("salary_text") or []
     if salary_text:
         params["salary_text"] = [str(x).lower() for x in salary_text]
-        where_parts.append("any(s in $salary_text WHERE toLower(coalesce(j.salary, '')) CONTAINS s)")
+        where_parts.append(
+            "any(s in $salary_text WHERE toLower(coalesce(j.salary_norm, j.salary, '')) CONTAINS s)"
+        )
 
     if "experience_min" in filters:
         params["experience_min"] = int(filters["experience_min"])
@@ -287,7 +297,8 @@ def _build_filter_cypher(filters: Dict[str, Any]) -> Tuple[str, Dict[str, Any]]:
     RETURN
       coalesce(j.job_key, j.job_code, j.name, j.title, elementId(j)) AS id,
       coalesce(j.title, j.name, '未命名岗位') AS title,
-      coalesce(j.salary, '薪资面议') AS salary,
+      {_SALARY_DISP},
+      {_SALARY_RAW},
       coalesce(j.company, '未知公司') AS company,
       coalesce(j.location, '未知地点') AS location,
       coalesce(j.cap_risk_flags, []) AS risk_flags,
@@ -352,7 +363,7 @@ def _query_jobs_with_salary_expansion(
     merged = _merge_unique_jobs(job_groups, limit=max(limit * 4, 20))
     filtered: List[Dict[str, Any]] = []
     for item in merged:
-        parsed = parse_salary_range(str(item.get("salary") or ""))
+        parsed = parse_salary_range(str(item.get("salary_raw") or item.get("salary") or ""))
         if salary_matches_target(parsed, salary_expansion):
             filtered.append(item)
     if filtered:
@@ -366,7 +377,7 @@ def _summarize_salary_ranges(jobs: List[Dict[str, Any]]) -> Dict[str, Any]:
     negotiable_count = 0
     unknown_count = 0
     for item in jobs:
-        parsed = parse_salary_range(str(item.get("salary") or ""))
+        parsed = parse_salary_range(str(item.get("salary_raw") or item.get("salary") or ""))
         if parsed.get("negotiable"):
             negotiable_count += 1
             continue
@@ -420,7 +431,7 @@ def _sample_domain_examples(limit: int = 4) -> List[Dict[str, str]]:
     uri, user, password, database = neo4j_settings()
     if not password:
         return []
-    query = """
+    query = f"""
     MATCH (j:Job)
     WHERE (j.source IS NULL OR trim(toString(j.source)) = '')
     WITH j ORDER BY rand()
@@ -429,7 +440,8 @@ def _sample_domain_examples(limit: int = 4) -> List[Dict[str, str]]:
       coalesce(j.title, j.name, '未命名岗位') AS title,
       coalesce(j.company, '未知公司') AS company,
       coalesce(j.location, '未知地点') AS location,
-      coalesce(j.salary, '薪资面议') AS salary,
+      {_SALARY_DISP},
+      {_SALARY_RAW},
       coalesce(j.industry, '') AS industry,
       coalesce(j.experience_text, '') AS experience_text,
       coalesce(j.demand, '') AS demand
@@ -530,13 +542,14 @@ def _query_jobs_by_ids(job_ids: List[str]) -> List[Dict[str, Any]]:
     uri, user, password, database = neo4j_settings()
     if not password:
         return []
-    query = """
+    query = f"""
     MATCH (j:Job)
     WHERE coalesce(j.job_key, j.job_code, j.name, j.title, elementId(j)) IN $ids
     RETURN
       coalesce(j.job_key, j.job_code, j.name, j.title, elementId(j)) AS id,
       coalesce(j.title, j.name, '未命名岗位') AS title,
-      coalesce(j.salary, '薪资面议') AS salary,
+      {_SALARY_DISP},
+      {_SALARY_RAW},
       coalesce(j.company, '未知公司') AS company,
       coalesce(j.location, '未知地点') AS location,
       coalesce(j.cap_risk_flags, []) AS risk_flags,

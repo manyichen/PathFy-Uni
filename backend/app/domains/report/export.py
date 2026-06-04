@@ -11,9 +11,85 @@ def _safe_text(v: Any, default: str = "") -> str:
     return escape(s if s else default)
 
 
+def _plan_items_html(items: List[Dict[str, Any]]) -> str:
+    rows = []
+    for item in items[:12]:
+        if not isinstance(item, dict):
+            continue
+        refs = []
+        for ref in (item.get("learning_path_refs") or [])[:3]:
+            if isinstance(ref, dict) and ref.get("label"):
+                refs.append(_safe_text(ref.get("label")))
+        rows.append(
+            "<li>"
+            f"<strong>{_safe_text(item.get('focus_label'), '重点能力')}</strong>："
+            f"{_safe_text(item.get('milestone'), '里程碑')}"
+            + (f"<br><span class='muted'>学习：{'；'.join(refs)}</span>" if refs else "")
+            + "</li>"
+        )
+    return "".join(rows) if rows else "<li>暂无</li>"
+
+
+def _phase_section_html(phase: Dict[str, Any]) -> str:
+    if not isinstance(phase, dict):
+        return ""
+    items = phase.get("items") or []
+    return (
+        f"<div class='chip'>"
+        f"<strong>{_safe_text(phase.get('label'))}（{_safe_text(phase.get('period'))}）</strong>"
+        f"<p class='muted'>{_safe_text(phase.get('summary'))}</p>"
+        f"<ul>{_plan_items_html(items)}</ul>"
+        f"</div>"
+    )
+
+
+def _job_chapter_html(plan: Dict[str, Any], chapter_no: int) -> str:
+    phases = plan.get("phases") or {}
+    narrative = plan.get("narrative") or {}
+    rec = plan.get("recommendations") or {}
+    lr_rows = "".join(
+        f"<li>{_safe_text(lr.get('resource_name'))} — {_safe_text(lr.get('resource_url'))}</li>"
+        for lr in (rec.get("learning_resources") or [])[:8]
+        if isinstance(lr, dict)
+    ) or "<li>暂无</li>"
+    cp_rows = "".join(
+        f"<li>{_safe_text(cp.get('competition_name'))} — {_safe_text(cp.get('official_url'))}</li>"
+        for cp in (rec.get("competitions") or [])[:5]
+        if isinstance(cp, dict)
+    ) or "<li>暂无</li>"
+    gap_text = "、".join(plan.get("top_gap_labels") or []) or "—"
+    return f"""
+    <section class="section job-chapter">
+        <h2 class="section-title">第{chapter_no}章 · {_safe_text(plan.get('display_title'), '目标岗位')}</h2>
+        <div class="kv">
+            <div class="chip">匹配分：{_safe_text(plan.get('match_score'), '0')}</div>
+            <div class="chip">岗位名：{_safe_text(plan.get('job_title_name'))}</div>
+            <div class="chip" style="grid-column:1/-1">重点缺口：{_safe_text(gap_text)}</div>
+        </div>
+        <div class="narrative small">
+            <p><strong>路径建议</strong>：{_safe_text(narrative.get('path_advice'), '—')}</p>
+            <p><strong>执行提醒</strong>：{_safe_text(narrative.get('execution_reminder'), '—')}</p>
+            {(
+                f"<p class='muted'>叙事来源：{_safe_text(narrative.get('provider'))}"
+                + (f" / {_safe_text(narrative.get('model'))}" if narrative.get('model') else "")
+                + "</p>"
+            ) if narrative.get('provider') else ""}
+        </div>
+        {_phase_section_html(phases.get('early') or {})}
+        <div style="height:6px"></div>
+        {_phase_section_html(phases.get('mid') or {})}
+        <div style="height:6px"></div>
+        {_phase_section_html(phases.get('late') or {})}
+        <div class="chip"><strong>图谱学习资源</strong><ul>{lr_rows}</ul></div>
+        <div class="chip"><strong>图谱竞赛</strong><ul>{cp_rows}</ul></div>
+    </section>
+    """
+
+
 def build_report_export_html(report_id: int, title: str, report_obj: Dict[str, Any]) -> str:
     student = report_obj.get("student") or {}
     targets = report_obj.get("targets") or []
+    plans = report_obj.get("plans_by_target") or []
     growth = report_obj.get("growth_plan") or {}
     short_term = growth.get("short_term") or []
     mid_term = growth.get("mid_term") or []
@@ -37,19 +113,6 @@ def build_report_export_html(report_id: int, title: str, report_obj: Dict[str, A
     if not target_rows:
         target_rows = '<tr><td colspan="4">暂无目标职业数据</td></tr>'
 
-    def _plan_items(items: List[Dict[str, Any]]) -> str:
-        rows = []
-        for item in items[:20]:
-            rows.append(
-                "<li>"
-                f"<strong>{_safe_text(item.get('focus_label'), '重点能力')}</strong>："
-                f"{_safe_text(item.get('milestone'), '里程碑待补充')}"
-                "</li>"
-            )
-        if not rows:
-            rows.append("<li>暂无</li>")
-        return "".join(rows)
-
     metric_rows = "".join(
         [
             (
@@ -66,6 +129,34 @@ def build_report_export_html(report_id: int, title: str, report_obj: Dict[str, A
     if not metric_rows:
         metric_rows = '<tr><td colspan="3">暂无评估指标</td></tr>'
 
+    if isinstance(plans, list) and plans:
+        job_chapters = "".join(
+            _job_chapter_html(p, i + 1)
+            for i, p in enumerate(plans[:10])
+            if isinstance(p, dict)
+        )
+        plan_section_title = "三、分岗位成长计划（按章）"
+        plan_section_header = (
+            f'<section class="section"><h2 class="section-title">{plan_section_title}</h2></section>'
+        )
+        legacy_plan_block = ""
+        section_num_metrics = "四"
+        section_num_narrative = "五"
+    else:
+        job_chapters = ""
+        plan_section_header = ""
+        plan_section_title = "三、成长计划（汇总）"
+        legacy_plan_block = f"""
+        <section class="section">
+            <h2 class="section-title">{plan_section_title}</h2>
+            <div class="chip"><strong>短期（0-3个月）</strong><ul>{_plan_items_html(short_term)}</ul></div>
+            <div style="height:8px"></div>
+            <div class="chip"><strong>中期（3-12个月）</strong><ul>{_plan_items_html(mid_term)}</ul></div>
+        </section>
+        """
+        section_num_metrics = "四"
+        section_num_narrative = "五"
+
     return f"""
 <!doctype html>
 <html lang="zh-CN">
@@ -74,49 +165,39 @@ def build_report_export_html(report_id: int, title: str, report_obj: Dict[str, A
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>career_report_{report_id}</title>
     <style>
-        @page {{
-            size: A4;
-            margin: 16mm 12mm 18mm;
-        }}
+        @page {{ size: A4; margin: 16mm 12mm 18mm; }}
         :root {{
-            --fg: #1f2937;
-            --muted: #6b7280;
-            --brand: #1d4ed8;
-            --line: #dbe3f0;
-            --soft: #f5f8ff;
+            --fg: #1f2937; --muted: #6b7280; --brand: #1d4ed8; --line: #dbe3f0; --soft: #f5f8ff;
         }}
         * {{ box-sizing: border-box; }}
         body {{
-            margin: 0;
-            color: var(--fg);
+            margin: 0; color: var(--fg);
             font-family: "PingFang SC", "Hiragino Sans GB", "Noto Sans CJK SC", "Microsoft YaHei", sans-serif;
-            font-size: 13px;
-            line-height: 1.65;
-            -webkit-print-color-adjust: exact;
-            print-color-adjust: exact;
+            font-size: 13px; line-height: 1.65;
+            -webkit-print-color-adjust: exact; print-color-adjust: exact;
         }}
         .sheet {{ width: 100%; }}
         .header {{ border-bottom: 2px solid var(--brand); padding-bottom: 8px; margin-bottom: 14px; }}
-        .title {{ margin: 0; font-size: 22px; color: #0f2f72; letter-spacing: 0.5px; }}
+        .title {{ margin: 0; font-size: 22px; color: #0f2f72; }}
         .sub {{ margin-top: 6px; color: var(--muted); font-size: 12px; }}
-        .section {{ margin-top: 14px; break-inside: avoid; }}
+        .section {{ margin-top: 14px; break-inside: avoid-page; }}
+        .job-chapter {{ page-break-before: always; }}
+        .job-chapter:first-of-type {{ page-break-before: auto; }}
         .section-title {{
             background: linear-gradient(90deg, #e8f0ff, #f7faff);
             border-left: 4px solid var(--brand);
-            padding: 6px 10px;
-            font-size: 14px;
-            font-weight: 700;
-            color: #1e3a8a;
-            margin: 0 0 8px;
+            padding: 6px 10px; font-size: 14px; font-weight: 700; color: #1e3a8a; margin: 0 0 8px;
         }}
         .kv {{ display: grid; grid-template-columns: 1fr 1fr; gap: 8px 16px; }}
-        .chip {{ background: var(--soft); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; }}
-        table {{ width: 100%; border-collapse: collapse; table-layout: fixed; }}
+        .chip {{ background: var(--soft); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; margin-top: 6px; }}
+        table {{ width: 100%; border-collapse: collapse; }}
         th, td {{ border: 1px solid var(--line); padding: 7px 8px; vertical-align: top; word-break: break-word; }}
         th {{ background: #eff4ff; text-align: left; }}
         ul {{ margin: 6px 0 0; padding-left: 18px; }}
         li {{ margin: 4px 0; }}
         .narrative {{ white-space: pre-wrap; background: #fafcff; border: 1px solid var(--line); border-radius: 8px; padding: 10px; }}
+        .narrative.small p {{ margin: 4px 0; font-size: 12px; }}
+        .muted {{ color: var(--muted); font-size: 12px; }}
         .footer-note {{ margin-top: 16px; color: var(--muted); font-size: 11px; }}
     </style>
 </head>
@@ -138,22 +219,19 @@ def build_report_export_html(report_id: int, title: str, report_obj: Dict[str, A
         </section>
 
         <section class="section">
-            <h2 class="section-title">二、目标职业</h2>
+            <h2 class="section-title">二、目标职业一览</h2>
             <table>
                 <thead><tr><th style="width:56px">序号</th><th>岗位</th><th style="width:160px">公司</th><th style="width:90px">匹配分</th></tr></thead>
                 <tbody>{target_rows}</tbody>
             </table>
         </section>
 
-        <section class="section">
-            <h2 class="section-title">三、成长计划</h2>
-            <div class="chip"><strong>短期计划（0-3个月）</strong><ul>{_plan_items(short_term)}</ul></div>
-            <div style="height:8px"></div>
-            <div class="chip"><strong>中期计划（3-12个月）</strong><ul>{_plan_items(mid_term)}</ul></div>
-        </section>
+        {plan_section_header}
+        {job_chapters}
+        {legacy_plan_block}
 
         <section class="section">
-            <h2 class="section-title">四、评估指标</h2>
+            <h2 class="section-title">{section_num_metrics}、评估指标</h2>
             <table>
                 <thead><tr><th>指标</th><th style="width:120px">周期</th><th style="width:180px">目标</th></tr></thead>
                 <tbody>{metric_rows}</tbody>
@@ -161,11 +239,11 @@ def build_report_export_html(report_id: int, title: str, report_obj: Dict[str, A
         </section>
 
         <section class="section">
-            <h2 class="section-title">五、报告建议</h2>
+            <h2 class="section-title">{section_num_narrative}、总体建议（全局）</h2>
             <div class="narrative">{_safe_text(narrative, '暂无建议')}</div>
         </section>
 
-        <div class="footer-note">说明：本报告基于当前画像、目标岗位与阶段计划自动生成，建议结合导师反馈进行周期复盘。</div>
+        <div class="footer-note">说明：分岗位章节含前期/中期/后期计划与图谱推荐；建议结合月度复盘动态调整。</div>
     </div>
 </body>
 </html>

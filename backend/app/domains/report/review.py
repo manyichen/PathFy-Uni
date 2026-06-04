@@ -18,7 +18,9 @@ from app.domains.report.growth import (
     _review_point_progress,
 )
 from app.domains.report.llm import _call_openai_compatible
+from app.domains.report.recommendations import pick_replan_resource_hints
 from app.domains.report.utils import parse_metric_target, to_float
+
 
 def _evaluate_review_metrics(
     expected_metrics: List[Dict[str, Any]],
@@ -289,6 +291,10 @@ def _build_auto_adjustment(report_obj: Dict[str, Any], failed_codes: List[str]) 
             "error": llm_payload.get("error") or "llm_unavailable",
         }
 
+    graph_hints = pick_replan_resource_hints(report_obj, top_dims)
+    if graph_hints:
+        actions = graph_hints[:1] + [a for a in actions if a not in graph_hints][:3]
+
     return {
         "triggered": True,
         "reason": "本月复盘量化完成后触发自动重规划",
@@ -347,10 +353,32 @@ def _llm_auto_replan_payload(
             }
         )
 
+    grounded: List[Dict[str, str]] = []
+    rec = report_obj.get("recommendations") or {}
+    if rec.get("enabled"):
+        for block in (rec.get("by_target") or [])[:2]:
+            if not isinstance(block, dict):
+                continue
+            for lr in (block.get("learning_resources") or [])[:3]:
+                grounded.append(
+                    {
+                        "resource_id": str(lr.get("resource_id") or ""),
+                        "name": str(lr.get("resource_name") or ""),
+                    }
+                )
+            for cp in (block.get("competitions") or [])[:2]:
+                grounded.append(
+                    {
+                        "competition_id": str(cp.get("competition_id") or ""),
+                        "name": str(cp.get("competition_name") or ""),
+                    }
+                )
+
     user_payload = {
         "task": "auto_replan",
         "failed_metrics": failed_metrics,
         "targets": target_top,
+        "grounded_resources": grounded,
         "fallback": {
             "focus_dimensions": fallback_dims,
             "focus_labels": [DIM_LABELS.get(x, x) for x in fallback_dims],
@@ -366,6 +394,7 @@ def _llm_auto_replan_payload(
         "你是职业发展重规划助手。请基于失败指标与目标岗位缺口，输出最小可执行重规划方案。"
         "只输出 JSON 对象，不要输出 markdown。"
         "键必须仅包含 focus_dimensions(数组, 1-2个cap_req_*), focus_labels(数组), extra_actions(数组, 1-3条中文可执行动作)。"
+        "extra_actions 应优先引用 grounded_resources 中的具体课程或竞赛名称，勿编造列表外资源。"
     )
     user_prompt = json.dumps(redact_payload(user_payload), ensure_ascii=False)
 
