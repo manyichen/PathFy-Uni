@@ -10,7 +10,17 @@ from app.infrastructure.neo4j import (
     serialize_job_row,
 )
 from app.infrastructure.ocr import ocr_image, pdf_to_image
-from app.infrastructure.salary import normalize_salary_text, parse_salary_range, salary_matches_target
+from app.infrastructure.salary import (
+    SALARY_PARSE_VERSION,
+    cypher_job_salary_display,
+    cypher_job_salary_raw,
+    format_salary_norm,
+    neo4j_salary_properties,
+    normalize_job_salary,
+    normalize_salary_text,
+    parse_salary_range,
+    salary_matches_target,
+)
 
 __all__ = [
     "CONF_KEYS",
@@ -20,6 +30,12 @@ __all__ = [
     "call_ark_json",
     "neo4j_driver",
     "neo4j_settings",
+    "SALARY_PARSE_VERSION",
+    "cypher_job_salary_display",
+    "cypher_job_salary_raw",
+    "format_salary_norm",
+    "neo4j_salary_properties",
+    "normalize_job_salary",
     "normalize_salary_text",
     "ocr_image",
     "parse_salary_range",

@@ -2,11 +2,17 @@ import argparse
 import json
 import os
 import re
+import sys
 import time
 from collections import Counter
 from typing import Any, Dict, List, Optional
 
 import pandas as pd
+
+_BACKEND_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "backend"))
+if _BACKEND_ROOT not in sys.path:
+    sys.path.insert(0, _BACKEND_ROOT)
+from app.infrastructure.salary import neo4j_salary_properties
 from google import genai
 from ollama import Client as OllamaClient
 from py2neo import Graph
@@ -219,6 +225,8 @@ def merge_batch_to_neo4j(
         exp_text = normalize_text(ai_data.get("experience_req", "未知"))
         demand = normalize_text(row["demand"])
         job_key = f"{normalize_title(job_title)}::{company_name.lower()}"
+        raw_salary = normalize_text(row["salary"])
+        sal = neo4j_salary_properties(raw_salary)
 
         tx.run(
             """
@@ -227,6 +235,9 @@ def merge_batch_to_neo4j(
                 j.company=$company,
                 j.location=$location,
                 j.salary=$salary,
+                j.salary_norm=$salary_norm,
+                j.salary_negotiable=$salary_negotiable,
+                j.salary_parse_version=$salary_parse_version,
                 j.industry=$industry,
                 j.company_size=$company_size,
                 j.company_type=$company_type,
@@ -238,13 +249,22 @@ def merge_batch_to_neo4j(
                 j.demand=$demand,
                 j.source_url=$source_url,
                 j.company_detail=$company_detail,
-                j.is_core_template=$is_core_template
+                j.is_core_template=$is_core_template,
+                j.salary_monthly_min=$salary_monthly_min,
+                j.salary_monthly_max=$salary_monthly_max,
+                j.salary_bonus_months=$salary_bonus_months
             """,
             job_key=job_key,
             title=job_title,
             company=company_name,
             location=normalize_text(row["location"]),
-            salary=normalize_text(row["salary"]),
+            salary=sal["salary"],
+            salary_norm=sal["salary_norm"],
+            salary_negotiable=sal["salary_negotiable"],
+            salary_parse_version=sal["salary_parse_version"],
+            salary_monthly_min=sal.get("salary_monthly_min"),
+            salary_monthly_max=sal.get("salary_monthly_max"),
+            salary_bonus_months=sal.get("salary_bonus_months"),
             industry=normalize_text(row["industry"]),
             company_size=normalize_text(row["company_size"]),
             company_type=normalize_text(row["company_type"]),

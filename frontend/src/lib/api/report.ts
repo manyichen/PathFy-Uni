@@ -164,6 +164,17 @@ export type DevelopmentLines = {
 	}>;
 };
 
+export type GrowthPlanRef = {
+	kind: "learning_resource" | "competition";
+	id: string;
+	label?: string;
+	url?: string;
+	rationale?: string;
+	resource_type?: string;
+	difficulty?: string;
+	skill_tag?: string;
+};
+
 export type GrowthPlanItem = {
 	phase: "short_term" | "mid_term";
 	order: number;
@@ -172,7 +183,96 @@ export type GrowthPlanItem = {
 	period: string;
 	learning_path: string[];
 	practice_plan: string[];
+	learning_path_refs?: GrowthPlanRef[];
+	practice_plan_refs?: GrowthPlanRef[];
 	milestone: string;
+};
+
+export type GraphLearningResource = {
+	resource_id: string;
+	resource_name: string;
+	resource_desc?: string;
+	resource_url: string;
+	resource_type?: string;
+	difficulty?: string;
+	source?: string;
+	skill_tag?: string;
+	score?: number;
+	phase?: string;
+	rationale?: string;
+	origin?: string;
+};
+
+export type GraphCompetition = {
+	competition_id: string;
+	competition_name: string;
+	competition_desc?: string;
+	official_url: string;
+	competition_type?: string;
+	difficulty?: string;
+	cap_tags?: string[];
+	award_level?: string;
+	score?: number;
+	phase?: string;
+	rationale?: string;
+	origin?: string;
+};
+
+export type ReportRecommendationsByTarget = {
+	job_id: string;
+	job_title_name: string;
+	match_score?: number;
+	top_gaps?: string[];
+	top_gap_labels?: string[];
+	learning_resources: GraphLearningResource[];
+	competitions: GraphCompetition[];
+};
+
+export type ReportRecommendations = {
+	schema_version?: number;
+	enabled?: boolean;
+	by_target: ReportRecommendationsByTarget[];
+	shared?: {
+		learning_resources?: GraphLearningResource[];
+		competitions?: GraphCompetition[];
+	};
+	meta?: Record<string, unknown>;
+};
+
+export type PlanPhaseBlock = {
+	key: string;
+	label: string;
+	period: string;
+	summary?: string;
+	items: GrowthPlanItem[];
+};
+
+export type PlanByTarget = {
+	job_id: string;
+	line_id?: string;
+	display_title: string;
+	job_title_name?: string;
+	company?: string;
+	location?: string;
+	match_score?: number;
+	top_gaps?: string[];
+	top_gap_labels?: string[];
+	dimension_gaps?: Record<string, number>;
+	phases: {
+		early: PlanPhaseBlock;
+		mid: PlanPhaseBlock;
+		late: PlanPhaseBlock;
+	};
+	recommendations?: {
+		learning_resources?: GraphLearningResource[];
+		competitions?: GraphCompetition[];
+	};
+	narrative?: {
+		path_advice?: string;
+		execution_reminder?: string;
+		provider?: string;
+		model?: string;
+	};
 };
 
 export type ReportMetric = {
@@ -271,6 +371,8 @@ export type CareerReportPayload = {
 		model?: string;
 		reason?: string;
 	};
+	recommendations?: ReportRecommendations;
+	plans_by_target?: PlanByTarget[];
 };
 
 export type CareerReportGenerateResponse = {
