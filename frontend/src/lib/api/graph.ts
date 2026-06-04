@@ -25,30 +25,12 @@ export interface ImportResult {
 	errors: string[];
 }
 
-export interface PromotionPreviewEdge {
-	company: string;
-	from_title: string;
-	to_title: string;
-	confidence: number;
-	reason: string;
-}
-
-export interface PromotionResult {
-	checked_companies: number;
-	candidate_edges: number;
-	created_edges?: number;
-	preview?: PromotionPreviewEdge[];
-	backup_file: string;
-	dry_run: boolean;
-}
-
 // ============================================================
 // 内部响应类型
 // ============================================================
 
 type StatsResponse = { ok: boolean; data?: GraphStats; message?: string };
 type ImportResponse = { ok: boolean; data?: ImportResult; message?: string };
-type PromotionResponse = { ok: boolean; data?: PromotionResult; message?: string };
 type ClearResponse = { ok: boolean; message?: string; data?: { deleted_nodes: number } };
 
 // ============================================================
@@ -119,28 +101,6 @@ export async function importJobs(
 	return res.data;
 }
 
-export async function generatePromotions(opts: {
-	dryRun?: boolean;
-	minConfidence?: number;
-	minCompanyJobs?: number;
-	clearExisting?: boolean;
-}): Promise<PromotionResult> {
-	const res = await apiJson<PromotionResponse>("/api/graph/generate-promotions", {
-		method: "POST",
-		headers: authHeaders(),
-		body: JSON.stringify({
-			dry_run: opts.dryRun ?? false,
-			min_confidence: opts.minConfidence ?? 0.55,
-			min_company_jobs: opts.minCompanyJobs ?? 2,
-			clear_existing: opts.clearExisting ?? false,
-		}),
-	});
-	if (!res.ok || !res.data) {
-		throw new Error(res.message || "生成晋升边失败");
-	}
-	return res.data;
-}
-
 export async function clearGraph(): Promise<void> {
 	const res = await apiJson<ClearResponse>("/api/graph/clear", {
 		method: "POST",
@@ -205,5 +165,66 @@ export async function generateQCReport(inputFile?: string, threshold?: number): 
 	if (!res.ok || !res.data) {
 		throw new Error(res.message || "生成质检报告失败");
 	}
+	return res.data;
+}
+
+// ============================================================
+// 图谱智能生成
+// ============================================================
+
+export interface SyncResult {
+	dry_run: boolean;
+	[key: string]: any;
+}
+
+type SyncResponse = { ok: boolean; data?: SyncResult; message?: string };
+
+export async function syncJobTitles(dryRun: boolean = false): Promise<SyncResult> {
+	const res = await apiJson<SyncResponse>("/api/graph/sync/job-titles", {
+		method: "POST",
+		headers: authHeaders(),
+		body: JSON.stringify({ dry_run: dryRun }),
+	});
+	if (!res.ok || !res.data) throw new Error(res.message || "同步岗位名称失败");
+	return res.data;
+}
+
+export async function generatePromotionPaths(dryRun: boolean = false): Promise<SyncResult> {
+	const res = await apiJson<SyncResponse>("/api/graph/generate/promotion-paths", {
+		method: "POST",
+		headers: authHeaders(),
+		body: JSON.stringify({ dry_run: dryRun }),
+	});
+	if (!res.ok || !res.data) throw new Error(res.message || "生成晋升路径失败");
+	return res.data;
+}
+
+export async function generateLateralTransfers(dryRun: boolean = false): Promise<SyncResult> {
+	const res = await apiJson<SyncResponse>("/api/graph/generate/lateral-transfers", {
+		method: "POST",
+		headers: authHeaders(),
+		body: JSON.stringify({ dry_run: dryRun }),
+	});
+	if (!res.ok || !res.data) throw new Error(res.message || "生成换岗关系失败");
+	return res.data;
+}
+
+export async function generateLearningResources(dryRun: boolean = false): Promise<SyncResult> {
+	const res = await apiJson<SyncResponse>("/api/graph/generate/learning-resources", {
+		method: "POST",
+		headers: authHeaders(),
+		body: JSON.stringify({ dry_run: dryRun }),
+	});
+	if (!res.ok || !res.data) throw new Error(res.message || "生成学习资源失败");
+	return res.data;
+}
+
+export async function generateCompetitions(dryRun: boolean = false): Promise<SyncResult> {
+	const res = await apiJson<SyncResponse>("/api/graph/generate/competitions", {
+		method: "POST",
+		headers: authHeaders(),
+		body: JSON.stringify({ dry_run: dryRun }),
+	});
+	if (!res.ok || !res.data) throw new Error(res.message || "生成竞赛失败");
 	return res.data;
 }

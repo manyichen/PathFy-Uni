@@ -17,6 +17,7 @@ export type AuthUser = {
 	id: number;
 	username: string;
 	email: string;
+	is_admin?: boolean;
 };
 
 export function saveAuth(token: string, user: AuthUser): void {

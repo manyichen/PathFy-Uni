@@ -16,6 +16,7 @@ from app.domains.graph.constants import (
     normalize_title,
     parse_experience_years,
 )
+from app.infrastructure.salary import neo4j_salary_properties
 
 
 # ============================================================
@@ -59,6 +60,8 @@ def merge_batch_to_neo4j(
             exp_text = normalize_text(ai_data.get("experience_req", "未知"))
             demand = normalize_text(row["demand"])
             job_key = f"{normalize_title(job_title)}::{company_name.lower()}"
+            raw_salary = normalize_text(row["salary"])
+            sal = neo4j_salary_properties(raw_salary)
 
             # MERGE Job 节点
             tx.run(
@@ -68,6 +71,12 @@ def merge_batch_to_neo4j(
                     j.company = $company,
                     j.location = $location,
                     j.salary = $salary,
+                    j.salary_norm = $salary_norm,
+                    j.salary_negotiable = $salary_negotiable,
+                    j.salary_parse_version = $salary_parse_version,
+                    j.salary_monthly_min = $salary_monthly_min,
+                    j.salary_monthly_max = $salary_monthly_max,
+                    j.salary_bonus_months = $salary_bonus_months,
                     j.industry = $industry,
                     j.company_size = $company_size,
                     j.company_type = $company_type,
@@ -85,7 +94,13 @@ def merge_batch_to_neo4j(
                 title=job_title,
                 company=company_name,
                 location=normalize_text(row["location"]),
-                salary=normalize_text(row["salary"]),
+                salary=sal["salary"],
+                salary_norm=sal["salary_norm"],
+                salary_negotiable=sal["salary_negotiable"],
+                salary_parse_version=sal["salary_parse_version"],
+                salary_monthly_min=sal.get("salary_monthly_min"),
+                salary_monthly_max=sal.get("salary_monthly_max"),
+                salary_bonus_months=sal.get("salary_bonus_months"),
                 industry=normalize_text(row["industry"]),
                 company_size=normalize_text(row["company_size"]),
                 company_type=normalize_text(row["company_type"]),
@@ -244,8 +259,8 @@ def delete_edges_by_source(
         result = session.run(
             """
             MATCH ()-[r:VERTICAL_UP {source: $source}]->()
-            WITH count(r) AS total
-            DELETE r
+            WITH collect(r) AS rels, count(r) AS total
+            FOREACH (r IN rels | DELETE r)
             RETURN total
             """,
             source=source_tag,
@@ -260,33 +275,10 @@ def persist_promotion_edges(
     edges: List[PromotionEdge],
     source_tag: str,
 ) -> int:
-    """批量写入晋升边（VERTICAL_UP 关系）。"""
-
-    def _persist_tx(tx):
-        count = 0
-        for e in edges:
-            tx.run(
-                """
-                MATCH (a:Job {job_key: $from_key})
-                MATCH (b:Job {job_key: $to_key})
-                MERGE (a)-[r:VERTICAL_UP {source: $source}]->(b)
-                SET r.reason = $reason,
-                    r.company = $company,
-                    r.confidence = $confidence,
-                    r.updated_at = datetime()
-                """,
-                from_key=e.from_key,
-                to_key=e.to_key,
-                source=source_tag,
-                reason=e.reason,
-                company=e.company,
-                confidence=e.confidence,
-            )
-            count += 1
-        return count
-
-    with driver.session(database=database) as session:
-        return session.execute_write(_persist_tx)
+    """旧 Job 层晋升边写入已废弃；晋升路径统一写入 JobPromotion。"""
+    raise RuntimeError(
+        "persist_promotion_edges 已废弃；请通过 JobTitle/JobPromotion 层生成和查询晋升路径。"
+    )
 
 
 # ============================================================

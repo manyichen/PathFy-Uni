@@ -5,14 +5,15 @@
 ## 目录
 
 1. [架构概览](#架构概览)
-2. [数据模型](#数据模型)
-3. [API 端点](#api-端点)
-4. [配置项](#配置项)
-5. [ETL 流程详解](#etl-流程详解)
-6. [增量更新机制](#增量更新机制)
-7. [质检报告](#质检报告)
-8. [job_titles 表维护](#job_titles-表维护)
-9. [使用示例](#使用示例)
+2. [核心原理](#核心原理)
+3. [数据模型](#数据模型)
+4. [API 端点](#api-端点)
+5. [配置项](#配置项)
+6. [ETL 流程详解](#etl-流程详解)
+7. [增量更新机制](#增量更新机制)
+8. [质检报告](#质检报告)
+9. [job_titles 表维护](#job_titles-表维护)
+10. [使用示例](#使用示例)
 
 ---
 
@@ -47,6 +48,69 @@
 
 ---
 
+## 核心原理
+
+Graph 域的目标不是单纯把 Excel 搬进 Neo4j，而是把招聘文本变成可查询、可推断、可复用的职业知识图谱。它把“岗位记录”拆成岗位、公司、技能、证书、经验层级、岗位名称等实体，再用关系表达“岗位属于哪个公司”“岗位需要哪些能力”“岗位之间可能如何晋升或横向转岗”。
+
+整体思路分三层：
+
+1. **事实层**：来自 Excel 的岗位、公司、薪资、地区、岗位详情等字段，尽量保持原始证据可追溯。
+2. **结构化层**：由规则和 LLM 从文本中抽取硬技能、证书、经验要求、实习要求、软技能倾向。
+3. **推断层**：在已有节点基础上生成晋升边、横向转岗边、学习资源、竞赛推荐等“可解释建议”。
+
+### 建图原则
+
+Neo4j 中的节点和关系围绕“职业决策”建模，而不是围绕 Excel 表结构建模。
+
+- `:Job` 是核心事实节点，使用 `job_key = normalize_title(title) + "::" + company.lower()` 作为业务主键。同一公司同一岗位名称会合并，重复导入只更新属性。
+- `:Company`、`:Skill`、`:Certificate`、`:CareerLevel` 是可复用实体。多个岗位指向同一个技能或公司，方便后续统计、搜索和路径分析。
+- `:JobTitle` 是岗位名称聚合节点，用于跨公司、跨记录推荐学习资源和竞赛。它不是 Excel 原始记录，而是从 `:Job.title` 聚合出来的职业概念层。
+- 关系方向统一从岗位或资源指向其语义对象，例如 `(:Job)-[:REQUIRES]->(:Skill)`、`(:Job)-[:BELONGS_TO]->(:Company)`、`(:LearningResource)-[:FOR_JOB_TITLE]->(:JobTitle)`。
+- 生成类结果必须落在职业概念层并带可解释属性。晋升推荐写入 `:JobPromotion`，记录 `from_title`、`to_title`、阶段说明、`confidence`、`rationale`，再通过 `FOR_JOB_TITLE` 挂到 `:JobTitle`。
+
+这种设计让图谱既能回答“某个岗位需要什么”，也能回答“哪些岗位共享技能”“某个岗位名称有哪些学习资源”“某类岗位名称通常如何向上发展”。
+
+### LLM 抽取原则
+
+LLM 只负责处理规则难以稳定覆盖的自然语言字段，例如岗位详情、公司详情、经验要求和证书描述。代码侧仍负责输入裁剪、隐私脱敏、JSON 格式校验和失败兜底。
+
+- 输入由 `build_ai_payload()` 生成，只包含当前批次的岗位摘要。
+- 隐私模式开启时，`redact_payload()` 会脱敏联系人、邮箱、手机号、URL token 等敏感信息。
+- 输出必须是 JSON object，核心字段是 `records` 数组；每条记录通过 `idx` 与批次内行号对应。
+- LLM 失败不会让整个导入中断。单批最终失败时返回空结构，Neo4j 仍写入岗位事实字段，只是技能、证书等抽取字段为空或未知。
+- LLM 结果不直接决定所有图结构。写库前仍会做类型检查、去空值、归一化和去重。
+
+这套约束的核心是：LLM 提供语义增强，系统代码保留最终数据边界。
+
+### 晋升路径推断原则
+
+晋升路径不再写到具体 `:Job` 节点之间，而是统一在 `:JobTitle` 概念层查询和生成。旧的 `(:Job)-[:VERTICAL_UP {source:"openai_lmstudio"}]->(:Job)` 来源已废弃，不再作为前端管理或用户侧路径查询的数据来源。
+
+- 第一步执行 `sync_job_titles()`：按 `:Job.title` 聚合创建 `:JobTitle`，并建立 `(:Job)-[:HAS_TITLE]->(:JobTitle)`。
+- 第二步执行 `generate_promotion_paths()`：把岗位名称批量交给 LLM，要求输出 `from_title`、`to_title`、`promotion_name`、`stage1`、`stage2`、`stage3`、`confidence`、`rationale`。
+- 正式执行时写入 `(:JobPromotion)-[:FOR_JOB_TITLE]->(:JobTitle)`。查询某个岗位的晋升路径时，先定位它的 `JobTitle`，再读取关联的 `JobPromotion`。
+- `dry_run=true` 只返回候选路径预览，不写 Neo4j；`dry_run=false` 创建或更新 `JobPromotion` 节点。
+
+这保证晋升推荐不会被单个公司、单条招聘记录或已废弃的 Job 层边污染；用户看到的是岗位名称层的通用职业发展路径。
+
+### 数据一致性原则
+
+Graph 域同时写 Neo4j 和 MySQL，它们职责不同：
+
+- Neo4j 保存职业图谱主体，包括节点、关系、路径和资源推荐。
+- MySQL `job_titles` 保存岗位名称的轻量统计，服务管理后台快速列表展示。
+- `import-jobs` 先写 Neo4j，再同步 MySQL 统计；MySQL 同步失败会记录到 `errors`，但不会回滚已完成的 Neo4j 导入批次。
+- 增量导入依赖 `MERGE` 幂等更新。除非显式 `clear_all=true`，导入不会清空图谱。
+- 清图接口要求 `confirmed: true`，避免误触发 destructive 操作。
+
+一致性目标是“管理侧可观察、导入可恢复、重复执行不制造重复节点”，不是跨库强事务。
+
+### 管理权限原则
+
+所有 Graph API 都通过 `_require_admin()` 校验 JWT 中的用户身份，并重新查询 MySQL `users.is_admin`。前端隐藏入口只是体验优化，不能替代后端权限控制。
+
+---
+
 ## 数据模型
 
 ### Neo4j 图模型
@@ -64,17 +128,21 @@
 | `:SoftSkill` | `name`（唯一）、`level` | 软技能四维度：innovation/learning/stress/comm |
 | `:CareerLevel` | `name`（唯一） | 经验级别（如 1-3年、3-5年） |
 
-**关系类型（3 种）：**
+**关系类型：**
 
 | 关系 | 方向 | 属性 |
 |------|------|------|
 | `BELONGS_TO` | `(:Job) → (:Company)` / `(:Job) → (:CareerLevel)` | 无 |
 | `REQUIRES` | `(:Job) → (:Skill)` / `(:Job) → (:Certificate)` / `(:Job) → (:SoftSkill)` | 无 |
-| `VERTICAL_UP` | `(:Job) → (:Job)` | `source`、`reason`、`company`、`confidence`、`updated_at` |
+| `HAS_TITLE` | `(:Job) → (:JobTitle)` | 无 |
+| `FOR_JOB_TITLE` | `(:JobPromotion)` / `(:LearningResource)` / `(:Competition)` → `(:JobTitle)` | 由源节点承载解释属性 |
+| `SIMILAR_FOR_LATERAL` | `(:JobTitle) → (:JobTitle)` | `reason`、`confidence`、`updated_at` |
+
+旧的 `VERTICAL_UP` Job 层边只作为历史兼容存在，不再由管理页生成，也不再用于用户侧晋升路径查询。
 
 **与后端业务域的共存关系：**
 
-后端的 `cap_req_*`（八维能力分）和 `cap_conf_*`（置信度）属性由其他域（jobs/match）写入，与 graph 域的 `hard_skills`/`is_core_template` 等属性共存于同一 `:Job` 节点。查询时通过 `coalesce()` 兼容。`PROMOTION_EDGE_SOURCES = ["openai_lmstudio"]` 在 `infrastructure/neo4j.py` 中引用。
+后端的 `cap_req_*`（八维能力分）和 `cap_conf_*`（置信度）属性由其他域（jobs/match）写入，与 graph 域的 `hard_skills`/`is_core_template` 等属性共存于同一 `:Job` 节点。查询时通过 `coalesce()` 兼容。晋升查询会先从 `:Job` 找到 `:JobTitle`，再读取 `:JobPromotion`。
 
 ### MySQL job_titles 表
 
@@ -147,48 +215,30 @@ CREATE TABLE job_titles (
 }
 ```
 
-### `POST /api/graph/generate-promotions` — 晋升边生成
+### `POST /api/graph/generate-promotions` 已废弃
 
-通过 LLM 推断同公司内部的晋升路径（VERTICAL_UP 关系）。
+旧接口曾用于生成具体 `:Job` 节点之间的晋升边。该写入路径已废弃，调用时只返回 `410 Gone`，不会写 Neo4j。请改用 `POST /api/graph/sync/job-titles` 和 `POST /api/graph/generate/promotion-paths`。
 
-**请求（JSON）：**
+**响应：**
 ```json
 {
-  "dry_run": false,
-  "min_confidence": 0.55,
-  "min_company_jobs": 2,
-  "clear_existing": false
+  "ok": false,
+  "message": "generate-promotions 已废弃，不再写入 Job 层晋升边；请先调用 /api/graph/sync/job-titles，再调用 /api/graph/generate/promotion-paths 生成 JobTitle 层晋升路径。"
 }
 ```
-
-| 字段 | 类型 | 默认值 | 说明 |
-|------|------|--------|------|
-| `dry_run` | bool | false | true 时只预览，不写库 |
-| `min_confidence` | float | 0.55 | 最低置信度阈值（0~1） |
-| `min_company_jobs` | int | 2 | 每公司最少岗位数，低于此值跳过 |
-| `clear_existing` | bool | false | 是否先删除已有 source=openai_lmstudio 的边 |
-
-**dry_run 响应：**
-```json
-{
-  "ok": true,
-  "data": {
-    "checked_companies": 24,
-    "candidate_edges": 128,
-    "preview": [
-      {"company": "博岳通信", "from_title": "Java开发", "to_title": "高级Java", "confidence": 0.78, "reason": "经验年限递进"}
-    ],
-    "backup_file": "promotion_backups/promotion_edges_backup_20260604_200000.json",
-    "dry_run": true
-  }
-}
-```
-
-**正式执行响应：**`dry_run: false`，额外包含 `created_edges` 字段。
 
 ### `POST /api/graph/clear` — 清空图谱
 
 **请求：**`{"confirmed": true}`（必须显式确认）
+
+**响应：**
+```json
+{
+  "ok": true,
+  "message": "已清空图谱（删除 457 个节点）",
+  "data": {"deleted_nodes": 457}
+}
+```
 
 ### `GET /api/graph/job-titles` — 岗位名称统计
 
@@ -206,6 +256,101 @@ CREATE TABLE job_titles (
   }
 }
 ```
+
+### `POST /api/graph/sync/job-titles` — 同步 JobTitle 节点
+
+从 Neo4j `:Job.title` 聚合生成 `:JobTitle` 节点，并建立 `(:Job)-[:HAS_TITLE]->(:JobTitle)` 关系。
+
+**请求：**
+```json
+{"dry_run": true}
+```
+
+**响应：**
+```json
+{
+  "ok": true,
+  "data": {
+    "dry_run": true,
+    "title_count": 156,
+    "sample": [{"name": "前端工程师", "count": 35}]
+  }
+}
+```
+
+正式执行时 `dry_run=false`，返回 `created_jobtitle_nodes` 和 `has_title_relationships`。
+
+### `POST /api/graph/generate/promotion-paths` — 生成岗位名称晋升路径
+
+基于 `:JobTitle` 列表，让 LLM 推断岗位名称之间的晋升路径，并写入 `:JobPromotion` 节点。用户侧查询也读取这一层：`Job -> HAS_TITLE -> JobTitle <- FOR_JOB_TITLE <- JobPromotion`。
+
+**请求：**
+```json
+{"dry_run": true}
+```
+
+**响应字段：**
+
+| 字段 | 说明 |
+|------|------|
+| `titles_scanned` | 输入 LLM 的岗位名称数量 |
+| `candidate_paths` | LLM 返回的候选路径数 |
+| `preview` | dry-run 模式下的前 20 条候选路径 |
+| `created_promotions` | 正式执行时创建或更新的 `JobPromotion` 数量 |
+
+### `POST /api/graph/generate/lateral-transfers` — 生成横向转岗关系
+
+基于高频 `:JobTitle`，让 LLM 判断岗位名称之间的横向转岗可行性，并写入 `(:JobTitle)-[:SIMILAR_FOR_LATERAL]->(:JobTitle)`。
+
+**请求：**
+```json
+{"dry_run": false}
+```
+
+**响应字段：**
+
+| 字段 | 说明 |
+|------|------|
+| `titles_considered` | 参与配对的高频岗位名称数量 |
+| `candidate_pairs` | LLM 返回的候选转岗关系数 |
+| `preview` | dry-run 模式下的前 20 条候选关系 |
+| `created_relationships` | 正式执行时写入的横向关系数量 |
+
+### `POST /api/graph/generate/learning-resources` — 生成学习资源
+
+为岗位记录数不少于 2 的高频 `:JobTitle` 推荐学习资源，并写入 `:LearningResource` 节点，通过 `FOR_JOB_TITLE` 关联到岗位名称。
+
+**请求：**
+```json
+{"dry_run": true}
+```
+
+**响应字段：**
+
+| 字段 | 说明 |
+|------|------|
+| `titles_processed` | 被处理的岗位名称数量 |
+| `candidate_resources` | LLM 返回的资源数量 |
+| `preview` | dry-run 模式下的资源摘要 |
+| `created_resources` | 正式执行时写入的资源数量 |
+
+### `POST /api/graph/generate/competitions` — 生成竞赛推荐
+
+为高频 `:JobTitle` 推荐相关学科竞赛，并写入 `:Competition` 节点，通过 `FOR_JOB_TITLE` 关联到岗位名称。
+
+**请求：**
+```json
+{"dry_run": true}
+```
+
+**响应字段：**
+
+| 字段 | 说明 |
+|------|------|
+| `titles_processed` | 被处理的岗位名称数量 |
+| `candidate_competitions` | LLM 返回的竞赛数量 |
+| `preview` | dry-run 模式下的竞赛摘要 |
+| `created_competitions` | 正式执行时写入的竞赛数量 |
 
 ### `POST /api/graph/qc-report` — 质检报告
 
@@ -293,48 +438,38 @@ Excel .xls
 - `normalize_title`：去空白 + 小写（如 "Python 工程师" → "python工程师"）
 - 同一公司同一标题的岗位会合并为一个 Job 节点
 
-### 晋升边生成（generate-promotions）
+### JobTitle 晋升路径生成（generate/promotion-paths）
 
 ```
 Neo4j :Job 节点
   │
-  ├─ 1. fetch_all_jobs()：查询所有 Job（排除 source='inferred'）
-  ├─ 2. 按 company 分组到 defaultdict(list)
+  ├─ 1. sync_job_titles()
+  │     ├─ 按 trim(j.title) 聚合岗位名称和出现次数
+  │     ├─ MERGE (:JobTitle {name})，更新 job_count
+  │     └─ MERGE (:Job)-[:HAS_TITLE]->(:JobTitle)
   │
-  ├─ 3. 逐公司（按岗位数降序）：
-  │     ├─ dedupe_titles()：同标题保留 career_score 最高的
-  │     ├─ 按 career_score 升序排列
-  │     ├─ build_company_prompt()：构造 Prompt
-  │     ├─ 调用 LLM（OpenAI 兼容，temperature=0.1）
-  │     │     推断：from_title → to_title + reason + confidence
-  │     └─ build_edges_with_validation()：
-  │           ├─ 过滤 confidence < min_confidence
-  │           ├─ 过滤未找到源/目标岗位
-  │           ├─ 过滤自环
-  │           ├─ 过滤逆方向（dst.career_score <= src.career_score）
-  │           └─ 去重（pair_key）
+  ├─ 2. generate_promotion_paths()
+  │     ├─ fetch_all_job_titles()：读取 JobTitle 名称列表
+  │     ├─ 每 30 个名称构造一个 LLM 请求
+  │     ├─ LLM 输出 paths：
+  │     │     from_title、to_title、promotion_name
+  │     │     stage1、stage2、stage3、stage3_job_title
+  │     │     confidence、rationale
+  │     └─ dry_run=true → 返回 candidate_paths 与 preview，不写库
   │
-  ├─ 4. 备份：所有候选边写入 JSON（promotion_backups/ 目录）
-  ├─ 5. dry_run=true → 返回预览，不写入
-  └─ 6. dry_run=false → 可选 clear_existing → persist_promotion_edges()
+  └─ 3. dry_run=false → MERGE (:JobPromotion {promotion_id})
+        └─ MERGE (:JobPromotion)-[:FOR_JOB_TITLE]->(:JobTitle)
 ```
 
-**career_score 计算：**`(experience_years * 10.0) + calc_seniority_boost(title)`
-
-职级关键词权重（SENIORITY_WEIGHTS）：
-- 实习 -2.0、助理 -1.5、初级 -1.0
-- 高级 +2.0、资深 +2.5、专家 +3.0
-- 经理 +3.5、总监 +5.0、VP/Chief +6.0
-
-**校验规则保证晋升边的方向性：**目标岗位的 career_score 必须严格大于源岗位。
+**查询路径：**用户侧 `/api/jobs/{job_id}/promotion-path` 先定位起始 `:Job`，通过 `HAS_TITLE` 或标题名称找到 `:JobTitle`，然后返回该标题关联的 `:JobPromotion`。返回结构继续包含 `paths` 和 `next_steps`，但边属性以 `confidence`、`rationale`、`stage1/2/3` 为主。
 
 ---
 
 ## 增量更新机制
 
 1. **岗位导入幂等性**：`MERGE` 使用 `job_key` 作为业务主键。同一 Excel 重复导入 → 更新属性，不创建重复节点。新数据追加 → 新 job_key 的节点被创建，已有 job_key 的节点属性被覆盖
-2. **晋升边可选重建**：`clear_existing=true` 时先删除 `source="openai_lmstudio"` 的所有边再重新生成；默认不清除，已有边保持不变
-3. **备份审计**：晋升边每次生成都备份为带时间戳的 JSON，即使 dry_run 模式也备份，可追溯每次变更
+2. **JobTitle 同步幂等性**：`sync/job-titles` 通过 `MERGE (:JobTitle {name})` 和 `MERGE (:Job)-[:HAS_TITLE]->(:JobTitle)` 重复执行不会创建重复标题节点
+3. **晋升路径更新幂等性**：`generate/promotion-paths` 通过 `promotion_id` 合并 `JobPromotion`，重复生成会更新阶段说明、置信度和 rationale
 
 ---
 
@@ -367,22 +502,29 @@ curl -X POST http://localhost:5000/api/graph/import-jobs \
   -d '{"file_path": "/data/20260226105856_457.xls", "batch_size": 256}'
 ```
 
-### 预览晋升边（不写入）
+### 同步 JobTitle（不写入）
 
 ```bash
-curl -X POST http://localhost:5000/api/graph/generate-promotions \
+curl -X POST http://localhost:5000/api/graph/sync/job-titles \
   -H "Authorization: Bearer <admin_token>" \
   -H "Content-Type: application/json" \
-  -d '{"dry_run": true, "min_confidence": 0.6}'
+  -d '{"dry_run": true}'
 ```
 
-### 正式生成晋升边
+### 生成 JobTitle 晋升路径
 
 ```bash
-curl -X POST http://localhost:5000/api/graph/generate-promotions \
+# 先正式同步 JobTitle
+curl -X POST http://localhost:5000/api/graph/sync/job-titles \
   -H "Authorization: Bearer <admin_token>" \
   -H "Content-Type: application/json" \
-  -d '{"dry_run": false, "min_confidence": 0.55, "clear_existing": true}'
+  -d '{"dry_run": false}'
+
+# 再预览或正式生成 JobPromotion
+curl -X POST http://localhost:5000/api/graph/generate/promotion-paths \
+  -H "Authorization: Bearer <admin_token>" \
+  -H "Content-Type: application/json" \
+  -d '{"dry_run": true}'
 ```
 
 ### 增量更新：导入新一期数据
@@ -393,11 +535,11 @@ curl -X POST http://localhost:5000/api/graph/import-jobs \
   -H "Authorization: Bearer <admin_token>" \
   -F "file=@datasets/20260701_new_jobs.xls"
 
-# 重新生成晋升边（覆盖旧边）
-curl -X POST http://localhost:5000/api/graph/generate-promotions \
+# 刷新 JobTitle 和晋升路径
+curl -X POST http://localhost:5000/api/graph/sync/job-titles \
   -H "Authorization: Bearer <admin_token>" \
   -H "Content-Type: application/json" \
-  -d '{"clear_existing": true}'
+  -d '{"dry_run": false}'
 ```
 
 ### Docker Compose 环境
@@ -415,4 +557,4 @@ docker compose exec backend curl -X POST http://localhost:5000/api/graph/stats \
 
 ### 前端管理页面
 
-登录后访问 `/graph-admin/`，提供图形化界面：图谱统计卡片、文件上传导入、晋升边参数调节与预览。
+登录后访问 `/graph-admin/`，提供图形化界面：图谱统计卡片、文件上传导入、JobTitle 同步与晋升路径生成。

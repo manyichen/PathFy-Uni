@@ -6,7 +6,6 @@ import json
 import os
 import re
 import time
-from collections import defaultdict
 from datetime import datetime
 from typing import Any, Dict, List
 
@@ -20,7 +19,6 @@ from app.domains.graph.constants import (
     MAX_RETRIES,
     PROMOTION_SYSTEM_PROMPT,
     REQUIRED_CN_COLUMNS,
-    SOURCE_TAG,
     PromotionEdge,
     build_ai_payload,
     build_company_prompt,
@@ -30,11 +28,8 @@ from app.domains.graph.constants import (
 )
 from app.domains.graph.repository import (
     clear_all_graph,
-    delete_edges_by_source,
-    fetch_all_jobs,
     get_graph_statistics,
     merge_batch_to_neo4j,
-    persist_promotion_edges,
 )
 from app.infrastructure.neo4j import neo4j_driver, neo4j_settings
 from app.infrastructure.privacy import privacy_mode_enabled, redact_payload
@@ -454,126 +449,12 @@ def generate_promotion_edges(
     clear_existing: bool = False,
     dry_run: bool = False,
 ) -> Dict[str, Any]:
-    """
-    生成晋升边（VERTICAL_UP）。
-
-    Args:
-        min_confidence: 最低置信度阈值
-        min_company_jobs: 每公司最少岗位数
-        clear_existing: 是否先删除已有晋升边
-        dry_run: True 时只预览不写入
-    """
-    min_confidence = max(0.0, min(1.0, min_confidence))
-
-    uri, user, password, database = neo4j_settings()
-    if not password:
-        raise GraphServiceError("未配置 NEO4J_PASSWORD", 500)
-    driver = neo4j_driver(uri, user, password)
-
-    # 1. 获取所有 Job
-    jobs = fetch_all_jobs(driver, database)
-
-    # 2. 按公司分组
-    company_groups: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
-    for j in jobs:
-        company_groups[j.company].append(
-            {
-                "job_key": j.job_key,
-                "title": j.title,
-                "experience_years": j.experience_years,
-                "location": j.location,
-                "career_score": j.career_score,
-            }
-        )
-
-    # 3. 逐公司推断
-    all_edges: List[PromotionEdge] = []
-    checked_companies = 0
-
-    for company, group in sorted(
-        company_groups.items(), key=lambda x: len(x[1]), reverse=True
-    ):
-        # 去重标题（保留 career_score 最高的）
-        best: Dict[str, Dict[str, Any]] = {}
-        for job in group:
-            key = normalize_key(job["title"])
-            old = best.get(key)
-            if old is None or job["career_score"] > old["career_score"]:
-                best[key] = job
-        compact_group = list(best.values())
-
-        if len(compact_group) < max(2, min_company_jobs):
-            continue
-
-        checked_companies += 1
-        subset = sorted(compact_group, key=lambda x: x["career_score"])
-
-        raw_edges = _call_llm_for_promotions(company, subset)
-        validated = _build_edges_with_validation(
-            company=company,
-            jobs=subset,
-            model_edges=raw_edges,
-            min_confidence=min_confidence,
-        )
-        all_edges.extend(validated)
-
-        print(
-            f"[INFO] {company}: 输入岗位 {len(subset)}，"
-            f"模型输出 {len(raw_edges)}，校验后 {len(validated)}"
-        )
-
-    # 4. 备份
-    backup_dir = str(
-        current_app.config.get("GRAPH_PROMOTION_BACKUP_DIR") or "promotion_backups"
+    """旧 Job 层晋升边生成逻辑已废弃。"""
+    raise GraphServiceError(
+        "generate_promotion_edges 已废弃；请使用 JobTitle 层的 "
+        "/api/graph/sync/job-titles 和 /api/graph/generate/promotion-paths。",
+        410,
     )
-    backup_file = _backup_edges_json(
-        backup_dir=backup_dir,
-        edges=all_edges,
-        metadata={
-            "source_tag": SOURCE_TAG,
-            "model": _llm_model(),
-            "checked_companies": checked_companies,
-            "candidate_count": len(all_edges),
-            "dry_run": dry_run,
-            "min_confidence": min_confidence,
-        },
-    )
-
-    # 5. Dry-run 模式：返回预览
-    if dry_run:
-        preview = [
-            {
-                "company": e.company,
-                "from_title": e.from_title,
-                "to_title": e.to_title,
-                "confidence": e.confidence,
-                "reason": e.reason,
-            }
-            for e in all_edges[:50]  # 只返回前 50 条预览
-        ]
-        return {
-            "checked_companies": checked_companies,
-            "candidate_edges": len(all_edges),
-            "preview": preview,
-            "backup_file": backup_file,
-            "dry_run": True,
-        }
-
-    # 6. 写入 Neo4j
-    if clear_existing:
-        deleted = delete_edges_by_source(driver, database, SOURCE_TAG)
-        print(f"[INFO] 删除旧晋升边 (source={SOURCE_TAG}): {deleted}")
-
-    created = persist_promotion_edges(driver, database, all_edges, SOURCE_TAG)
-    print(f"[INFO] 已写入/更新 VERTICAL_UP 关系: {created}")
-
-    return {
-        "checked_companies": checked_companies,
-        "candidate_edges": len(all_edges),
-        "created_edges": created,
-        "backup_file": backup_file,
-        "dry_run": False,
-    }
 
 
 def clear_graph() -> Dict[str, Any]:

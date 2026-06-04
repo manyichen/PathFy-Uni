@@ -7,7 +7,6 @@ from flask import Blueprint, jsonify, request
 from app.infrastructure.neo4j import (
     CONF_KEYS,
     DIM_KEYS,
-    PROMOTION_EDGE_SOURCES,
     neo4j_driver,
     neo4j_settings,
     serialize_job_row,
@@ -582,44 +581,7 @@ def get_promotion_path(job_id: str):
 
     max_depth = max(1, min(max_depth, 8))
     max_paths = max(1, min(max_paths, 8))
-
-    path_query = f"""
-    MATCH (start:Job)
-    WHERE coalesce(start.job_key, start.job_code, start.name, start.title, elementId(start)) = $job_id
-    OPTIONAL MATCH p=(start)-[rels:VERTICAL_UP*1..{max_depth}]->(target:Job)
-    WHERE all(r IN rels WHERE coalesce(r.source, '') IN $sources)
-    RETURN
-      [n in nodes(p) | {{
-        id: coalesce(n.job_key, n.job_code, n.name, n.title, elementId(n)),
-        title: coalesce(n.title, n.name, '未命名岗位'),
-        company: coalesce(n.company, ''),
-        experience_years: coalesce(n.experience_years, 0.0)
-      }}] AS nodes,
-      [r in relationships(p) | {{
-        source: coalesce(r.source, ''),
-        reason: coalesce(r.reason, ''),
-        score_gap: coalesce(r.score_gap, 0.0),
-        exp_gap: coalesce(r.exp_gap, 0.0)
-      }}] AS edges,
-      length(p) AS hops
-    ORDER BY hops ASC
-    LIMIT {max_paths}
-    """
-
-    next_query = """
-        MATCH (start:Job)-[r:VERTICAL_UP]->(next:Job)
-    WHERE coalesce(start.job_key, start.job_code, start.name, start.title, elementId(start)) = $job_id
-            AND coalesce(r.source, '') IN $sources
-    RETURN
-      coalesce(next.job_key, next.job_code, next.name, next.title, elementId(next)) AS id,
-      coalesce(next.title, next.name, '未命名岗位') AS title,
-      coalesce(next.company, '') AS company,
-      coalesce(next.experience_years, 0.0) AS experience_years,
-      coalesce(r.score_gap, 0.0) AS score_gap,
-      coalesce(r.exp_gap, 0.0) AS exp_gap
-    ORDER BY score_gap DESC, experience_years ASC
-    LIMIT 12
-    """
+    promotion_limit = max(max_paths, 12)
 
     start_query = f"""
     MATCH (j:Job)
@@ -635,27 +597,84 @@ def get_promotion_path(job_id: str):
     LIMIT 1
     """
 
+    promotion_query = """
+    MATCH (start:Job)
+    WHERE coalesce(start.job_key, start.job_code, start.name, start.title, elementId(start)) = $job_id
+    WITH start, trim(coalesce(start.title, start.name, '')) AS title_name
+    OPTIONAL MATCH (start)-[:HAS_TITLE]->(direct_jt:JobTitle)
+    OPTIONAL MATCH (fallback_jt:JobTitle {name: title_name})
+    WITH title_name, coalesce(direct_jt, fallback_jt) AS jt
+    WHERE jt IS NOT NULL
+    MATCH (promotion:JobPromotion)-[:FOR_JOB_TITLE]->(jt)
+    RETURN
+      coalesce(jt.name, title_name) AS from_title,
+      coalesce(promotion.promotion_id, promotion.name, '') AS id,
+      coalesce(promotion.to_title, promotion.stage3_job_title, promotion.title, promotion.name, '未命名岗位') AS to_title,
+      coalesce(promotion.title, promotion.name, '') AS promotion_name,
+      coalesce(promotion.stage1, '') AS stage1,
+      coalesce(promotion.stage2, '') AS stage2,
+      coalesce(promotion.stage3, '') AS stage3,
+      coalesce(promotion.stage3_job_title, '') AS stage3_job_title,
+      coalesce(promotion.confidence, 0.0) AS confidence,
+      coalesce(promotion.rationale, '') AS rationale
+    ORDER BY confidence DESC, to_title ASC
+    LIMIT $limit
+    """
+
     driver = neo4j_driver(uri, user, password)
     with driver.session(database=database) as session:
         start_row = session.run(start_query, {"job_id": job_id}).single()
         if not start_row:
             return jsonify({"ok": False, "message": "岗位不存在"}), 404
 
-        params = {"job_id": job_id, "sources": PROMOTION_EDGE_SOURCES}
-        paths = [dict(r) for r in session.run(path_query, params)]
-        next_jobs = [dict(r) for r in session.run(next_query, params)]
+        promotion_rows = [
+            dict(r)
+            for r in session.run(
+                promotion_query,
+                {"job_id": job_id, "limit": promotion_limit},
+            )
+        ]
 
+    start_job = dict(start_row)
     normalized_paths = []
-    for item in paths:
-        nodes = item.get("nodes") or []
-        edges = item.get("edges") or []
-        if not nodes:
+    next_steps = []
+
+    for item in promotion_rows:
+        confidence = round(_safe_float(item.get("confidence")), 4)
+        title = str(item.get("to_title") or item.get("stage3_job_title") or "未命名岗位")
+        target = {
+            "id": f"jobtitle::{title}",
+            "title": title,
+            "company": "JobTitle",
+            "location": "",
+            "salary": "",
+            "experience_years": 0.0,
+            "confidence": confidence,
+            "rationale": str(item.get("rationale") or ""),
+            "stage1": str(item.get("stage1") or ""),
+            "stage2": str(item.get("stage2") or ""),
+            "stage3": str(item.get("stage3") or ""),
+            "stage3_job_title": str(item.get("stage3_job_title") or ""),
+        }
+        next_steps.append(target)
+
+        if len(normalized_paths) >= max_paths:
             continue
         normalized_paths.append(
             {
-                "hops": int(item.get("hops") or 0),
-                "nodes": nodes,
-                "edges": edges,
+                "hops": 1,
+                "nodes": [start_job, target],
+                "edges": [
+                    {
+                        "source": "JobPromotion",
+                        "reason": str(item.get("rationale") or item.get("promotion_name") or ""),
+                        "confidence": confidence,
+                        "stage1": str(item.get("stage1") or ""),
+                        "stage2": str(item.get("stage2") or ""),
+                        "stage3": str(item.get("stage3") or ""),
+                        "stage3_job_title": str(item.get("stage3_job_title") or ""),
+                    }
+                ],
             }
         )
 
@@ -663,11 +682,12 @@ def get_promotion_path(job_id: str):
         {
             "ok": True,
             "data": {
-                "job": dict(start_row),
+                "job": start_job,
                 "paths": normalized_paths,
-                "next_steps": next_jobs,
+                "next_steps": next_steps,
                 "meta": {
-                    "sources": PROMOTION_EDGE_SOURCES,
+                    "source": "JobPromotion",
+                    "job_title": promotion_rows[0]["from_title"] if promotion_rows else start_job.get("title", ""),
                     "max_depth": max_depth,
                     "max_paths": max_paths,
                 },

@@ -12,10 +12,10 @@ services:
     container_name: pathfy-mysql
     restart: unless-stopped
     environment:
-      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-pathfy_root_2024}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?set MYSQL_ROOT_PASSWORD}
       MYSQL_DATABASE: ${MYSQL_DATABASE:-suilli_mizi}
       MYSQL_USER: ${MYSQL_USER:-suilli_mizi}
-      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-pathfy_pass_2024}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:?set MYSQL_PASSWORD}
     ports:
       - "${MYSQL_PORT:-3306}:3306"
     volumes:
@@ -23,7 +23,7 @@ services:
       - ./backend/schema.sql:/docker-entrypoint-initdb.d/01_schema.sql:ro
       - ./backend/migrations:/docker-entrypoint-initdb.d/migrations:ro
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_ROOT_PASSWORD:-pathfy_root_2024}"]
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_ROOT_PASSWORD:?set MYSQL_ROOT_PASSWORD}"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -39,7 +39,7 @@ services:
       - "127.0.0.1:7474:7474"
       - "127.0.0.1:7687:7687"
     environment:
-      NEO4J_AUTH: ${NEO4J_USER:-neo4j}/${NEO4J_PASSWORD:-pathfy_neo4j_2024}
+      NEO4J_AUTH: ${NEO4J_USER:-neo4j}/${NEO4J_PASSWORD:?set NEO4J_PASSWORD}
       NEO4J_server_memory_heap_initial__size: 256m
       NEO4J_server_memory_heap_max__size: 512m
       NEO4J_server_memory_pagecache_size: 256m
@@ -47,7 +47,7 @@ services:
       - neo4j_data:/data
       - neo4j_logs:/logs
     healthcheck:
-      test: ["CMD", "cypher-shell", "-u", "${NEO4J_USER:-neo4j}", "-p", "${NEO4J_PASSWORD:-pathfy_neo4j_2024}", "RETURN 1"]
+      test: ["CMD", "cypher-shell", "-u", "${NEO4J_USER:-neo4j}", "-p", "${NEO4J_PASSWORD:?set NEO4J_PASSWORD}", "RETURN 1"]
       interval: 15s
       timeout: 10s
       retries: 5
@@ -66,18 +66,18 @@ services:
     environment:
       FLASK_ENV: ${FLASK_ENV:-production}
       FLASK_DEBUG: "0"
-      SECRET_KEY: ${SECRET_KEY:-change-me-to-a-random-32-char-string}
+      SECRET_KEY: ${SECRET_KEY:?set SECRET_KEY}
       TOKEN_EXPIRES_HOURS: "24"
 
       MYSQL_HOST: mysql
       MYSQL_PORT: "3306"
       MYSQL_USER: ${MYSQL_USER:-suilli_mizi}
-      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-pathfy_pass_2024}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:?set MYSQL_PASSWORD}
       MYSQL_DATABASE: ${MYSQL_DATABASE:-suilli_mizi}
 
       NEO4J_URI: bolt://neo4j:7687
       NEO4J_USER: ${NEO4J_USER:-neo4j}
-      NEO4J_PASSWORD: ${NEO4J_PASSWORD:-pathfy_neo4j_2024}
+      NEO4J_PASSWORD: ${NEO4J_PASSWORD:?set NEO4J_PASSWORD}
       NEO4J_DATABASE: neo4j
 
       FRONTEND_ORIGIN: ${FRONTEND_ORIGIN:-http://localhost}

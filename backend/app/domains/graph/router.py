@@ -9,13 +9,13 @@ from app.db import db_cursor
 from app.domains.graph.services import (
     GraphServiceError,
     clear_graph,
-    generate_promotion_edges,
     get_job_titles,
     get_stats,
     import_jobs_from_excel,
 )
 
 graph_bp = Blueprint("graph", __name__, url_prefix="/api/graph")
+TRUE_VALUES = {"1", "true", "yes", "on"}
 
 
 # ============================================================
@@ -40,6 +40,16 @@ def _require_admin():
     return uid, None
 
 
+def _parse_bool(value, default: bool = False) -> bool:
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return value.strip().lower() in TRUE_VALUES
+    return bool(value)
+
+
 # ============================================================
 # 路由
 # ============================================================
@@ -62,13 +72,16 @@ def import_jobs():
         return err
 
     try:
-        # 判断是文件上传还是服务器路径
         uploaded_file = request.files.get("file")
-        body = request.get_json(silent=True) or {}
+        if uploaded_file:
+            params = request.form
+            file_path = None
+        else:
+            params = request.get_json(silent=True) or {}
+            file_path = params.get("file_path")
 
-        file_path = body.get("file_path") if not uploaded_file else None
-        batch_size = int(body.get("batch_size", 128))
-        clear_all = bool(body.get("clear_all", False))
+        batch_size = int(params.get("batch_size") or 128)
+        clear_all = _parse_bool(params.get("clear_all"), False)
 
         result = import_jobs_from_excel(
             excel_path=file_path,
@@ -89,44 +102,24 @@ def import_jobs():
 
 @graph_bp.post("/generate-promotions")
 def generate_promotions():
-    """
-    生成晋升边（VERTICAL_UP）。
-
-    JSON Body:
-        {
-            "dry_run": false,
-            "min_confidence": 0.55,
-            "min_company_jobs": 2,
-            "clear_existing": false
-        }
-    """
+    """旧 Job 节点晋升边生成接口已废弃，保留 410 响应防止误写库。"""
     _, err = _require_admin()
     if err:
         return err
 
-    try:
-        body = request.get_json(silent=True) or {}
-
-        dry_run = bool(body.get("dry_run", False))
-        min_confidence = float(body.get("min_confidence", 0.55))
-        min_company_jobs = int(body.get("min_company_jobs", 2))
-        clear_existing = bool(body.get("clear_existing", False))
-
-        result = generate_promotion_edges(
-            min_confidence=min_confidence,
-            min_company_jobs=min_company_jobs,
-            clear_existing=clear_existing,
-            dry_run=dry_run,
-        )
-        return jsonify({"ok": True, "data": result}), 200
-
-    except GraphServiceError as exc:
-        return jsonify({"ok": False, "message": exc.message}), exc.status
-    except Exception as exc:
-        return (
-            jsonify({"ok": False, "message": f"生成晋升边失败: {exc}"}),
-            500,
-        )
+    return (
+        jsonify(
+            {
+                "ok": False,
+                "message": (
+                    "generate-promotions 已废弃，不再写入 Job 层晋升边；"
+                    "请先调用 /api/graph/sync/job-titles，再调用 "
+                    "/api/graph/generate/promotion-paths 生成 JobTitle 层晋升路径。"
+                ),
+            }
+        ),
+        410,
+    )
 
 
 @graph_bp.get("/stats")
@@ -193,6 +186,79 @@ def qc_report():
             jsonify({"ok": False, "message": f"生成质检报告失败: {exc}"}),
             500,
         )
+
+
+# ============================================================
+# 图谱智能生成（LLM 自动推断）
+# ============================================================
+
+def _run_sync(handler, dry_run: bool):
+    """统一执行同步/生成，返回 Flask 响应。"""
+    try:
+        result = handler(dry_run=dry_run)
+        return jsonify({"ok": True, "data": result}), 200
+    except Exception as exc:
+        return jsonify({"ok": False, "message": str(exc)}), 500
+
+
+@graph_bp.post("/sync/job-titles")
+def sync_job_titles():
+    """从 :Job 聚合创建 :JobTitle 节点。"""
+    _, err = _require_admin()
+    if err:
+        return err
+    from app.domains.graph.sync_service import sync_job_titles as _sync
+
+    body = request.get_json(silent=True) or {}
+    return _run_sync(_sync, bool(body.get("dry_run", False)))
+
+
+@graph_bp.post("/generate/promotion-paths")
+def generate_promotion_paths():
+    """LLM 推断晋升路径。"""
+    _, err = _require_admin()
+    if err:
+        return err
+    from app.domains.graph.sync_service import generate_promotion_paths as _gen
+
+    body = request.get_json(silent=True) or {}
+    return _run_sync(_gen, bool(body.get("dry_run", False)))
+
+
+@graph_bp.post("/generate/lateral-transfers")
+def generate_lateral_transfers():
+    """LLM 推断换岗关系。"""
+    _, err = _require_admin()
+    if err:
+        return err
+    from app.domains.graph.sync_service import generate_lateral_transfers as _gen
+
+    body = request.get_json(silent=True) or {}
+    return _run_sync(_gen, bool(body.get("dry_run", False)))
+
+
+@graph_bp.post("/generate/learning-resources")
+def generate_learning_resources():
+    """LLM 推荐学习资源。"""
+    _, err = _require_admin()
+    if err:
+        return err
+    from app.domains.graph.sync_service import generate_learning_resources as _gen
+
+    body = request.get_json(silent=True) or {}
+    return _run_sync(_gen, bool(body.get("dry_run", False)))
+
+
+@graph_bp.post("/generate/competitions")
+def generate_competitions():
+    """LLM 推荐竞赛。"""
+    _, err = _require_admin()
+    if err:
+        return err
+    from app.domains.graph.sync_service import generate_competitions as _gen
+
+    body = request.get_json(silent=True) or {}
+    return _run_sync(_gen, bool(body.get("dry_run", False)))
 
 
 @graph_bp.post("/clear")

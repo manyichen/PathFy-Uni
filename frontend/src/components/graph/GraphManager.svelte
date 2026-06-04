@@ -4,13 +4,11 @@
 	import {
 		fetchGraphStats,
 		importJobs,
-		generatePromotions,
-		generateQCReport,
+		syncJobTitles,
+		generatePromotionPaths,
 		type GraphStats,
 		type ImportResult,
-		type PromotionResult,
-		type QCReportResult,
-		type PromotionPreviewEdge,
+		type SyncResult,
 	} from "@/lib/api/graph";
 
 	// ============================================================
@@ -28,19 +26,10 @@
 	let batchSize = $state(128);
 	let clearAll = $state(false);
 
-	let promoLoading = $state(false);
-	let promoError = $state("");
-	let promoResult = $state<PromotionResult | null>(null);
-	let minConfidence = $state(0.55);
-	let promoDryRun = $state(true);
-	let promoClearExisting = $state(false);
-	let minCompanyJobs = $state(2);
-
-let qcLoading = $state(false);
-let qcError = $state("");
-let qcResult = $state<QCReportResult | null>(null);
-let qcInputFile = $state("");
-let qcThreshold = $state(0.60);
+	let syncLoading = $state("");
+	let syncError = $state("");
+	let syncResult = $state<SyncResult | null>(null);
+	let syncDryRun = $state(true);
 
 	// ============================================================
 	// 初始化
@@ -96,39 +85,17 @@ let qcThreshold = $state(0.60);
 		}
 	}
 
-	// ============================================================
-	// 晋升边生成
-	// ============================================================
-
-	async function handleGeneratePromotions(): Promise<void> {
-		promoLoading = true;
-		promoError = "";
-		promoResult = null;
+	async function runSync(label: string, fn: (dry: boolean) => Promise<SyncResult>): Promise<void> {
+		syncLoading = label;
+		syncError = "";
+		syncResult = null;
 		try {
-			promoResult = await generatePromotions({
-				dryRun: promoDryRun,
-				minConfidence,
-				clearExisting: promoClearExisting,
-				minCompanyJobs,
-			});
+			syncResult = await fn(syncDryRun);
 			await loadStats();
 		} catch (e) {
-			promoError = e instanceof Error ? e.message : "生成晋升边失败";
+			syncError = e instanceof Error ? e.message : `${label}失败`;
 		} finally {
-			promoLoading = false;
-		}
-	}
-
-	async function handleQCReport(): Promise<void> {
-		qcLoading = true;
-		qcError = "";
-		qcResult = null;
-		try {
-			qcResult = await generateQCReport(qcInputFile || undefined, qcThreshold);
-		} catch (e) {
-			qcError = e instanceof Error ? e.message : "生成质检报告失败";
-		} finally {
-			qcLoading = false;
+			syncLoading = "";
 		}
 	}
 </script>
@@ -247,73 +214,37 @@ let qcThreshold = $state(0.60);
 	</div>
 
 	<!-- ==============================================
-	晋升边生成
+	JobTitle 晋升路径
 	============================================== -->
 	<div class="card">
 		<div class="card-header">
-			<h2>晋升边生成</h2>
-			<span class="sub">通过大模型推断同公司内部的晋升路径（VERTICAL_UP 关系）</span>
+			<h2>JobTitle 晋升路径</h2>
+			<span class="sub">先把 Job 聚合到 JobTitle，再生成 JobPromotion 阶段化路径</span>
 		</div>
 
 		<div class="form-row">
-			<label class="form-label" for="min-conf">最低置信度：{minConfidence.toFixed(2)}</label>
-			<input
-				id="min-conf"
-				type="range"
-				min="0"
-				max="1"
-				step="0.05"
-				bind:value={minConfidence}
-				class="slider"
-			/>
-		</div>
-
-		<div class="form-row">
-			<label class="form-label" for="min-company">最少公司岗位数</label>
-			<input id="min-company" type="number" bind:value={minCompanyJobs} min="1" max="20" class="num-input" />
-		</div>
-
-		<div class="form-row">
-			<label class="form-label" for="dry-run-sw">
-				<input id="dry-run-sw" type="checkbox" bind:checked={promoDryRun} />
+			<label class="form-label" for="sync-dry-run-sw">
+				<input id="sync-dry-run-sw" type="checkbox" bind:checked={syncDryRun} />
 				预览模式（dry run，不写入数据库）
 			</label>
 		</div>
 
-		<div class="form-row">
-			<label class="form-label" for="clear-exist-sw">
-				<input id="clear-exist-sw" type="checkbox" bind:checked={promoClearExisting} />
-				先删除已有晋升边再生成
-			</label>
-		</div>
-
-		<div class="card-actions">
-			<button class="btn primary" onclick={handleGeneratePromotions} disabled={promoLoading}>
-				{promoLoading ? "处理中..." : promoDryRun ? "预览晋升边" : "生成晋升边"}
+		<div class="card-actions sync-buttons">
+			<button class="btn" onclick={() => runSync("同步 JobTitle", syncJobTitles)} disabled={!!syncLoading}>
+				{syncLoading === "同步 JobTitle" ? "同步中..." : "同步 JobTitle"}
+			</button>
+			<button class="btn primary" onclick={() => runSync("生成 JobTitle 晋升路径", generatePromotionPaths)} disabled={!!syncLoading}>
+				{syncLoading === "生成 JobTitle 晋升路径" ? "生成中..." : syncDryRun ? "预览晋升路径" : "生成晋升路径"}
 			</button>
 		</div>
 
-		{#if promoError}
-			<div class="status error">{promoError}</div>
+		{#if syncError}
+			<div class="status error">{syncError}</div>
 		{/if}
-		{#if promoResult}
+		{#if syncResult}
 			<div class="result">
-				<p>检查公司数：<strong>{promoResult.checked_companies}</strong>，候选边：<strong>{promoResult.candidate_edges}</strong></p>
-				{#if promoResult.dry_run && promoResult.preview && promoResult.preview.length > 0}
-					<p class="sub">预览（前 {promoResult.preview.length} 条）：</p>
-					<div class="preview-list">
-						{#each promoResult.preview as edge}
-							<div class="preview-item">
-								<span class="edge-company">{edge.company}</span>
-								<span class="edge-path">{edge.from_title} → {edge.to_title}</span>
-								<span class="edge-conf">{(edge.confidence * 100).toFixed(0)}%</span>
-							</div>
-						{/each}
-					</div>
-				{:else if !promoResult.dry_run}
-					<p>已写入：<strong>{promoResult.created_edges ?? 0}</strong> 条</p>
-				{/if}
-				<p class="sub">备份文件：{promoResult.backup_file}</p>
+				<p>执行结果</p>
+				<pre class="result-json">{JSON.stringify(syncResult, null, 2)}</pre>
 			</div>
 		{/if}
 	</div>
@@ -432,13 +363,14 @@ let qcThreshold = $state(0.60);
 		color: var(--text-100);
 	}
 
-	.slider {
-		flex: 1;
-		max-width: 14rem;
-	}
-
 	.card-actions {
 		margin-top: 1rem;
+	}
+
+	.sync-buttons {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.5rem;
 	}
 
 	.btn {
@@ -485,39 +417,5 @@ let qcThreshold = $state(0.60);
 
 	.result strong {
 		color: var(--text-100);
-	}
-
-	.preview-list {
-		margin-top: 0.5rem;
-		display: flex;
-		flex-direction: column;
-		gap: 0.35rem;
-		max-height: 20rem;
-		overflow-y: auto;
-	}
-
-	.preview-item {
-		display: flex;
-		gap: 0.6rem;
-		padding: 0.4rem 0.6rem;
-		border-radius: 0.4rem;
-		background: var(--btn-regular-bg);
-		font-size: 0.82rem;
-		align-items: center;
-	}
-
-	.edge-company {
-		color: var(--text-75);
-		min-width: 6rem;
-	}
-
-	.edge-path {
-		color: var(--text-100);
-		flex: 1;
-	}
-
-	.edge-conf {
-		color: #4f46e5;
-		font-weight: 600;
 	}
 </style>
