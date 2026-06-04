@@ -46,20 +46,20 @@ def register():
     try:
         with db_cursor() as (_, cursor):
             cursor.execute("""
-                INSERT INTO users (username, email, password_hash, created_at, updated_at)
-                VALUES (%s, %s, %s, %s, %s)
+                INSERT INTO users (username, email, password_hash, created_at, updated_at, is_admin)
+                VALUES (%s, %s, %s, %s, %s, 0)
             """, (username, email, password_hash, now, now))
             user_id = cursor.lastrowid
     except IntegrityError:
         return jsonify({"ok": False, "message": "用户名或邮箱已存在"}), 409
 
-    token = create_token(user_id, username, email)
+    token = create_token(user_id, username, email, is_admin=False)
     return jsonify({
         "ok": True,
         "message": "注册成功",
         "data": {
             "token": token,
-            "user": {"id": user_id, "username": username, "email": email}
+            "user": {"id": user_id, "username": username, "email": email, "is_admin": False}
         }
     }), 201
 
@@ -74,7 +74,7 @@ def login():
 
     with db_cursor() as (_, cursor):
         cursor.execute("""
-            SELECT id, username, email, password_hash
+            SELECT id, username, email, password_hash, is_admin
             FROM users
             WHERE email = %s OR username = %s
             LIMIT 1
@@ -90,7 +90,8 @@ def login():
             (datetime.now(tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S"), user["id"]),
         )
 
-    token = create_token(user["id"], user["username"], user["email"])
+    is_admin = bool(user["is_admin"])
+    token = create_token(user["id"], user["username"], user["email"], is_admin=is_admin)
     return jsonify({
         "ok": True,
         "message": "登录成功",
@@ -100,6 +101,7 @@ def login():
                 "id": user["id"],
                 "username": user["username"],
                 "email": user["email"],
+                "is_admin": is_admin,
             },
         },
     })
@@ -124,6 +126,16 @@ def me():
     except (TypeError, ValueError):
         user_id = None
 
+    is_admin = payload.get("is_admin")
+    if is_admin is None and user_id is not None:
+        # 旧 token 不含 is_admin，回退查 DB
+        with db_cursor() as (_, cur):
+            cur.execute("SELECT is_admin FROM users WHERE id = %s", (user_id,))
+            row = cur.fetchone()
+        is_admin = bool(row["is_admin"]) if row else False
+    else:
+        is_admin = bool(is_admin)
+
     return jsonify({
         "ok": True,
         "data": {
@@ -131,6 +143,7 @@ def me():
                 "id": user_id,
                 "username": payload.get("username"),
                 "email": payload.get("email"),
+                "is_admin": is_admin,
             }
         }
     })

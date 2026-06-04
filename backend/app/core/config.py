@@ -94,3 +94,13 @@ class Config:
     CAREER_ENABLE_TREND_AUGMENT = str(
         os.getenv("CAREER_ENABLE_TREND_AUGMENT", "true")
     ).strip().lower() in ("1", "true", "yes", "on")
+
+    # === Graph ETL 配置 ===
+    GRAPH_LLM_BASE_URL = os.getenv("GRAPH_LLM_BASE_URL", os.getenv("ARK_BASE_URL", ""))
+    GRAPH_LLM_API_KEY = os.getenv("GRAPH_LLM_API_KEY", os.getenv("ARK_API_KEY", ""))
+    GRAPH_LLM_MODEL = os.getenv("GRAPH_LLM_MODEL", "doubao-seed-2-0-mini-260215")
+    GRAPH_BATCH_SIZE = int(os.getenv("GRAPH_BATCH_SIZE", "128"))
+    GRAPH_MAX_RETRIES = int(os.getenv("GRAPH_MAX_RETRIES", "5"))
+    GRAPH_LLM_TIMEOUT_SECONDS = int(os.getenv("GRAPH_LLM_TIMEOUT_SECONDS", "120"))
+    GRAPH_PROMOTION_MIN_CONFIDENCE = float(os.getenv("GRAPH_PROMOTION_MIN_CONFIDENCE", "0.55"))
+    GRAPH_PROMOTION_BACKUP_DIR = os.getenv("GRAPH_PROMOTION_BACKUP_DIR", "")

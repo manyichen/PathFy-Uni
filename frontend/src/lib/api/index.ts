@@ -6,3 +6,4 @@ export * from "./jobs";
 export * from "./match";
 export * from "./report";
 export * from "./personality";
+export * from "./graph";
