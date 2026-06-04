@@ -52,6 +52,7 @@ tools/
 | `validate_learning_resource_urls.py` | `master/learning_resources.csv` | 终端报告 | HTTP 校验慕课/文档链接 |
 | `validate_competition_urls.py` | `master/competitions.csv` | 终端报告 | 校验竞赛链接 |
 | `analyze_job_title_counts.py` | 图谱或 CSV | 统计输出 | 岗位记录数分析 |
+| `build_job_title_lateral_similarity.py` | master + promotion CSV、Neo4j cap | `master/job_title_lateral_transfer.csv` | JobTitle 水平换岗相似边 |
 
 ```bash
 python tools/csv/build_promotion_recommendations_csv.py
@@ -87,6 +88,7 @@ flowchart LR
 | 可选 | `backfill_job_salary_norm.py` | 回填 `Job.salary_norm` 等字段 |
 | 可选 | `cleanup_neo4j_inferred_jobs.py` | 清理推断岗位 |
 | 检查 | `check_neo4j_duplicates.py` | 节点/关系重复与数量核对 |
+| 6b | `sync_neo4j_job_title_lateral.py` | `SIMILAR_FOR_LATERAL`：JobTitle 水平换岗相似 |
 
 ```bash
 python tools/neo4j/sync_neo4j_learning_resources.py --dry-run

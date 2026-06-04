@@ -10,7 +10,9 @@ datasets/
 ├── master/                   # 主数据（手工维护）
 │   ├── job_title_record_counts.csv
 │   ├── learning_resources.csv
-│   └── competitions.csv
+│   ├── competitions.csv
+│   ├── job_title_lateral_transfer.csv      # 水平换岗相似（脚本生成）
+│   └── job_title_lateral_transfer_schema.md
 ├── promotion/                # 晋升路线与推荐（含生成表）
 │   ├── job_title_promotions.csv
 │   ├── job_title_promotions_excluded.csv
@@ -40,6 +42,7 @@ datasets/
 | **F. 图谱快照** | `snapshots/neo4j_graph_full.json` | — | 全库导出（约 47MB） |
 | **G. 字段说明** | `promotion/job_title_promotions_schema.md` | — | 晋升主表字段与命名 |
 | **G. 字段说明** | `promotion/job_title_promotion_recommendations_schema.md` | — | 推荐生成与导入逻辑 |
+| **H. 水平换岗相似** | `master/job_title_lateral_transfer.csv` | 408 | JobTitle 间 `SIMILAR_FOR_LATERAL`（生成） |
 
 ```mermaid
 flowchart TB
