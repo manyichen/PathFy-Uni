@@ -8,6 +8,9 @@ from typing import Any, Dict, List, Optional, Tuple
 from app.db import db_cursor
 from app.domains.report.utils import json_dumps
 from app.infrastructure.neo4j import neo4j_driver, neo4j_settings, serialize_job_row
+from app.infrastructure.salary import cypher_job_salary_display
+
+_SALARY_DISP = cypher_job_salary_display()
 
 
 def _ensure_report_tables() -> None:
@@ -86,13 +89,13 @@ def _query_jobs_by_ids(job_ids: List[str]) -> List[Dict[str, Any]]:
     uri, user, password, database = neo4j_settings()
     if not password:
         return []
-    query = """
+    query = f"""
     MATCH (j:Job)
     WHERE coalesce(j.job_key, j.job_code, j.name, j.title, elementId(j)) IN $ids
     RETURN
       coalesce(j.job_key, j.job_code, j.name, j.title, elementId(j)) AS id,
       coalesce(j.title, j.name, '未命名岗位') AS title,
-      coalesce(j.salary, '薪资面议') AS salary,
+      {_SALARY_DISP},
       coalesce(j.company, '未知公司') AS company,
       coalesce(j.location, '未知地点') AS location,
       coalesce(j.cap_risk_flags, []) AS risk_flags,
@@ -126,13 +129,13 @@ def _query_all_jobs_browse_lite() -> List[Dict[str, Any]]:
     uri, user, password, database = neo4j_settings()
     if not password:
         return []
-    query = """
+    query = f"""
     MATCH (j:Job)
     WHERE (j.source IS NULL OR trim(toString(j.source)) = '')
     RETURN
       coalesce(j.job_key, j.job_code, j.name, j.title, elementId(j)) AS id,
       coalesce(j.title, j.name, '未命名岗位') AS title,
-      coalesce(j.salary, '薪资面议') AS salary,
+      {_SALARY_DISP},
       coalesce(j.company, '未知公司') AS company,
       coalesce(j.location, '未知地点') AS location
     """

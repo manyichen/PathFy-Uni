@@ -128,8 +128,11 @@ suilli_mizi/
 ├── docs/
 ├── generate_graph/
 ├── deploy/
-├── datasets/
-└── tools/job_eval/
+├── datasets/                # master/ promotion/ snapshots/（见 datasets/README.md）
+└── tools/                   # 运维脚本（见 tools/README.md）
+    ├── csv/                 # 数据集生成与校验
+    ├── neo4j/               # 图谱同步与检查
+    └── job_eval/            # 岗位 LLM 批量评估
 ```
 
 ---

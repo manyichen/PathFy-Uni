@@ -13,6 +13,10 @@ from typing import Any, Dict, List, Tuple
 from flask import current_app
 from app.db import db_cursor
 from app.infrastructure.neo4j import CONF_KEYS, DIM_KEYS, neo4j_driver, neo4j_settings, serialize_job_row
+from app.infrastructure.salary import cypher_job_salary_display, cypher_job_salary_raw
+
+_SALARY_DISP = cypher_job_salary_display()
+_SALARY_RAW = cypher_job_salary_raw()
 from app.domains.match.capability_profile import serialize_capability_profile
 from app.domains.match.llm_refine import refine_top5_deepseek
 from app.domains.match.snapshots import persist_match_snapshot
@@ -103,7 +107,7 @@ def _fetch_jobs_for_match(
     cap: int,
 ) -> List[Dict[str, Any]]:
     uri, user, password, database = neo4j_settings()
-    query = """
+    query = f"""
     MATCH (j:Job)
     WHERE (j.source IS NULL OR trim(toString(j.source)) = '')
       AND (
@@ -119,7 +123,8 @@ def _fetch_jobs_for_match(
     RETURN
       coalesce(j.job_key, j.job_code, j.name, j.title, elementId(j)) AS id,
       coalesce(j.title, j.name, '未命名岗位') AS title,
-      coalesce(j.salary, '薪资面议') AS salary,
+      {_SALARY_DISP},
+      {_SALARY_RAW},
       coalesce(j.company, '未知公司') AS company,
       coalesce(j.location, '未知地点') AS location,
       coalesce(j.cap_risk_flags, []) AS risk_flags,

@@ -59,7 +59,7 @@ def serialize_job_row(row: dict) -> dict:
 
     score_avg = round(sum(scores.values()) / len(DIM_KEYS), 2)
     conf_avg = round((sum(confidences.values()) / len(CONF_KEYS)) * 100, 2)
-    return {
+    out = {
         "id": row["id"],
         "title": row["title"],
         "salary": row["salary"],
@@ -71,3 +71,7 @@ def serialize_job_row(row: dict) -> dict:
         "score_avg": score_avg,
         "conf_avg": conf_avg,
     }
+    raw = row.get("salary_raw")
+    if raw is not None and str(raw).strip():
+        out["salary_raw"] = str(raw).strip()
+    return out

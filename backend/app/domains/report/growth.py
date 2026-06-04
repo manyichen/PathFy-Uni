@@ -107,14 +107,32 @@ def _execution_hints_for_initial_item(item: Dict[str, Any]) -> List[str]:
     ms = str(item.get("milestone") or "").strip()
     lp = item.get("learning_path") or []
     pp = item.get("practice_plan") or []
+    lp_refs = item.get("learning_path_refs") or []
+    pp_refs = item.get("practice_plan_refs") or []
     lines: List[str] = []
     if ms:
         lines.append(f"从第 1 个月起优先推进：{ms}")
-    if isinstance(lp, list) and lp:
+    if isinstance(lp_refs, list) and lp_refs:
+        for ref in lp_refs[:2]:
+            if not isinstance(ref, dict):
+                continue
+            label = str(ref.get("label") or "").strip()
+            url = str(ref.get("url") or "").strip()
+            if label:
+                lines.append(f"图谱课程：{label}" + (f"（{url}）" if url else ""))
+    elif isinstance(lp, list) and lp:
         chunk = "；".join(str(x).strip() for x in lp[:4] if str(x).strip())
         if chunk:
             lines.append(f"学习侧：{chunk}")
-    if isinstance(pp, list) and pp:
+    if isinstance(pp_refs, list) and pp_refs:
+        for ref in pp_refs[:1]:
+            if not isinstance(ref, dict):
+                continue
+            label = str(ref.get("label") or "").strip()
+            url = str(ref.get("url") or "").strip()
+            if label:
+                lines.append(f"图谱竞赛：{label}" + (f"（{url}）" if url else ""))
+    elif isinstance(pp, list) and pp:
         chunk2 = "；".join(str(x).strip() for x in pp[:3] if str(x).strip())
         if chunk2:
             lines.append(f"实践侧：{chunk2}")
@@ -151,8 +169,13 @@ def _seed_month_zero_adjustments(report_obj: Dict[str, Any], *, stamp: str) -> N
         for ai, item in enumerate(items):
             milestone = str(item.get("milestone") or "").strip()
             focus_label = str(item.get("focus_label") or "短期补齐").strip()
-            learning = item.get("learning_path") or []
-            lp0 = str(learning[0]).strip() if isinstance(learning, list) and learning else ""
+            refs = item.get("learning_path_refs") or []
+            lp0 = ""
+            if isinstance(refs, list) and refs and isinstance(refs[0], dict):
+                lp0 = str(refs[0].get("label") or "").strip()
+            if not lp0:
+                learning = item.get("learning_path") or []
+                lp0 = str(learning[0]).strip() if isinstance(learning, list) and learning else ""
             label_text = (lp0 or milestone or focus_label)[:200]
             aid = f"adj_init0_{stamp}_{line_id}_{ai + 1}"
             if aid in existing_ids:

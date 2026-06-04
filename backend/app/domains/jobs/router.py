@@ -13,7 +13,14 @@ from app.infrastructure.neo4j import (
     serialize_job_row,
 )
 from app.infrastructure.llm import call_ark_json
-from app.infrastructure.salary import parse_salary_range
+from app.infrastructure.salary import (
+    cypher_job_salary_display,
+    cypher_job_salary_raw,
+    parse_salary_range,
+)
+
+_SALARY_DISP = cypher_job_salary_display()
+_SALARY_RAW = cypher_job_salary_raw()
 
 jobs_bp = Blueprint("jobs", __name__, url_prefix="/api/jobs")
 
@@ -27,10 +34,11 @@ _JOBS_FILTER_WHERE = """
       )
 """
 
-_JOBS_RETURN_FIELDS = """
+_JOBS_RETURN_FIELDS = f"""
       coalesce(j.job_key, j.job_code, j.name, j.title, elementId(j)) AS id,
       coalesce(j.title, j.name, '未命名岗位') AS title,
-      coalesce(j.salary, '薪资面议') AS salary,
+      {_SALARY_DISP},
+      {_SALARY_RAW},
       coalesce(j.company, '未知公司') AS company,
       coalesce(j.location, '未知地点') AS location,
       coalesce(j.cap_risk_flags, []) AS risk_flags,
@@ -144,14 +152,15 @@ def _safe_float(value, default=0.0):
 
 def _fetch_job_for_analysis(session, job_id):
     row = session.run(
-        """
+        f"""
         MATCH (j:Job)
         WHERE coalesce(j.job_key, j.job_code, j.name, j.title, elementId(j)) = $job_id
         OPTIONAL MATCH (j)-[:REQUIRES]->(req)
         RETURN
           coalesce(j.job_key, j.job_code, j.name, j.title, elementId(j)) AS id,
           coalesce(j.title, j.name, '未命名岗位') AS title,
-          coalesce(j.salary, '薪资面议') AS salary,
+          {_SALARY_DISP},
+          {_SALARY_RAW},
           coalesce(j.company, '未知公司') AS company,
           coalesce(j.location, '未知地点') AS location,
           coalesce(j.demand, '') AS demand,
@@ -195,8 +204,8 @@ def _build_transition_analysis(from_row, to_row):
         )
     cap_gaps.sort(key=lambda x: x["gap"], reverse=True)
 
-    from_salary = parse_salary_range(from_row.get("salary"))
-    to_salary = parse_salary_range(to_row.get("salary"))
+    from_salary = parse_salary_range(from_row.get("salary_raw") or from_row.get("salary"))
+    to_salary = parse_salary_range(to_row.get("salary_raw") or to_row.get("salary"))
     salary_delta = None
     if from_salary.get("monthly_min") is not None and to_salary.get("monthly_min") is not None:
         salary_delta = round(float(to_salary["monthly_min"]) - float(from_salary["monthly_min"]), 2)
@@ -365,7 +374,7 @@ def list_job_options():
     RETURN count(j) AS total
     """
 
-    list_query = """
+    list_query = f"""
     MATCH (j:Job)
     WHERE (j.source IS NULL OR trim(toString(j.source)) = '')
       AND (
@@ -379,7 +388,7 @@ def list_job_options():
       coalesce(j.title, j.name, '未命名岗位') AS title,
       coalesce(j.company, '未知公司') AS company,
       coalesce(j.location, '未知地点') AS location,
-      coalesce(j.salary, '薪资面议') AS salary,
+      {_SALARY_DISP},
       coalesce(j.experience_years, 0.0) AS experience_years
     ORDER BY title ASC, company ASC
     SKIP $skip
@@ -419,14 +428,15 @@ def job_detail(job_id: str):
     if not password:
         return jsonify({"ok": False, "message": "缺少 NEO4J_PASSWORD"}), 500
 
-    detail_query = """
+    detail_query = f"""
     MATCH (j:Job)
     WHERE coalesce(j.job_key, j.job_code, j.name, j.title, elementId(j)) = $job_id
     OPTIONAL MATCH (j)-[:REQUIRES]->(req)
     RETURN
       coalesce(j.job_key, j.job_code, j.name, j.title, elementId(j)) AS id,
       coalesce(j.title, j.name, '未命名岗位') AS title,
-      coalesce(j.salary, '薪资面议') AS salary,
+      {_SALARY_DISP},
+      {_SALARY_RAW},
       coalesce(j.company, '未知公司') AS company,
       coalesce(j.location, '未知地点') AS location,
       coalesce(j.industry, '') AS industry,
@@ -457,11 +467,11 @@ def job_detail(job_id: str):
       coalesce(j.cap_conf_teamwork, 0.0) AS cap_conf_teamwork,
       coalesce(j.cap_conf_social, 0.0) AS cap_conf_social,
       coalesce(j.cap_conf_growth, 0.0) AS cap_conf_growth,
-      collect(DISTINCT {
+      collect(DISTINCT {{
         name: coalesce(req.name, ''),
         label: head(labels(req)),
         level: coalesce(req.level, '')
-      }) AS requirements
+      }}) AS requirements
     LIMIT 1
     """
 
@@ -611,7 +621,7 @@ def get_promotion_path(job_id: str):
     LIMIT 12
     """
 
-    start_query = """
+    start_query = f"""
     MATCH (j:Job)
     WHERE coalesce(j.job_key, j.job_code, j.name, j.title, elementId(j)) = $job_id
     RETURN
@@ -619,7 +629,8 @@ def get_promotion_path(job_id: str):
       coalesce(j.title, j.name, '未命名岗位') AS title,
       coalesce(j.company, '') AS company,
       coalesce(j.location, '') AS location,
-      coalesce(j.salary, '') AS salary,
+      {_SALARY_DISP},
+      {_SALARY_RAW},
       coalesce(j.experience_years, 0.0) AS experience_years
     LIMIT 1
     """

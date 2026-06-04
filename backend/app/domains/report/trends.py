@@ -10,6 +10,9 @@ from flask import current_app
 
 from app.infrastructure.llm import strip_json_fence
 from app.infrastructure.neo4j import neo4j_driver, neo4j_settings, serialize_job_row
+from app.infrastructure.salary import cypher_job_salary_display
+
+_SALARY_DISP = cypher_job_salary_display()
 from app.domains.report.llm import _call_openai_compatible
 from app.infrastructure.privacy import redact_payload
 from app.domains.report.utils import truthy
@@ -40,7 +43,7 @@ def _fetch_category_peer_jobs(title: str, *, limit: int = 50) -> List[Dict[str, 
     uri, user, password, database = neo4j_settings()
     if not password:
         return []
-    query = """
+    query = f"""
     MATCH (j:Job)
     WHERE (j.source IS NULL OR trim(toString(j.source)) = '')
       AND (
@@ -50,7 +53,7 @@ def _fetch_category_peer_jobs(title: str, *, limit: int = 50) -> List[Dict[str, 
     RETURN
       coalesce(j.job_key, j.job_code, j.name, j.title, elementId(j)) AS id,
       coalesce(j.title, j.name, '未命名岗位') AS title,
-      coalesce(j.salary, '薪资面议') AS salary,
+      {_SALARY_DISP},
       coalesce(j.company, '未知公司') AS company,
       coalesce(j.location, '未知地点') AS location,
       coalesce(j.cap_risk_flags, []) AS risk_flags,

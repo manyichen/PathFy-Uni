@@ -20,7 +20,12 @@ from app.domains.report.growth import (
     _rebuild_development_timelines,
     _seed_month_zero_adjustments,
 )
-from app.domains.report.llm import _build_llm_summary
+from app.domains.report.llm import _build_llm_summary, augment_plans_narrative_with_doubao
+from app.domains.report.plans_by_target import bind_plan_line_ids, build_plans_by_target
+from app.domains.report.recommendations import (
+    build_graph_recommendations,
+    enrich_growth_plan_with_recommendations,
+)
 from app.domains.report.sanitize import sanitize_review_text_fields
 from app.infrastructure.privacy import storage_safe_text
 from app.domains.report.repository import (
@@ -260,14 +265,20 @@ def generate_career_report(user_id: int, body: Dict[str, Any]) -> Dict[str, Any]
     target_insights = build_target_insights(profile, target_job_ids)
     trend_meta = _augment_trends_with_deepseek(target_insights)
     relations = _query_job_relations(target_job_ids)
+    recommendations = build_graph_recommendations(target_insights)
     short_term, mid_term, metrics = _build_growth_plan(target_insights)
+    enrich_growth_plan_with_recommendations(short_term, mid_term, recommendations)
     lines = _build_development_lines(str(profile.get("display_name") or "候选人"), target_insights)
+    plans_by_target = build_plans_by_target(target_insights, recommendations)
+    bind_plan_line_ids(plans_by_target, lines)
+    per_target_narrative_meta = augment_plans_narrative_with_doubao(plans_by_target)
     llm_summary = (
         _build_llm_summary(
             profile=profile,
             target_insights=target_insights,
             short_term=short_term,
             mid_term=mid_term,
+            recommendations=recommendations,
         )
         if truthy(current_app.config.get("CAREER_ENABLE_COPYWRITER", True))
         else {"provider": "disabled", "text": ""}
@@ -296,6 +307,8 @@ def generate_career_report(user_id: int, body: Dict[str, Any]) -> Dict[str, Any]
         },
         "narrative": llm_summary,
         "trend_meta": trend_meta,
+        "recommendations": recommendations,
+        "plans_by_target": plans_by_target,
     }
     _seed_month_zero_adjustments(report_obj, stamp=stamp_compact)
 
@@ -305,7 +318,10 @@ def generate_career_report(user_id: int, body: Dict[str, Any]) -> Dict[str, Any]
         "providers": {
             "primary": "deepseek",
             "copywriter": "doubao",
-        }
+            "per_target_copywriter": bool(per_target_narrative_meta.get("ok")),
+            "graph_recommendations": bool(recommendations.get("enabled")),
+        },
+        "per_target_narrative_meta": per_target_narrative_meta,
     }
     report_id = insert_report(
         user_id=user_id,
