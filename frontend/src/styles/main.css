@@ -1,5 +1,6 @@
 @import "./theme-variables.css";
 @import "./transition.css";
+@import "./theme-transition.css";
 @import "./panel-animations.css";
 @import "./interactive.css";
 @import "./navbar-mizuki.css";

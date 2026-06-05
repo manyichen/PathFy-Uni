@@ -9,6 +9,9 @@ export const MATCH_CACHE_KEY_PREFIX = "career_pj_match_v1_";
 /** 性格测试进度与结果 localStorage 键前缀，须与 personality-test-cache 一致 */
 export const PERSONALITY_CACHE_KEY_PREFIX = "career_personality_v1_";
 
+/** 生涯报告工作区 localStorage 键前缀，须与 report-workspace-cache 一致 */
+export const REPORT_WORKSPACE_CACHE_KEY_PREFIX = "career_report_workspace_v1_";
+
 function isBrowser(): boolean {
 	return typeof window !== "undefined" && typeof localStorage !== "undefined";
 }
@@ -32,9 +35,11 @@ export function clearAuth(): void {
 		localStorage.removeItem(PROFILE_PORTRAIT_LOCAL_KEY(u.id));
 		localStorage.removeItem(`${MATCH_CACHE_KEY_PREFIX}${u.id}`);
 		localStorage.removeItem(`${PERSONALITY_CACHE_KEY_PREFIX}${u.id}`);
+		localStorage.removeItem(`${REPORT_WORKSPACE_CACHE_KEY_PREFIX}${u.id}`);
 	}
 	localStorage.removeItem(`${MATCH_CACHE_KEY_PREFIX}guest`);
 	localStorage.removeItem(`${PERSONALITY_CACHE_KEY_PREFIX}guest`);
+	localStorage.removeItem(`${REPORT_WORKSPACE_CACHE_KEY_PREFIX}guest`);
 	localStorage.removeItem(TOKEN_KEY);
 	localStorage.removeItem(USER_KEY);
 }

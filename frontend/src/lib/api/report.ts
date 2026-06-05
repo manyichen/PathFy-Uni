@@ -65,8 +65,13 @@ export type CareerReportGenerateRequest = {
 	target_job_ids: string[];
 	primary_job_id?: string;
 	title?: string;
+	/** 与人岗匹配一致：fit=容差6，stretch=容差10 */
+	match_goal?: "fit" | "stretch";
+	/** true：先快速生成画布（规则推荐），再调 enrich */
+	skip_llm_enrich?: boolean;
 };
 
+/** @deprecated 旧版伪趋势，仅兼容历史报告 */
 export type ReportTrend = {
 	demand_index_0_100: number;
 	growth_signal_0_100: number;
@@ -77,11 +82,72 @@ export type ReportTrend = {
 	model?: string;
 };
 
+export type ReportTrackProfile = {
+	job_title: string;
+	hiring_visibility_0_100: number;
+	path_breadth_0_100: number;
+	resource_density_0_100: number;
+	hiring?: {
+		record_count?: number;
+		rank?: number | null;
+		pct_of_total?: number;
+		company_count?: number;
+		percentile?: number;
+		note?: string;
+	};
+	paths?: {
+		promotion_route_count?: number;
+		lateral_similar_count?: number;
+	};
+	resources?: {
+		learning_resource_count?: number;
+		competition_count?: number;
+	};
+	summary_text?: string;
+	evidence?: string;
+	source?: string;
+	data_as_of?: string;
+	graph_available?: boolean;
+};
+
+export type TrackPublicInfo = {
+	job_title: string;
+	summary: string;
+	sources?: Array<{ title?: string; url?: string }>;
+	fetched_at?: string;
+	expires_at?: string;
+	from_cache?: boolean;
+	search_provider?: string;
+	disclaimer?: string;
+};
+
 export type ReportMatchPreview = {
 	match_score: number;
 	weighted_gap: number;
 	dimension_gaps: Record<string, number>;
+	dimension_raw_delta?: Record<string, number>;
+	dimension_surplus?: Record<string, number>;
+	student_scores?: Record<string, number>;
+	job_requirement_scores?: Record<string, number>;
+	soft_margin?: number;
+	match_goal?: "fit" | "stretch";
+	reference_note?: string;
 	shape_correlation?: number;
+};
+
+export type ReportGapBaseline = {
+	resume_id?: number;
+	primary_job_id?: string;
+	captured_at?: string;
+	match_goal?: string;
+	soft_margin?: number;
+	match_score?: number;
+	weighted_gap_job?: number;
+	dimension_gaps_job?: Record<string, number>;
+	by_job_id?: Record<
+		string,
+		{ match_score?: number; weighted_gap?: number; dimension_gaps?: Record<string, number> }
+	>;
 };
 
 export type ReportTargetInsight = {
@@ -93,7 +159,9 @@ export type ReportTargetInsight = {
 	salary: string;
 	scores: Record<string, number>;
 	score_avg?: number;
-	trend: ReportTrend;
+	track_profile?: ReportTrackProfile;
+	/** @deprecated */
+	trend?: ReportTrend;
 	match_preview: ReportMatchPreview;
 };
 
@@ -149,6 +217,8 @@ export type DevelopmentLines = {
 		id: string;
 		line_id: string;
 		stage: "current" | "short_term" | "mid_term" | "target";
+		phase_key?: "early" | "mid" | "late";
+		replan_mode?: string;
 		label: string;
 		focus_label?: string;
 		priority?: number;
@@ -159,8 +229,12 @@ export type DevelopmentLines = {
 		plan_month?: number;
 		/** 触发本条安排的复盘锚点月（0 表示报告起点） */
 		anchor_review_month?: number;
-		kind?: "initial_plan" | "replan";
+		kind?: "initial_plan" | "replan" | "monthly_plan";
+		replan_mode?: string;
 		execution_hints?: string[];
+		plan_items?: GrowthPlanItem[];
+		plan_item?: GrowthPlanItem;
+		failed_rows?: Array<{ code: string; label: string; actual_value?: number; target_raw?: string }>;
 	}>;
 };
 
@@ -175,8 +249,15 @@ export type GrowthPlanRef = {
 	skill_tag?: string;
 };
 
+export type PlanCustomAction = {
+	kind: "learn" | "practice" | "deliverable";
+	text: string;
+	done?: boolean;
+	done_at?: string;
+};
+
 export type GrowthPlanItem = {
-	phase: "short_term" | "mid_term";
+	phase: "short_term" | "mid_term" | "late";
 	order: number;
 	focus_dimension: string;
 	focus_label: string;
@@ -186,6 +267,11 @@ export type GrowthPlanItem = {
 	learning_path_refs?: GrowthPlanRef[];
 	practice_plan_refs?: GrowthPlanRef[];
 	milestone: string;
+	custom_actions?: PlanCustomAction[];
+	/** 下月/本项任务的成长性说明（与评估指标对齐） */
+	growth_rationale?: string;
+	/** 关联未达标的评估指标（中文，面向用户） */
+	metric_target_labels?: string[];
 };
 
 export type GraphLearningResource = {
@@ -244,7 +330,18 @@ export type PlanPhaseBlock = {
 	label: string;
 	period: string;
 	summary?: string;
+	line_one_liner?: string;
 	items: GrowthPlanItem[];
+};
+
+export type NextMonthPlan = {
+	plan_month?: number;
+	phase_key?: "early" | "mid" | "late";
+	phase_label?: string;
+	replan_mode?: string;
+	items?: GrowthPlanItem[];
+	updated_at?: string;
+	review_anchor_month?: number;
 };
 
 export type PlanByTarget = {
@@ -273,17 +370,27 @@ export type PlanByTarget = {
 		provider?: string;
 		model?: string;
 	};
+	customization?: {
+		provider?: string;
+		model?: string;
+		mode?: string;
+		ok?: boolean;
+	};
+	current_plan_month?: number;
+	next_month_plan?: NextMonthPlan;
 };
 
 export type ReportMetric = {
 	code: string;
 	label: string;
+	description?: string;
 	cycle: string;
 	target: string;
 };
 
 export type CareerReportPayload = {
 	generated_at: string;
+	match_goal?: "fit" | "stretch";
 	student: {
 		id?: string;
 		display_name?: string;
@@ -315,6 +422,8 @@ export type CareerReportPayload = {
 		};
 		metrics: ReportMetric[];
 		adjust_rule: string;
+		gap_baseline?: ReportGapBaseline;
+		gap_metric_help?: string;
 		latest_review?: {
 			review_id: number;
 			review_cycle: string;
@@ -365,6 +474,12 @@ export type CareerReportPayload = {
 		text?: string;
 		error?: string;
 	};
+	track_profile_meta?: {
+		ok?: boolean;
+		source?: string;
+		note?: string;
+	};
+	/** @deprecated */
 	trend_meta?: {
 		ok?: boolean;
 		updated?: number;
@@ -373,6 +488,9 @@ export type CareerReportPayload = {
 	};
 	recommendations?: ReportRecommendations;
 	plans_by_target?: PlanByTarget[];
+	generation_timing_ms?: Record<string, number>;
+	llm_enrich_pending?: boolean;
+	enrichment?: { completed_at?: string; timing_ms?: Record<string, number> };
 };
 
 export type CareerReportGenerateResponse = {
@@ -383,6 +501,18 @@ export type CareerReportGenerateResponse = {
 		primary_job_id: string;
 		target_job_ids: string[];
 		report: CareerReportPayload;
+		generation_timing_ms?: Record<string, number>;
+		llm_enrich_pending?: boolean;
+	};
+	message?: string;
+};
+
+export type CareerReportEnrichResponse = {
+	ok: boolean;
+	data?: {
+		report_id: number;
+		report: CareerReportPayload;
+		enrichment_timing_ms?: Record<string, number>;
 	};
 	message?: string;
 };
@@ -505,6 +635,20 @@ export async function generateCareerReport(
 	return res.data;
 }
 
+export async function enrichCareerReport(
+	reportId: number,
+): Promise<NonNullable<CareerReportEnrichResponse["data"]>> {
+	const res = await apiJson<CareerReportEnrichResponse>(`/api/report/${reportId}/enrich`, {
+		method: "POST",
+		headers: withAuthHeaders(),
+		body: JSON.stringify({}),
+	});
+	if (!res.ok || !res.data) {
+		throw new Error(res.message || "报告 AI 增强失败");
+	}
+	return res.data;
+}
+
 export async function fetchMyCareerReports(limit = 20): Promise<CareerReportHistoryItem[]> {
 	const res = await apiJson<{
 		ok: boolean;
@@ -520,6 +664,25 @@ export async function fetchMyCareerReports(limit = 20): Promise<CareerReportHist
 	return res.data.items || [];
 }
 
+export async function fetchTrackPublicInfo(body: {
+	job_title?: string;
+	job_id?: string;
+	force_refresh?: boolean;
+}): Promise<TrackPublicInfo> {
+	const res = await apiJson<{ ok: boolean; data?: TrackPublicInfo; message?: string }>(
+		"/api/report/track-public-info",
+		{
+			method: "POST",
+			headers: withAuthHeaders(),
+			body: JSON.stringify(body),
+		},
+	);
+	if (!res.ok || !res.data) {
+		throw new Error(res.message || "获取公开信息失败");
+	}
+	return res.data;
+}
+
 export async function fetchCareerReportDetail(reportId: number): Promise<CareerReportGenerateResponse["data"]> {
 	const res = await apiJson<CareerReportGenerateResponse>(`/api/report/${reportId}`, {
 		method: "GET",
@@ -527,6 +690,44 @@ export async function fetchCareerReportDetail(reportId: number): Promise<CareerR
 	});
 	if (!res.ok || !res.data) {
 		throw new Error(res.message || "获取报告详情失败");
+	}
+	return res.data;
+}
+
+export async function setReportPlanActionDone(
+	reportId: number,
+	body: {
+		job_id: string;
+		item_index: number;
+		action_index: number;
+		done: boolean;
+	},
+): Promise<{
+	report_id: number;
+	job_id: string;
+	item_index: number;
+	action_index: number;
+	done: boolean;
+	done_at?: string;
+}> {
+	const res = await apiJson<{
+		ok: boolean;
+		data?: {
+			report_id: number;
+			job_id: string;
+			item_index: number;
+			action_index: number;
+			done: boolean;
+			done_at?: string;
+		};
+		message?: string;
+	}>(`/api/report/${reportId}/plan-actions/done`, {
+		method: "POST",
+		headers: withAuthHeaders(),
+		body: JSON.stringify(body),
+	});
+	if (!res.ok || !res.data) {
+		throw new Error(res.message || "保存任务状态失败");
 	}
 	return res.data;
 }

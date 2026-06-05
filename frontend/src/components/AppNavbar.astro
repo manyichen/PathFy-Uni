@@ -19,6 +19,20 @@ const showHue = !siteConfig.themeColor.fixed;
 const navbarTransparentMode =
 	siteConfig.banner?.navbar?.transparentMode ?? "semi";
 const isHomePage = Astro.url.pathname === "/" || Astro.url.pathname === "";
+
+/** 当前路由是否命中导航项（支持 /jobs/view 等子路径） */
+function isNavItemActive(itemHref: string, pathname: string): boolean {
+	const norm = (p: string) => {
+		if (!p || p === "/") return "/";
+		const s = p.endsWith("/") ? p.slice(0, -1) : p;
+		return s || "/";
+	};
+	const href = norm(itemHref);
+	const path = norm(pathname);
+	if (href === "/") return path === "/";
+	return path === href || path.startsWith(`${href}/`);
+}
+
 const titleText = siteConfig.navbarTitle?.text ?? siteConfig.title;
 const titleIcon =
 	siteConfig.navbarTitle?.icon ?? "/assets/home/fu.svg";
@@ -61,15 +75,25 @@ const titleIcon =
 
 			<div class="hidden items-center space-x-1 md:flex">
 				{
-					nav.map((item) => (
-						<a
-							href={url(item.href)}
-							data-protected={item.protected ? "true" : "false"}
-							class="btn-plain rounded-lg px-3 py-2 text-sm font-medium text-black/75 dark:text-white/75"
-						>
-							{item.name}
-						</a>
-					))
+					nav.map((item) => {
+						const active = isNavItemActive(item.href, Astro.url.pathname);
+						return (
+							<a
+								href={url(item.href)}
+								data-protected={item.protected ? "true" : "false"}
+								data-nav-href={item.href}
+								aria-current={active ? "page" : undefined}
+								class:list={[
+									"btn-plain nav-link rounded-lg px-3 py-2 text-sm font-medium no-underline",
+									active
+										? "nav-link--active"
+										: "text-black/75 dark:text-white/75",
+								]}
+							>
+								{item.name}
+							</a>
+						);
+					})
 				}
 			</div>
 
@@ -125,15 +149,25 @@ const titleIcon =
 		>
 			<nav class="flex flex-col gap-1" aria-label="移动端导航">
 				{
-					nav.map((item) => (
-						<a
-							href={url(item.href)}
-							data-protected={item.protected ? "true" : "false"}
-							class="btn-plain rounded-lg px-3 py-2.5 text-left text-sm font-medium"
-						>
-							{item.name}
-						</a>
-					))
+					nav.map((item) => {
+						const active = isNavItemActive(item.href, Astro.url.pathname);
+						return (
+							<a
+								href={url(item.href)}
+								data-protected={item.protected ? "true" : "false"}
+								data-nav-href={item.href}
+								aria-current={active ? "page" : undefined}
+								class:list={[
+									"btn-plain nav-link rounded-lg px-3 py-2.5 text-left text-sm font-medium no-underline",
+									active
+										? "nav-link--active"
+										: "text-black/75 dark:text-white/75",
+								]}
+							>
+								{item.name}
+							</a>
+						);
+					})
 				}
 				<a
 					id="mobile-user-center-entry"
@@ -255,12 +289,40 @@ const titleIcon =
 		return true;
 	}
 
+	function isNavItemActive(itemHref: string, pathname: string) {
+		const norm = (p: string) => {
+			if (!p || p === "/") return "/";
+			const s = p.endsWith("/") ? p.slice(0, -1) : p;
+			return s || "/";
+		};
+		const href = norm(itemHref);
+		const path = norm(pathname);
+		if (href === "/") return path === "/";
+		return path === href || path.startsWith(`${href}/`);
+	}
+
+	function syncNavbarActiveLinks() {
+		const path = window.location.pathname;
+		for (const link of document.querySelectorAll<HTMLAnchorElement>(
+			"a.nav-link[data-nav-href]",
+		)) {
+			const href = link.getAttribute("data-nav-href") ?? "";
+			const active = isNavItemActive(href, path);
+			link.classList.toggle("nav-link--active", active);
+			link.classList.toggle("text-black/75", !active);
+			link.classList.toggle("dark:text-white/75", !active);
+			if (active) link.setAttribute("aria-current", "page");
+			else link.removeAttribute("aria-current");
+		}
+	}
+
 	function syncNavbarRouteContext() {
 		const navInner = document.getElementById("navbar");
 		if (!navInner) return;
 		const p = window.location.pathname;
 		const isHome = p === "/" || p === "";
 		navInner.setAttribute("data-is-home", isHome ? "true" : "false");
+		syncNavbarActiveLinks();
 	}
 
 	function onPageEnter() {
@@ -371,6 +433,17 @@ const titleIcon =
 </script>
 
 <style>
+	/* 当前页：圆角浅底（与岗位探索页一致），避免 ClientRouter 换页后仅留下划线/主色字 */
+	.nav-link.nav-link--active {
+		background-color: var(--btn-plain-bg-hover);
+		color: var(--primary);
+		text-decoration: none;
+	}
+	.nav-link.nav-link--active:hover {
+		background-color: var(--btn-plain-bg-hover);
+		color: var(--primary);
+	}
+
 	#mobile-nav-panel.float-panel-closed {
 		display: none;
 	}

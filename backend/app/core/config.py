@@ -95,13 +95,22 @@ class Config:
         "on",
     )
     CAREER_ENABLE_TREND_AUGMENT = str(
-        os.getenv("CAREER_ENABLE_TREND_AUGMENT", "true")
+        os.getenv("CAREER_ENABLE_TREND_AUGMENT", "false")
     ).strip().lower() in ("1", "true", "yes", "on")
+    CAREER_ENABLE_PUBLIC_INFO = str(
+        os.getenv("CAREER_ENABLE_PUBLIC_INFO", "true")
+    ).strip().lower() in ("1", "true", "yes", "on")
+    CAREER_PUBLIC_INFO_CACHE_DAYS = int(os.getenv("CAREER_PUBLIC_INFO_CACHE_DAYS", "14"))
+    CAREER_PUBLIC_INFO_MAX_SUMMARY_CHARS = int(os.getenv("CAREER_PUBLIC_INFO_MAX_SUMMARY_CHARS", "300"))
+    CAREER_PUBLIC_SEARCH_MAX_CHARS = int(os.getenv("CAREER_PUBLIC_SEARCH_MAX_CHARS", "1200"))
     CAREER_ENABLE_GRAPH_RECOMMENDATIONS = str(
         os.getenv("CAREER_ENABLE_GRAPH_RECOMMENDATIONS", "true")
     ).strip().lower() in ("1", "true", "yes", "on")
     CAREER_ENABLE_RECOMMENDATION_LLM = str(
         os.getenv("CAREER_ENABLE_RECOMMENDATION_LLM", "true")
+    ).strip().lower() in ("1", "true", "yes", "on")
+    CAREER_ENABLE_PLAN_CUSTOMIZATION = str(
+        os.getenv("CAREER_ENABLE_PLAN_CUSTOMIZATION", "true")
     ).strip().lower() in ("1", "true", "yes", "on")
     CAREER_LR_POOL_PER_TARGET = int(os.getenv("CAREER_LR_POOL_PER_TARGET", "18"))
     CAREER_COMP_POOL_PER_TARGET = int(os.getenv("CAREER_COMP_POOL_PER_TARGET", "10"))

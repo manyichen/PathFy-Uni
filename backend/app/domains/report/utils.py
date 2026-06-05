@@ -43,11 +43,3 @@ def parse_metric_target(target_text: str) -> float:
     if not m:
         return 0.0
     return to_float(m.group(0), 0.0)
-
-
-# 兼容旧名
-_truthy = truthy
-_clamp_int = clamp_int
-_json_dumps = json_dumps
-_to_float = to_float
-_parse_metric_target = parse_metric_target

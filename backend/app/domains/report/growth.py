@@ -25,7 +25,9 @@ def _build_growth_plan(
 ) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]], List[Dict[str, Any]]]:
     top_gap_counter: Dict[str, int] = defaultdict(int)
     for insight in target_insights:
-        for dim in _top_gap_dimensions((insight.get("match_preview") or {}).get("dimension_gaps") or {}):
+        for dim in _top_gap_dimensions(
+            (insight.get("match_preview") or {}).get("dimension_gaps") or {},
+        ):
             top_gap_counter[dim] += 1
     if not top_gap_counter:
         top_gap_dims = ["cap_req_growth", "cap_req_practice", "cap_req_teamwork"]
@@ -61,12 +63,78 @@ def _build_growth_plan(
         )
 
     metrics = [
-        {"code": "dim_gap_reduction", "label": "关键能力缺口收敛率", "cycle": "月度", "target": ">=10%"},
-        {"code": "project_completion", "label": "项目/实践任务完成率", "cycle": "月度", "target": ">=80%"},
-        {"code": "match_score_change", "label": "目标岗位匹配度变化", "cycle": "月度", "target": "月增>=3分"},
-        {"code": "delivery_output", "label": "可展示成果数量", "cycle": "月度", "target": "每月>=1项"},
+        {
+            "code": "dim_gap_reduction",
+            "label": "能力短板补上了多少",
+            "description": "主目标岗位上的能力短板，比生成报告时缩小了多少",
+            "cycle": "月度",
+            "target": ">=10%",
+        },
+        {
+            "code": "project_completion",
+            "label": "本期计划做完了多少",
+            "description": "本期成长计划里的任务，你完成了多少",
+            "cycle": "月度",
+            "target": ">=80%",
+        },
+        {
+            "code": "match_score_change",
+            "label": "和目标岗位的贴合度变化",
+            "description": "你与目标岗位的匹配程度，比生成报告时提高了多少",
+            "cycle": "月度",
+            "target": "月增>=3分",
+        },
+        {
+            "code": "delivery_output",
+            "label": "可拿出来展示的成果有多少",
+            "description": "本期新增的可验证成果（项目、证书、作品等）",
+            "cycle": "月度",
+            "target": "每月>=1项",
+        },
     ]
     return short_term, mid_term, metrics
+
+
+def _review_achievement_score(
+    submitted: Dict[str, Any],
+    pass_rate: float,
+) -> float:
+    """本周期达成度 0–100（无人工底数，全 0 即为 0）。"""
+    dg = float((submitted or {}).get("dim_gap_reduction") or 0)
+    pc = float((submitted or {}).get("project_completion") or 0)
+    msc = float((submitted or {}).get("match_score_change") or 0)
+    dl = float((submitted or {}).get("delivery_output") or 0)
+    if msc <= 0:
+        msc_norm = 0.0
+    else:
+        msc_norm = max(0.0, min(100.0, msc / 10.0 * 100.0))
+    dl_norm = max(0.0, min(100.0, min(dl, 5.0) * 20.0))
+    metric_score = (
+        0.30 * max(0.0, min(100.0, dg))
+        + 0.35 * max(0.0, min(100.0, pc))
+        + 0.20 * msc_norm
+        + 0.15 * dl_norm
+    )
+    pr = max(0.0, min(1.0, float(pass_rate or 0.0)))
+    return max(0.0, min(100.0, 0.50 * metric_score + 0.50 * (pr * 100.0)))
+
+
+def timeline_progress_after_review(
+    *,
+    submitted: Dict[str, Any],
+    pass_rate: float,
+    prev_progress: float,
+    month_span: float,
+) -> float:
+    """根据上一节点与月份跨度，计算本次复盘后的累计进步度（严格按月封顶）。"""
+    span = max(0.0, float(month_span))
+    if span <= 0:
+        return round(max(0.0, min(100.0, float(prev_progress))), 2)
+    achievement = _review_achievement_score(submitted, pass_rate)
+    max_gain = TIMELINE_MAX_PROGRESS_GAIN_PER_MONTH * span
+    month_gain = (achievement / 100.0) * max_gain
+    month_gain = min(month_gain, max_gain)
+    return round(min(100.0, max(0.0, float(prev_progress) + month_gain)), 2)
 
 
 def _review_point_progress(
@@ -75,21 +143,15 @@ def _review_point_progress(
     line_idx: int,
     target: Dict[str, Any],
 ) -> float:
-    """单次复盘在曲线上的进步度（0–100），各岗位线略错开。"""
-    ms_t = float(((target or {}).get("match_preview") or {}).get("match_score") or 0)
-    dg = float((submitted or {}).get("dim_gap_reduction") or 0)
-    pc = float((submitted or {}).get("project_completion") or 0)
-    msc = float((submitted or {}).get("match_score_change") or 0)
-    dl = float((submitted or {}).get("delivery_output") or 0)
-    msc_c = max(-6.0, min(10.0, msc))
-    evidence = min(
-        100.0,
-        max(10.0, 0.26 * dg + 0.36 * pc + 3.2 * msc_c + 8.5 * min(dl, 5.0)),
+    """兼容旧调用：等价于从 0 起点、跨度 1 个月的累计进步度（不再叠加匹配分/线条偏移）。"""
+    _ = line_idx
+    _ = target
+    return timeline_progress_after_review(
+        submitted=submitted,
+        pass_rate=pass_rate,
+        prev_progress=0.0,
+        month_span=1.0,
     )
-    pr = max(0.0, min(1.0, float(pass_rate or 0.0)))
-    blended = pr * 100.0 * 0.5 + evidence * 0.5
-    blended += (line_idx * 1.25) + (ms_t - 55.0) * 0.08
-    return max(7.0, min(100.0, blended))
 
 
 def _execution_hints_for_replan_action(action: str) -> List[str]:
@@ -144,6 +206,13 @@ def _execution_hints_for_initial_item(item: Dict[str, Any]) -> List[str]:
 
 def _seed_month_zero_adjustments(report_obj: Dict[str, Any], *, stamp: str) -> None:
     """报告刚生成时，为每条发展线写入第 0 月可见的「起步执行」菱形节点。"""
+    plans = report_obj.get("plans_by_target") or []
+    if isinstance(plans, list) and plans:
+        from app.domains.report.replan_by_target import seed_month_zero_from_plans
+
+        seed_month_zero_from_plans(report_obj, stamp=stamp)
+        return
+
     dev_lines = report_obj.get("development_lines")
     if not isinstance(dev_lines, dict):
         return
@@ -243,7 +312,7 @@ def _build_development_lines(
             "x_label": "时间（月）",
             "y_min": 0.0,
             "y_max": 100.0,
-            "y_label": "进步度",
+            "y_label": "复盘进步度",
         },
         "lines": lines,
         "adjustments": [],
@@ -285,11 +354,13 @@ def _rebuild_development_timelines(report_obj: Dict[str, Any], reviews_asc: List
             rid = int(rev.get("review_id") or 0)
             # 横轴按自然月：第 1 次复盘在第 1 月，第 2 次在第 2 月…（上限 12）
             month = float(min(12, i + 1))
-            raw_prog = _review_point_progress(submitted, pr, idx, target)
             month_span = max(0.0, month - prev_month)
-            ceiling = prev_progress + TIMELINE_MAX_PROGRESS_GAIN_PER_MONTH * month_span
-            prog = min(raw_prog, ceiling)
-            prog = max(0.0, min(100.0, prog))
+            prog = timeline_progress_after_review(
+                submitted=submitted,
+                pass_rate=pr,
+                prev_progress=prev_progress,
+                month_span=month_span if month_span > 0 else 1.0,
+            )
             llm_ex = met.get("llm_extract") or {}
             if not isinstance(llm_ex, dict):
                 llm_ex = {}
@@ -322,7 +393,7 @@ def _rebuild_development_timelines(report_obj: Dict[str, Any], reviews_asc: List
             "x_label": "时间（月）",
             "y_min": 0.0,
             "y_max": 100.0,
-            "y_label": "进步度",
+            "y_label": "复盘进步度",
         }
     dev["display_mode"] = "single"
 

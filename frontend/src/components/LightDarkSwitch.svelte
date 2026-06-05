@@ -2,10 +2,9 @@
 import { onMount } from "svelte";
 import { DARK_MODE, LIGHT_MODE } from "@constants/constants";
 import Icon from "@iconify/svelte";
-import { getStoredTheme, setTheme } from "@utils/setting-utils";
+import { getStoredTheme, setTheme, type ThemeSwitchOrigin } from "@utils/setting-utils";
 import type { LIGHT_DARK_MODE } from "@/types/config";
 
-const seq: LIGHT_DARK_MODE[] = [LIGHT_MODE, DARK_MODE];
 let mode: LIGHT_DARK_MODE = $state(getStoredTheme());
 let isChanging = false;
 
@@ -13,23 +12,26 @@ function syncModeFromStorage() {
 	mode = getStoredTheme();
 }
 
-function switchScheme(newMode: LIGHT_DARK_MODE) {
-	if (isChanging) return;
-	isChanging = true;
-	mode = newMode;
-	setTheme(newMode);
-	setTimeout(() => {
-		isChanging = false;
-	}, 50);
+function originFromButton(el: HTMLElement): ThemeSwitchOrigin {
+	const r = el.getBoundingClientRect();
+	return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
 }
 
-function toggleScheme() {
-	if (isChanging) return;
-	let i = 0;
-	for (; i < seq.length; i++) {
-		if (seq[i] === mode) break;
+async function switchScheme(newMode: LIGHT_DARK_MODE, origin?: ThemeSwitchOrigin) {
+	if (isChanging || newMode === mode) return;
+	isChanging = true;
+	mode = newMode;
+	try {
+		await setTheme(newMode, origin);
+	} finally {
+		isChanging = false;
 	}
-	switchScheme(seq[(i + 1) % seq.length]);
+}
+
+function onToggle(e: MouseEvent) {
+	const el = e.currentTarget as HTMLElement | null;
+	const next = mode === LIGHT_MODE ? DARK_MODE : LIGHT_MODE;
+	switchScheme(next, el ? originFromButton(el) : undefined);
 }
 
 onMount(() => {
@@ -41,37 +43,36 @@ onMount(() => {
 });
 </script>
 
-<div class="relative z-50">
-	<button
-		aria-label="浅色 / 深色"
-		class="relative btn-plain scale-animation rounded-lg h-11 w-11 active:scale-90 theme-switch-btn"
-		id="scheme-switch"
-		onclick={toggleScheme}
-		data-mode={mode}
+<button
+	type="button"
+	aria-label={mode === DARK_MODE ? "切换到浅色模式" : "切换到深色模式"}
+	class="btn-plain scale-animation relative z-[60] h-11 w-11 rounded-lg active:scale-90"
+	id="scheme-switch"
+	data-mode={mode}
+	onclick={onToggle}
+>
+	<div
+		class="icon-layer absolute inset-0 flex items-center justify-center transition-all duration-300 ease-in-out"
+		class:opacity-0={mode !== LIGHT_MODE}
+		class:scale-75={mode !== LIGHT_MODE}
+		class:rotate-90={mode !== LIGHT_MODE}
+		aria-hidden={mode !== LIGHT_MODE}
 	>
-		<div
-			class="absolute transition-all duration-300 ease-in-out"
-			class:opacity-0={mode !== LIGHT_MODE}
-			class:rotate-180={mode !== LIGHT_MODE}
-		>
-			<Icon icon="material-symbols:wb-sunny-outline-rounded" class="text-[1.25rem]"
-			></Icon>
-		</div>
-		<div
-			class="absolute transition-all duration-300 ease-in-out"
-			class:opacity-0={mode !== DARK_MODE}
-			class:rotate-180={mode !== DARK_MODE}
-		>
-			<Icon icon="material-symbols:dark-mode-outline-rounded" class="text-[1.25rem]"
-			></Icon>
-		</div>
-	</button>
-</div>
+		<Icon icon="material-symbols:wb-sunny-outline-rounded" class="text-[1.25rem]" />
+	</div>
+	<div
+		class="icon-layer absolute inset-0 flex items-center justify-center transition-all duration-300 ease-in-out"
+		class:opacity-0={mode !== DARK_MODE}
+		class:scale-75={mode !== DARK_MODE}
+		class:-rotate-90={mode !== DARK_MODE}
+		aria-hidden={mode !== DARK_MODE}
+	>
+		<Icon icon="material-symbols:dark-mode-outline-rounded" class="text-[1.25rem]" />
+	</div>
+</button>
 
 <style>
-	.theme-switch-btn::before {
-		transition:
-			transform 75ms ease-out,
-			background-color 0ms !important;
+	.icon-layer {
+		pointer-events: none;
 	}
 </style>

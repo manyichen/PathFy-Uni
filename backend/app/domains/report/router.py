@@ -9,14 +9,17 @@ from app.core.security import get_bearer_user_id
 from app.domains.report.services import (
     ReportServiceError,
     export_career_report_pdf,
+    enrich_career_report,
     generate_career_report,
     get_career_report_detail,
     import_targets_from_match,
     list_career_report_reviews,
     list_career_reports,
+    get_track_public_info,
     manual_search_targets,
     random_browse_targets,
     submit_career_review_cycle,
+    set_plan_action_done,
 )
 from app.domains.report.utils import clamp_int
 
@@ -65,6 +68,19 @@ def random_browse_targets_route():
     return jsonify({"ok": True, "data": data})
 
 
+@career_report_bp.post("/track-public-info")
+def track_public_info_route():
+    uid, err = _require_user()
+    if err:
+        return err
+    body = request.get_json(silent=True) or {}
+    try:
+        data = get_track_public_info(body)
+    except ReportServiceError as exc:
+        return jsonify({"ok": False, "message": exc.message}), exc.status
+    return jsonify({"ok": True, "data": data})
+
+
 @career_report_bp.post("/generate")
 def generate_report():
     uid, err = _require_user()
@@ -73,6 +89,18 @@ def generate_report():
     body = request.get_json(silent=True) or {}
     try:
         data = generate_career_report(uid, body)
+    except ReportServiceError as exc:
+        return jsonify({"ok": False, "message": exc.message}), exc.status
+    return jsonify({"ok": True, "data": data})
+
+
+@career_report_bp.post("/<int:report_id>/enrich")
+def enrich_report_route(report_id: int):
+    uid, err = _require_user()
+    if err:
+        return err
+    try:
+        data = enrich_career_report(uid, report_id)
     except ReportServiceError as exc:
         return jsonify({"ok": False, "message": exc.message}), exc.status
     return jsonify({"ok": True, "data": data})
@@ -142,6 +170,19 @@ def submit_review_cycle():
     body = request.get_json(silent=True) or {}
     try:
         data = submit_career_review_cycle(uid, body)
+    except ReportServiceError as exc:
+        return jsonify({"ok": False, "message": exc.message}), exc.status
+    return jsonify({"ok": True, "data": data})
+
+
+@career_report_bp.post("/<int:report_id>/plan-actions/done")
+def set_plan_action_done_route(report_id: int):
+    uid, err = _require_user()
+    if err:
+        return err
+    body = request.get_json(silent=True) or {}
+    try:
+        data = set_plan_action_done(uid, report_id, body)
     except ReportServiceError as exc:
         return jsonify({"ok": False, "message": exc.message}), exc.status
     return jsonify({"ok": True, "data": data})

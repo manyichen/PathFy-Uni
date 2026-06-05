@@ -285,7 +285,3 @@ def render_pdf_with_playwright(html: str) -> bytes:
             ) from exc
         raise
     return pdf_bytes
-
-
-_build_report_export_html = build_report_export_html
-_render_pdf_with_playwright = render_pdf_with_playwright

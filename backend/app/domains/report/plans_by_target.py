@@ -5,6 +5,7 @@ from typing import Any, Dict, List, Tuple
 
 from app.domains.report.constants import DIM_LABELS, MID_TERM_ACTIONS, SHORT_TERM_ACTIONS
 from app.domains.report.growth import _top_gap_dimensions
+from app.domains.report.plan_item_enrichment import build_skeleton_custom_actions
 from app.domains.report.recommendations import _DIM_HINTS, _text_blob
 
 
@@ -67,71 +68,122 @@ def _late_phase_items(insight: Dict[str, Any]) -> List[Dict[str, Any]]:
     ]
 
 
-def _attach_refs_to_items(
-    items: List[Dict[str, Any]],
+def _lr_matches_dimension(lr: Dict[str, Any], dim: str) -> bool:
+    hints = _DIM_HINTS.get(dim, [])
+    if not hints:
+        return False
+    blob = _text_blob(lr.get("skill_tag"), lr.get("resource_name"), lr.get("resource_desc"))
+    return any(h.lower() in blob for h in hints)
+
+
+def _cp_matches_dimension(cp: Dict[str, Any], dim: str) -> bool:
+    hints = _DIM_HINTS.get(dim, [])
+    if dim in (cp.get("cap_tags") or []):
+        return True
+    if not hints:
+        return False
+    blob = _text_blob(cp.get("competition_name"), cp.get("competition_desc"))
+    return any(h.lower() in blob for h in hints)
+
+
+def _serialize_lr_ref(lr: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        "kind": "learning_resource",
+        "id": lr.get("resource_id"),
+        "label": lr.get("resource_name"),
+        "url": lr.get("resource_url"),
+        "resource_type": lr.get("resource_type"),
+        "difficulty": lr.get("difficulty"),
+        "skill_tag": lr.get("skill_tag"),
+        "rationale": lr.get("rationale"),
+    }
+
+
+def _serialize_cp_ref(cp: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        "kind": "competition",
+        "id": cp.get("competition_id"),
+        "label": cp.get("competition_name"),
+        "url": cp.get("official_url"),
+        "rationale": cp.get("rationale"),
+    }
+
+
+def _attach_refs_deduped_per_job(
+    early_items: List[Dict[str, Any]],
+    mid_items: List[Dict[str, Any]],
     *,
     rec_block: Dict[str, Any],
-    phase_filter: str,
 ) -> None:
-    lr_all = rec_block.get("learning_resources") or []
-    cp_all = rec_block.get("competitions") or []
+    """同 job_id 内每个 learning_resource / competition 只绑定到一个 focus 维。"""
+    lr_all = sorted(
+        [x for x in (rec_block.get("learning_resources") or []) if isinstance(x, dict)],
+        key=lambda x: -float(x.get("score") or 0),
+    )
+    cp_all = sorted(
+        [x for x in (rec_block.get("competitions") or []) if isinstance(x, dict)],
+        key=lambda x: -float(x.get("score") or 0),
+    )
+    used_lr: set[str] = set()
+    used_cp: set[str] = set()
 
-    for item in items:
+    for item in early_items:
         if not isinstance(item, dict):
             continue
         dim = str(item.get("focus_dimension") or "")
-        hints = _DIM_HINTS.get(dim, [])
-        lr_hits = []
+        best_lr = None
+        best_score = -1.0
         for lr in lr_all:
-            if phase_filter == "early" and str(lr.get("phase") or "") == "mid_term":
+            rid = str(lr.get("resource_id") or "").strip()
+            if not rid or rid in used_lr:
                 continue
-            blob = _text_blob(lr.get("skill_tag"), lr.get("resource_name"))
-            if any(h.lower() in blob for h in hints) or not hints:
-                lr_hits.append(lr)
-        lr_hits.sort(key=lambda x: -float(x.get("score") or 0))
-        cp_hits = []
-        for cp in cp_all:
-            if phase_filter == "early":
+            if str(lr.get("phase") or "") == "mid_term":
                 continue
-            if dim in (cp.get("cap_tags") or []):
-                cp_hits.append(cp)
-            else:
-                blob = _text_blob(cp.get("competition_name"), cp.get("competition_desc"))
-                if any(h.lower() in blob for h in hints):
-                    cp_hits.append(cp)
-        cp_hits.sort(key=lambda x: -float(x.get("score") or 0))
+            if not _lr_matches_dimension(lr, dim):
+                continue
+            sc = float(lr.get("score") or 0)
+            if sc > best_score:
+                best_score = sc
+                best_lr = lr
+        item["learning_path_refs"] = [_serialize_lr_ref(best_lr)] if best_lr else []
+        if best_lr:
+            used_lr.add(str(best_lr.get("resource_id") or ""))
 
-        item["learning_path_refs"] = [
-            {
-                "kind": "learning_resource",
-                "id": lr.get("resource_id"),
-                "label": lr.get("resource_name"),
-                "url": lr.get("resource_url"),
-                "resource_type": lr.get("resource_type"),
-                "difficulty": lr.get("difficulty"),
-                "skill_tag": lr.get("skill_tag"),
-                "rationale": lr.get("rationale"),
-            }
-            for lr in lr_hits[:3]
-        ]
-        item["practice_plan_refs"] = [
-            {
-                "kind": "competition",
-                "id": cp.get("competition_id"),
-                "label": cp.get("competition_name"),
-                "url": cp.get("official_url"),
-                "rationale": cp.get("rationale"),
-            }
-            for cp in cp_hits[:2]
-        ]
-        if lr_hits and isinstance(item.get("learning_path"), list):
-            names = [str(x.get("resource_name") or "") for x in lr_hits[:2] if x.get("resource_name")]
-            if names:
-                item["learning_path"] = [f"优先学习：{'、'.join(names)}"] + (item.get("learning_path") or [])[:1]
-        if cp_hits and isinstance(item.get("practice_plan"), list) and phase_filter != "early":
-            cname = str(cp_hits[0].get("competition_name") or "")
-            if cname:
-                item["practice_plan"] = [f"建议参赛：{cname}"] + (item.get("practice_plan") or [])[:1]
+    for item in mid_items:
+        if not isinstance(item, dict):
+            continue
+        dim = str(item.get("focus_dimension") or "")
+        best_lr = None
+        best_score = -1.0
+        for lr in lr_all:
+            rid = str(lr.get("resource_id") or "").strip()
+            if not rid or rid in used_lr:
+                continue
+            if not _lr_matches_dimension(lr, dim):
+                continue
+            sc = float(lr.get("score") or 0)
+            if sc > best_score:
+                best_score = sc
+                best_lr = lr
+        item["learning_path_refs"] = [_serialize_lr_ref(best_lr)] if best_lr else []
+        if best_lr:
+            used_lr.add(str(best_lr.get("resource_id") or ""))
+
+        best_cp = None
+        best_cp_score = -1.0
+        for cp in cp_all:
+            cid = str(cp.get("competition_id") or "").strip()
+            if not cid or cid in used_cp:
+                continue
+            if not _cp_matches_dimension(cp, dim):
+                continue
+            sc = float(cp.get("score") or 0)
+            if sc > best_cp_score:
+                best_cp_score = sc
+                best_cp = cp
+        item["practice_plan_refs"] = [_serialize_cp_ref(best_cp)] if best_cp else []
+        if best_cp:
+            used_cp.add(str(best_cp.get("competition_id") or ""))
 
 
 def _narrative_snippet_for_target(
@@ -162,7 +214,7 @@ def _narrative_snippet_for_target(
     if cp_names:
         res_hint = (res_hint + f"；中期关注{'、'.join(cp_names)}").strip("；")
     path = (
-        f"面向{title}（当前匹配约 {ms:.0f} 分），建议先补齐{focus}，"
+        f"面向「{title}」，建议先补齐{focus}，"
         f"按前期—中期—后期分步推进。"
     )
     if res_hint:
@@ -202,8 +254,20 @@ def build_plans_by_target(
         early_items = _build_phase_items_for_target(insight, phase="early")
         mid_items = _build_phase_items_for_target(insight, phase="mid")
         late_items = _late_phase_items(insight)
-        _attach_refs_to_items(early_items, rec_block=rec_block, phase_filter="early")
-        _attach_refs_to_items(mid_items, rec_block=rec_block, phase_filter="mid")
+        _attach_refs_deduped_per_job(early_items, mid_items, rec_block=rec_block)
+
+        company = str(insight.get("company") or "")
+        job_title = str(rec_block.get("job_title_name") or insight.get("title") or "")
+        for ph_key, ph_items in (("early", early_items), ("mid", mid_items), ("late", late_items)):
+            for it in ph_items:
+                if isinstance(it, dict) and not it.get("custom_actions"):
+                    it["custom_actions"] = build_skeleton_custom_actions(
+                        it,
+                        company=company,
+                        job_title=job_title,
+                        plan_month=1 if ph_key == "early" else (5 if ph_key == "mid" else 10),
+                        phase_key=ph_key,
+                    )
 
         plans.append(
             {

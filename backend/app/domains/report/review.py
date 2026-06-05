@@ -12,13 +12,17 @@ from openai import OpenAI
 
 from app.infrastructure.llm import strip_json_fence
 from app.infrastructure.privacy import redact_payload, redact_text
-from app.domains.report.constants import DIM_LABELS, SHORT_TERM_ACTIONS
+from app.domains.report.constants import DIM_LABELS, SHORT_TERM_ACTIONS, sanitize_plan_item_user_text, sanitize_user_facing_text
 from app.domains.report.growth import (
     _execution_hints_for_replan_action,
     _review_point_progress,
 )
 from app.domains.report.llm import _call_openai_compatible
 from app.domains.report.recommendations import pick_replan_resource_hints
+from app.domains.report.replan_by_target import (
+    apply_replan_after_review,
+    phase_key_for_plan_month,
+)
 from app.domains.report.utils import parse_metric_target, to_float
 
 
@@ -241,7 +245,12 @@ def _llm_extract_metrics_from_text(
         }
 
 
-def _build_auto_adjustment(report_obj: Dict[str, Any], failed_codes: List[str]) -> Dict[str, Any]:
+def _build_auto_adjustment(
+    report_obj: Dict[str, Any],
+    failed_codes: List[str],
+    *,
+    replan_mode: str = "light",
+) -> Dict[str, Any]:
     targets = report_obj.get("targets") or []
     gap_counter: Dict[str, float] = defaultdict(float)
     for t in targets:
@@ -258,50 +267,69 @@ def _build_auto_adjustment(report_obj: Dict[str, Any], failed_codes: List[str]) 
     if not actions:
         actions = ["增加每周一次针对薄弱能力的专项练习并记录结果"]
 
-    # LLM 优先：根据失败指标生成更贴合当前报告的重规划动作；失败时回退规则动作
-    llm_payload = _llm_auto_replan_payload(report_obj, failed_codes, top_dims, actions[:3])
-    if llm_payload.get("ok"):
-        llm_data = llm_payload.get("data") or {}
-        llm_dims = [str(x).strip() for x in (llm_data.get("focus_dimensions") or []) if str(x).strip()]
-        llm_labels = [str(x).strip() for x in (llm_data.get("focus_labels") or []) if str(x).strip()]
-        llm_actions = [str(x).strip() for x in (llm_data.get("extra_actions") or []) if str(x).strip()]
-        if llm_dims:
-            top_dims = llm_dims[:2]
-        if llm_labels:
-            labels = llm_labels[:2]
-        else:
-            labels = [DIM_LABELS.get(x, x) for x in top_dims]
-        if llm_actions:
-            actions = llm_actions[:3]
+    labels = [DIM_LABELS.get(x, x) for x in top_dims]
+    llm_by_job: List[Dict[str, Any]] = []
+    llm_meta: Dict[str, Any] = {
+        "enabled": bool(current_app.config.get("CAREER_ENABLE_REPLAN_LLM", True)),
+        "used": False,
+        "error": None,
+    }
+
+    if replan_mode in ("strong", "light"):
+        llm_payload = _llm_auto_replan_payload(
+            report_obj,
+            failed_codes,
+            top_dims,
+            actions[:3],
+            replan_mode=replan_mode,
+        )
+        if llm_payload.get("ok"):
+            llm_data = llm_payload.get("data") or {}
+            llm_dims = [str(x).strip() for x in (llm_data.get("focus_dimensions") or []) if str(x).strip()]
+            llm_labels = [str(x).strip() for x in (llm_data.get("focus_labels") or []) if str(x).strip()]
+            llm_actions = [str(x).strip() for x in (llm_data.get("extra_actions") or []) if str(x).strip()]
+            if llm_dims:
+                top_dims = llm_dims[:2]
+            if llm_labels:
+                labels = llm_labels[:2]
+            else:
+                labels = [DIM_LABELS.get(x, x) for x in top_dims]
+            if llm_actions:
+                actions = llm_actions[:3]
+            else:
+                actions = actions[:3]
+            llm_by_job = llm_data.get("by_job") if isinstance(llm_data.get("by_job"), list) else []
+            llm_meta = {
+                "enabled": True,
+                "used": True,
+                "provider": llm_payload.get("provider"),
+                "model": llm_payload.get("model"),
+                "raw": llm_payload.get("raw"),
+            }
         else:
             actions = actions[:3]
-        llm_meta = {
-            "enabled": True,
-            "used": True,
-            "provider": llm_payload.get("provider"),
-            "model": llm_payload.get("model"),
-            "raw": llm_payload.get("raw"),
-        }
+            llm_meta["error"] = llm_payload.get("error") or "llm_unavailable"
     else:
-        labels = [DIM_LABELS.get(x, x) for x in top_dims]
-        actions = actions[:3]
-        llm_meta = {
-            "enabled": bool(current_app.config.get("CAREER_ENABLE_REPLAN_LLM", True)),
-            "used": False,
-            "error": llm_payload.get("error") or "llm_unavailable",
-        }
+        actions = actions[:1]
 
     graph_hints = pick_replan_resource_hints(report_obj, top_dims)
-    if graph_hints:
+    if graph_hints and replan_mode != "continue":
         actions = graph_hints[:1] + [a for a in actions if a not in graph_hints][:3]
 
+    reason_map = {
+        "continue": "本月评估达标，按分岗阶段计划延续下月任务",
+        "light": "本月部分指标未达标，已微调下月任务",
+        "strong": "连续未达标，已加强下月任务安排",
+    }
     return {
         "triggered": True,
-        "reason": "本月复盘量化完成后触发自动重规划",
+        "reason": reason_map.get(replan_mode, "本月复盘后更新下月安排"),
+        "replan_mode": replan_mode,
         "failed_metric_codes": failed_codes,
         "focus_dimensions": top_dims,
         "focus_labels": labels,
         "extra_actions": actions[:3],
+        "by_job": llm_by_job,
         "llm_meta": llm_meta,
     }
 
@@ -311,6 +339,8 @@ def _llm_auto_replan_payload(
     failed_codes: List[str],
     fallback_dims: List[str],
     fallback_actions: List[str],
+    *,
+    replan_mode: str = "light",
 ) -> Dict[str, Any]:
     if not bool(current_app.config.get("CAREER_ENABLE_REPLAN_LLM", True)):
         return {"ok": False, "error": "CAREER_ENABLE_REPLAN_LLM disabled"}
@@ -339,7 +369,7 @@ def _llm_auto_replan_payload(
     for t in (report_obj.get("targets") or [])[:5]:
         if not isinstance(t, dict):
             continue
-        gaps = ((t.get("match_preview") or {}).get("dimension_gaps") or {})
+        gaps = (t.get("match_preview") or {}).get("dimension_gaps") or {}
         gap_items = sorted(
             [(k, float(v or 0)) for k, v in gaps.items() if k in DIM_LABELS],
             key=lambda x: x[1],
@@ -374,27 +404,81 @@ def _llm_auto_replan_payload(
                     }
                 )
 
+    plan_brief = []
+    for p in (report_obj.get("plans_by_target") or [])[:5]:
+        if not isinstance(p, dict):
+            continue
+        pm = int(p.get("current_plan_month") or 1) + 1
+        pk = phase_key_for_plan_month(pm)
+        items = ((p.get("phases") or {}).get(pk) or {}).get("items") or []
+        plan_brief.append(
+            {
+                "job_id": p.get("job_id"),
+                "display_title": p.get("display_title"),
+                "next_plan_month": pm,
+                "phase_key": pk,
+                "phase_items": [
+                    {
+                        "focus_dimension": it.get("focus_dimension"),
+                        "focus_label": it.get("focus_label"),
+                        "milestone": it.get("milestone"),
+                    }
+                    for it in items[:3]
+                    if isinstance(it, dict)
+                ],
+            }
+        )
+
+    lr = eval_block.get("latest_review") if isinstance(eval_block, dict) else {}
+    submitted_snapshot = (lr.get("submitted_metrics") or {}) if isinstance(lr, dict) else {}
+
     user_payload = {
-        "task": "auto_replan",
+        "task": "auto_replan_by_target",
+        "replan_mode": replan_mode,
         "failed_metrics": failed_metrics,
+        "submitted_metrics_snapshot": submitted_snapshot,
         "targets": target_top,
+        "plans": plan_brief,
         "grounded_resources": grounded,
+        "rules": [
+            "每个 job_id 的 items 含 1-2 个 focus_dimension",
+            "每项 milestone 可验收（含时间/产出物/验收标准）",
+            "每项 custom_actions 3-4 条，kind 分别为 learn/practice/deliverable，text<=80字",
+            "动作须具体可执行，写清「做完后有什么可展示成果」",
+            "禁止出现英文指标 code、匹配分数、「拉动完成率/贴合度」等开发术语",
+            "优先引用 grounded_resources 名称，禁止编造课程/竞赛",
+            "只输出 JSON",
+        ],
         "fallback": {
             "focus_dimensions": fallback_dims,
             "focus_labels": [DIM_LABELS.get(x, x) for x in fallback_dims],
             "extra_actions": fallback_actions,
         },
         "output_schema": {
-            "focus_dimensions": ["cap_req_growth", "cap_req_practice"],
-            "focus_labels": ["学习与发展潜力", "专业实践技能"],
-            "extra_actions": ["每周完成1次针对性练习并记录复盘"],
+            "focus_dimensions": ["cap_req_*"],
+            "focus_labels": ["中文"],
+            "extra_actions": ["全局兜底动作"],
+            "by_job": [
+                {
+                    "job_id": "string",
+                    "items": [
+                        {
+                            "focus_dimension": "cap_req_*",
+                            "milestone": "可验收里程碑（含产出物）",
+                            "custom_actions": [{"kind": "learn|practice|deliverable", "text": "具体动作"}],
+                        }
+                    ],
+                }
+            ],
         },
     }
     system_prompt = (
-        "你是职业发展重规划助手。请基于失败指标与目标岗位缺口，输出最小可执行重规划方案。"
-        "只输出 JSON 对象，不要输出 markdown。"
-        "键必须仅包含 focus_dimensions(数组, 1-2个cap_req_*), focus_labels(数组), extra_actions(数组, 1-3条中文可执行动作)。"
-        "extra_actions 应优先引用 grounded_resources 中的具体课程或竞赛名称，勿编造列表外资源。"
+        "你是职业发展重规划教练。按 job_id 为每个目标岗位输出下月可执行任务，"
+        "必须与 plans 中对应阶段的 phase_key 一致（early=1-3月,mid=4-9月,late=10-12月）。"
+        "只输出 JSON。extra_actions 为全局兜底；by_job 每项 1-2 个 focus 任务，"
+        "custom_actions 须具体、可勾选，用教练口吻描述「做什么、产出什么」；"
+        "禁止英文指标 code、匹配分数、「拉动完成率」等术语；"
+        "优先引用 grounded_resources 名称，禁止编造课程/竞赛。"
     )
     user_prompt = json.dumps(redact_payload(user_payload), ensure_ascii=False)
 
@@ -428,16 +512,51 @@ def _parse_replan_json(text: str, *, provider: str, model: str) -> Dict[str, Any
     dims = [str(x).strip() for x in (obj.get("focus_dimensions") or []) if str(x).strip()]
     labels = [str(x).strip() for x in (obj.get("focus_labels") or []) if str(x).strip()]
     actions = [str(x).strip() for x in (obj.get("extra_actions") or []) if str(x).strip()]
-    if not dims or not actions:
+    by_job_raw = obj.get("by_job") if isinstance(obj.get("by_job"), list) else []
+    by_job: List[Dict[str, Any]] = []
+    for block in by_job_raw:
+        if not isinstance(block, dict):
+            continue
+        jid = str(block.get("job_id") or "").strip()
+        if not jid:
+            continue
+        items_in = block.get("items") if isinstance(block.get("items"), list) else []
+        items_out: List[Dict[str, Any]] = []
+        for it in items_in:
+            if not isinstance(it, dict):
+                continue
+            dim = str(it.get("focus_dimension") or "").strip()
+            if not dim:
+                continue
+            row_item: Dict[str, Any] = {
+                "focus_dimension": dim,
+                "milestone": sanitize_user_facing_text(str(it.get("milestone") or ""))[:200],
+                "custom_actions": [
+                    {
+                        "kind": str(a.get("kind") or "practice"),
+                        "text": sanitize_user_facing_text(str(a.get("text") or ""))[:150],
+                    }
+                    for a in (it.get("custom_actions") or [])
+                    if isinstance(a, dict) and str(a.get("text") or "").strip()
+                ][:4],
+            }
+            sanitize_plan_item_user_text(row_item)
+            items_out.append(row_item)
+        if items_out:
+            by_job.append({"job_id": jid, "items": items_out})
+    if not dims and not by_job:
         return {"ok": False, "error": "llm_missing_required_fields"}
+    if not actions and not by_job:
+        return {"ok": False, "error": "llm_missing_actions"}
     return {
         "ok": True,
         "provider": provider,
         "model": model,
         "data": {
-            "focus_dimensions": dims[:2],
-            "focus_labels": labels[:2],
+            "focus_dimensions": dims[:2] if dims else [],
+            "focus_labels": labels[:2] if labels else [],
             "extra_actions": actions[:3],
+            "by_job": by_job,
         },
         "raw": raw[:1200],
     }
@@ -449,28 +568,28 @@ def _apply_auto_adjustment_to_report(
     *,
     stamp: str,
     review_anchor_month: float | None = None,
+    replan_mode: str = "light",
+    metric_eval: Dict[str, Any] | None = None,
 ) -> None:
     if not adjust_detail.get("triggered"):
         return
     actions = [str(x).strip() for x in (adjust_detail.get("extra_actions") or []) if str(x).strip()]
     focus_dims = [str(x).strip() for x in (adjust_detail.get("focus_dimensions") or []) if str(x).strip()]
     focus_labels = [str(x).strip() for x in (adjust_detail.get("focus_labels") or []) if str(x).strip()]
+
+    anchor = float(review_anchor_month if review_anchor_month is not None else 1.0)
+    apply_replan_after_review(
+        report_obj,
+        adjust_detail,
+        stamp=stamp,
+        review_anchor_month=anchor,
+        replan_mode=str(adjust_detail.get("replan_mode") or replan_mode),
+        metric_eval=metric_eval or {},
+    )
+
     if not actions:
         return
 
-    eval_e = report_obj.get("evaluation") or {}
-    lr = eval_e.get("latest_review") or {}
-    submitted_adj = lr.get("submitted_metrics") or {}
-    if not isinstance(submitted_adj, dict):
-        submitted_adj = {}
-    ev_lr = lr.get("evaluation") or {}
-    if not isinstance(ev_lr, dict):
-        ev_lr = {}
-    pass_adj = float(ev_lr.get("pass_rate") or 0.0)
-    targets_lookup = report_obj.get("targets") or []
-    tgt_by_line = {str(t.get("id")): t for t in targets_lookup if isinstance(t, dict)}
-
-    # 1) 把自动调整任务插入 growth_plan，便于阶段计划面板直接展示
     growth_plan = report_obj.get("growth_plan")
     if not isinstance(growth_plan, dict):
         growth_plan = {"short_term": [], "mid_term": []}
@@ -481,8 +600,8 @@ def _apply_auto_adjustment_to_report(
         growth_plan["short_term"] = short_term
     existing_milestones = {str(item.get("milestone") or "") for item in short_term if isinstance(item, dict)}
     next_order = len(short_term) + 1
-    for idx, action in enumerate(actions):
-        milestone = f"[自动重规划] {action}"
+    for idx, action in enumerate(actions[:1]):
+        milestone = f"[下月重点] {action}"
         if milestone in existing_milestones:
             continue
         short_term.append(
@@ -499,64 +618,5 @@ def _apply_auto_adjustment_to_report(
                 "adjusted_at": stamp,
             }
         )
-
-    # 2) 把自动调整节点写入 development_lines.adjustments，前端可直接绘制
-    dev_lines = report_obj.get("development_lines")
-    if not isinstance(dev_lines, dict):
-        return
-    lines = dev_lines.get("lines")
-    if not isinstance(lines, list):
-        return
-    adjustments = dev_lines.get("adjustments")
-    if not isinstance(adjustments, list):
-        adjustments = []
-        dev_lines["adjustments"] = adjustments
-    existing_adjust_ids = {str(x.get("id") or "") for x in adjustments if isinstance(x, dict)}
-
-    for li, line in enumerate(lines):
-        if not isinstance(line, dict):
-            continue
-        line_id = str(line.get("line_id") or "").strip()
-        if not line_id:
-            continue
-        tgt = tgt_by_line.get(str(line.get("target_job_id") or "")) or {}
-        base_p = _review_point_progress(submitted_adj, pass_adj, li, tgt)
-        for ai, action in enumerate(actions):
-            aid = f"adj_{stamp}_{line_id}_{ai+1}"
-            if aid in existing_adjust_ids:
-                continue
-            if review_anchor_month is not None:
-                am_int = int(min(12, max(0, int(round(float(review_anchor_month))))))
-                # 刚结束第 am_int 月复盘：重规划节点落在「下一执行月」，与折线横轴语义一致
-                release_m = float(min(12.0, float(am_int + 1)))
-                adj_month = round(min(12.0, release_m + float(ai) * 0.12 + float(li) * 0.03), 2)
-                plan_m = int(min(12, am_int + 1))
-                anchor_m = float(am_int)
-            else:
-                adj_month = round(min(12.0, 1.0 + float(ai) * 0.12 + float(li) * 0.03), 2)
-                plan_m = 1
-                anchor_m = 0.0
-            # 与进步曲线同量级：在复盘进步度附近小幅抬升，避免菱形漂在曲线上方
-            prog_marker = round(
-                min(100.0, max(0.5, base_p + 2.0 + float(ai) * 1.4 + float(li) * 0.35)),
-                2,
-            )
-            adjustments.append(
-                {
-                    "id": aid,
-                    "line_id": line_id,
-                    "stage": "short_term",
-                    "label": action,
-                    "focus_label": focus_labels[ai % len(focus_labels)] if focus_labels else "能力补齐",
-                    "priority": li + 1,
-                    "created_at": stamp,
-                    "month": adj_month,
-                    "progress": prog_marker,
-                    "anchor_review_month": anchor_m,
-                    "plan_month": plan_m,
-                    "kind": "replan",
-                    "execution_hints": _execution_hints_for_replan_action(action),
-                }
-            )
 
 

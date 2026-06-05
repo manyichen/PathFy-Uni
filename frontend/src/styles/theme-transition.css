@@ -1,0 +1,58 @@
+/**
+ * 暗亮主题切换动画（配合 setting-utils 的 startViewTransition）
+ * transition.css 关闭了 root 的默认 VT 动画，此处仅在 .use-view-transition 时启用圆形扩散。
+ */
+
+@supports (view-transition-name: none) {
+	/* 过渡层不参与命中，避免挡住顶栏主题开关的第二次点击 */
+	::view-transition,
+	::view-transition-group(*),
+	::view-transition-old(*),
+	::view-transition-new(*),
+	::view-transition-image-pair(*) {
+		pointer-events: none !important;
+	}
+
+	html.use-view-transition::view-transition-group(root) {
+		animation-duration: 0.52s;
+		animation-timing-function: cubic-bezier(0.33, 1, 0.68, 1);
+	}
+
+	html.use-view-transition::view-transition-old(root) {
+		z-index: 0;
+		animation: none;
+	}
+
+	html.use-view-transition::view-transition-new(root) {
+		z-index: 1;
+		animation: theme-circle-reveal 0.52s cubic-bezier(0.33, 1, 0.68, 1) both;
+	}
+
+	@keyframes theme-circle-reveal {
+		from {
+			clip-path: circle(0 at var(--theme-x, 50vw) var(--theme-y, 50vh));
+		}
+		to {
+			clip-path: circle(var(--theme-r, 150vmax) at var(--theme-x, 50vw) var(--theme-y, 50vh));
+		}
+	}
+}
+
+/* 不支持 View Transition 时：关键容器颜色柔和过渡 */
+html.is-theme-transitioning:not(.use-view-transition) body,
+html.is-theme-transitioning:not(.use-view-transition) main,
+html.is-theme-transitioning:not(.use-view-transition) #navbar > div:nth-child(2),
+html.is-theme-transitioning:not(.use-view-transition) .card-base,
+html.is-theme-transitioning:not(.use-view-transition) .float-panel {
+	transition:
+		background-color 0.42s ease,
+		color 0.32s ease,
+		border-color 0.42s ease,
+		box-shadow 0.42s ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+	html.use-view-transition::view-transition-new(root) {
+		animation: none !important;
+	}
+}

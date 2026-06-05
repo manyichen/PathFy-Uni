@@ -59,6 +59,8 @@ def create_app() -> Flask:
                     "POST /api/report/targets/import-from-match",
                     "POST /api/report/targets/manual-search",
                     "POST /api/report/generate",
+                    "POST /api/report/<report_id>/enrich",
+                    "POST /api/report/track-public-info",
                     "GET /api/report/my/list",
                     "GET /api/report/:id",
                     "GET /api/report/:id/reviews",

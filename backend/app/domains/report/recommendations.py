@@ -184,6 +184,183 @@ def _rule_pick(
     return picked_lr[:lr_final], picked_comp
 
 
+def _lr_brief_for_llm(candidates: List[Dict[str, Any]], *, limit: int = 12) -> List[Dict[str, Any]]:
+    return [
+        {
+            "resource_id": r.get("resource_id"),
+            "resource_name": r.get("resource_name"),
+            "resource_type": r.get("resource_type"),
+            "difficulty": r.get("difficulty"),
+            "skill_tag": r.get("skill_tag"),
+            "score": r.get("_score"),
+        }
+        for r in candidates[:limit]
+    ]
+
+
+def _comp_brief_for_llm(candidates: List[Dict[str, Any]], *, limit: int = 8) -> List[Dict[str, Any]]:
+    return [
+        {
+            "competition_id": c.get("competition_id"),
+            "competition_name": c.get("competition_name"),
+            "difficulty": c.get("difficulty"),
+            "cap_tags": _parse_cap_tags(c.get("cap_tags")),
+            "score": c.get("_score"),
+        }
+        for c in candidates[:limit]
+    ]
+
+
+def _selection_from_parsed_item(
+    parsed: Dict[str, Any],
+    *,
+    lr_candidates: List[Dict[str, Any]],
+    comp_candidates: List[Dict[str, Any]],
+    lr_final: int,
+    comp_final: int,
+) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+    allowed_lr = {str(x.get("resource_id")) for x in lr_candidates}
+    allowed_cp = {str(x.get("competition_id")) for x in comp_candidates}
+    lr_by_id = {str(r.get("resource_id")): r for r in lr_candidates}
+    cp_by_id = {str(r.get("competition_id")): r for r in comp_candidates}
+    lr_rows: List[Dict[str, Any]] = []
+    comp_rows: List[Dict[str, Any]] = []
+    for it in parsed.get("learning_resources") or []:
+        if not isinstance(it, dict):
+            continue
+        rid = str(it.get("resource_id") or "").strip()
+        if rid not in allowed_lr or rid not in lr_by_id:
+            continue
+        row = dict(lr_by_id[rid])
+        row["_llm_phase"] = str(it.get("phase") or "short_term")
+        row["_llm_rationale"] = str(it.get("rationale") or "")[:120]
+        lr_rows.append(row)
+    for it in parsed.get("competitions") or []:
+        if not isinstance(it, dict):
+            continue
+        cid = str(it.get("competition_id") or "").strip()
+        if cid not in allowed_cp or cid not in cp_by_id:
+            continue
+        row = dict(cp_by_id[cid])
+        row["_llm_phase"] = str(it.get("phase") or "mid_term")
+        row["_llm_rationale"] = str(it.get("rationale") or "")[:120]
+        comp_rows.append(row)
+    return lr_rows[:lr_final], comp_rows[:comp_final]
+
+
+def _curate_batch_with_llm(
+    jobs: List[Dict[str, Any]],
+    *,
+    lr_final: int,
+    comp_final: int,
+) -> Tuple[Dict[str, Dict[str, Any]], Dict[str, Any]]:
+    """
+    一次 DeepSeek 请求为全部目标策展。返回 job_id -> {lr, cp, meta}。
+    """
+    cfg = current_app.config
+    if not jobs:
+        return {}, {"ok": False, "reason": "empty_jobs", "mode": "batch"}
+    if not truthy(cfg.get("CAREER_ENABLE_RECOMMENDATION_LLM", True)):
+        return {}, {"ok": False, "reason": "CAREER_ENABLE_RECOMMENDATION_LLM disabled", "mode": "batch"}
+
+    api_key = str(cfg.get("DEEPSEEK_API_KEY") or "").strip()
+    if not api_key:
+        return {}, {"ok": False, "reason": "missing DEEPSEEK_API_KEY", "mode": "batch"}
+
+    brief_jobs = []
+    for j in jobs[:5]:
+        brief_jobs.append(
+            {
+                "job_id": j["job_id"],
+                "job_title_name": j["job_title_name"],
+                "match_score": j["match_score"],
+                "top_gap_dimensions": j["top_gaps"],
+                "top_gap_labels": [DIM_LABELS.get(d, d) for d in j["top_gaps"]],
+                "candidates": {
+                    "learning_resources": _lr_brief_for_llm(j["lr_candidates"]),
+                    "competitions": _comp_brief_for_llm(j["comp_candidates"]),
+                },
+            }
+        )
+
+    payload = {
+        "task": "curate_career_resources_batch",
+        "pick_limits": {"learning_resources": lr_final, "competitions": comp_final},
+        "jobs": brief_jobs,
+        "rules": [
+            "每个 job_id 必须各输出一条",
+            "只能从该 job candidates 中的 id 选择，禁止编造",
+            "短期偏入门课程，中期偏竞赛与进阶",
+            "rationale 每条 <= 40 字",
+        ],
+        "output_schema": {
+            "items": [
+                {
+                    "job_id": "string",
+                    "learning_resources": [
+                        {"resource_id": "str", "phase": "short_term|mid_term", "rationale": "str"}
+                    ],
+                    "competitions": [
+                        {"competition_id": "str", "phase": "mid_term", "rationale": "str"}
+                    ],
+                }
+            ]
+        },
+    }
+    model = str(cfg.get("CAREER_DEEPSEEK_MODEL") or "deepseek-chat")
+    timeout = float(cfg.get("CAREER_LLM_TIMEOUT_SECONDS") or 120.0)
+    try:
+        text = _call_openai_compatible(
+            api_key=api_key,
+            base_url="https://api.deepseek.com",
+            model=model,
+            timeout=timeout,
+            system_prompt="你是职业规划资源策展助手。仅输出 JSON 对象，禁止 markdown。",
+            user_prompt=json.dumps(redact_payload(payload), ensure_ascii=False),
+            temperature=0.35,
+        )
+        parsed = json.loads(strip_json_fence(text))
+        items = parsed.get("items") if isinstance(parsed, dict) else None
+        if not isinstance(items, list):
+            return {}, {"ok": False, "reason": "llm_items_missing", "mode": "batch", "model": model}
+
+        job_index = {str(j["job_id"]): j for j in jobs}
+        out: Dict[str, Dict[str, Any]] = {}
+        updated = 0
+        for it in items:
+            if not isinstance(it, dict):
+                continue
+            jid = str(it.get("job_id") or "").strip()
+            if jid not in job_index:
+                continue
+            j = job_index[jid]
+            lr_rows, comp_rows = _selection_from_parsed_item(
+                it,
+                lr_candidates=j["lr_candidates"],
+                comp_candidates=j["comp_candidates"],
+                lr_final=lr_final,
+                comp_final=comp_final,
+            )
+            if not lr_rows and not comp_rows:
+                continue
+            out[jid] = {
+                "lr": lr_rows,
+                "cp": comp_rows,
+                "meta": {"ok": True, "provider": "deepseek", "model": model, "mode": "batch"},
+            }
+            updated += 1
+        return out, {
+            "ok": updated > 0,
+            "updated": updated,
+            "provider": "deepseek",
+            "model": model,
+            "mode": "batch",
+            "job_count": len(jobs),
+        }
+    except Exception as exc:  # noqa: BLE001
+        return {}, {"ok": False, "reason": str(exc), "mode": "batch", "fallback": "rule"}
+
+
 def _curate_with_llm(
     *,
     job_id: str,
@@ -206,30 +383,6 @@ def _curate_with_llm(
         lr, cp = _rule_pick(lr_candidates, comp_candidates, lr_final=lr_final, comp_final=comp_final)
         return lr, cp, {"ok": False, "reason": "missing DEEPSEEK_API_KEY", "fallback": "rule"}
 
-    lr_brief = [
-        {
-            "resource_id": r.get("resource_id"),
-            "resource_name": r.get("resource_name"),
-            "resource_type": r.get("resource_type"),
-            "difficulty": r.get("difficulty"),
-            "skill_tag": r.get("skill_tag"),
-            "score": r.get("_score"),
-        }
-        for r in lr_candidates[:20]
-    ]
-    comp_brief = [
-        {
-            "competition_id": c.get("competition_id"),
-            "competition_name": c.get("competition_name"),
-            "difficulty": c.get("difficulty"),
-            "cap_tags": _parse_cap_tags(c.get("cap_tags")),
-            "score": c.get("_score"),
-        }
-        for c in comp_candidates[:12]
-    ]
-    allowed_lr = {str(x.get("resource_id")) for x in lr_candidates}
-    allowed_cp = {str(x.get("competition_id")) for x in comp_candidates}
-
     payload = {
         "task": "curate_career_resources",
         "job_id": job_id,
@@ -238,7 +391,10 @@ def _curate_with_llm(
         "top_gap_dimensions": top_gaps,
         "top_gap_labels": [DIM_LABELS.get(d, d) for d in top_gaps],
         "pick_limits": {"learning_resources": lr_final, "competitions": comp_final},
-        "candidates": {"learning_resources": lr_brief, "competitions": comp_brief},
+        "candidates": {
+            "learning_resources": _lr_brief_for_llm(lr_candidates, limit=20),
+            "competitions": _comp_brief_for_llm(comp_candidates, limit=12),
+        },
         "rules": [
             "只能从 candidates 中的 id 选择，禁止编造新 id 或 URL",
             "短期偏入门课程，中期偏竞赛与进阶",
@@ -264,34 +420,17 @@ def _curate_with_llm(
             temperature=0.35,
         )
         parsed = json.loads(strip_json_fence(text))
-        lr_rows: List[Dict[str, Any]] = []
-        comp_rows: List[Dict[str, Any]] = []
-        lr_by_id = {str(r.get("resource_id")): r for r in lr_candidates}
-        cp_by_id = {str(r.get("competition_id")): r for r in comp_candidates}
-        for it in parsed.get("learning_resources") or []:
-            if not isinstance(it, dict):
-                continue
-            rid = str(it.get("resource_id") or "").strip()
-            if rid not in allowed_lr or rid not in lr_by_id:
-                continue
-            row = dict(lr_by_id[rid])
-            row["_llm_phase"] = str(it.get("phase") or "short_term")
-            row["_llm_rationale"] = str(it.get("rationale") or "")
-            lr_rows.append(row)
-        for it in parsed.get("competitions") or []:
-            if not isinstance(it, dict):
-                continue
-            cid = str(it.get("competition_id") or "").strip()
-            if cid not in allowed_cp or cid not in cp_by_id:
-                continue
-            row = dict(cp_by_id[cid])
-            row["_llm_phase"] = str(it.get("phase") or "mid_term")
-            row["_llm_rationale"] = str(it.get("rationale") or "")
-            comp_rows.append(row)
+        lr_rows, comp_rows = _selection_from_parsed_item(
+            parsed,
+            lr_candidates=lr_candidates,
+            comp_candidates=comp_candidates,
+            lr_final=lr_final,
+            comp_final=comp_final,
+        )
         if not lr_rows and not comp_rows:
             raise ValueError("llm_empty_selection")
-        meta = {"ok": True, "provider": "deepseek", "model": model, "fallback": None}
-        return lr_rows[:lr_final], comp_rows[:comp_final], meta
+        meta = {"ok": True, "provider": "deepseek", "model": model, "fallback": None, "mode": "single"}
+        return lr_rows, comp_rows, meta
     except Exception as exc:  # noqa: BLE001
         lr, cp = _rule_pick(lr_candidates, comp_candidates, lr_final=lr_final, comp_final=comp_final)
         return lr, cp, {"ok": False, "reason": str(exc), "fallback": "rule"}
@@ -299,8 +438,10 @@ def _curate_with_llm(
 
 def build_graph_recommendations(
     target_insights: List[Dict[str, Any]],
+    *,
+    use_llm_curator: bool = True,
 ) -> Dict[str, Any]:
-    """构建完整 recommendations 块（含 by_target / shared / meta）。"""
+    """构建完整 recommendations 块（含 by_target / shared / meta）。规则先出，可选 batch LLM 覆盖。"""
     if not truthy(current_app.config.get("CAREER_ENABLE_GRAPH_RECOMMENDATIONS", True)):
         return {"schema_version": 1, "enabled": False, "by_target": [], "shared": {}, "meta": {}}
 
@@ -317,6 +458,8 @@ def build_graph_recommendations(
     curator_runs: List[Dict[str, Any]] = []
     total_lr_cand = 0
     total_comp_cand = 0
+    pending_jobs: List[Dict[str, Any]] = []
+    rule_by_job: Dict[str, Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]] = {}
 
     for t in target_insights:
         jid = str(t.get("id") or "").strip()
@@ -350,16 +493,49 @@ def build_graph_recommendations(
             limit=pool_comp,
         )
 
-        picked_lr, picked_cp, cur_meta = _curate_with_llm(
-            job_id=jid,
-            job_title_name=title_name,
-            top_gaps=top_gaps,
-            match_score=ms,
-            lr_candidates=lr_pool,
-            comp_candidates=comp_pool,
+        rule_lr, rule_cp = _rule_pick(lr_pool, comp_pool, lr_final=final_lr, comp_final=final_comp)
+        rule_by_job[jid] = (rule_lr, rule_cp)
+        pending_jobs.append(
+            {
+                "job_id": jid,
+                "job_title_name": title_name,
+                "top_gaps": top_gaps,
+                "match_score": ms,
+                "lr_candidates": lr_pool,
+                "comp_candidates": comp_pool,
+            }
+        )
+
+    batch_by_job: Dict[str, Dict[str, Any]] = {}
+    batch_meta: Dict[str, Any] = {"ok": False, "mode": "rule_only"}
+    if use_llm_curator and pending_jobs:
+        batch_by_job, batch_meta = _curate_batch_with_llm(
+            pending_jobs,
             lr_final=final_lr,
             comp_final=final_comp,
         )
+
+    for t in target_insights:
+        jid = str(t.get("id") or "").strip()
+        title_name = title_map.get(jid) or str(t.get("title") or "").strip()
+        if not title_name or jid not in rule_by_job:
+            continue
+        gaps = (t.get("match_preview") or {}).get("dimension_gaps") or {}
+        top_gaps = _top_gap_dimensions(gaps, 3)
+        ms = float((t.get("match_preview") or {}).get("match_score") or 0)
+        rule_lr, rule_cp = rule_by_job[jid]
+        llm_pick = batch_by_job.get(jid) or {}
+        if llm_pick.get("meta", {}).get("ok"):
+            picked_lr = llm_pick["lr"]
+            picked_cp = llm_pick["cp"]
+            cur_meta = llm_pick["meta"]
+        else:
+            picked_lr, picked_cp = rule_lr, rule_cp
+            cur_meta = llm_pick.get("meta") or {
+                "ok": False,
+                "fallback": "rule",
+                "reason": batch_meta.get("reason") or "batch_miss",
+            }
         curator_runs.append({"job_id": jid, **cur_meta})
 
         lr_out = [
@@ -425,6 +601,7 @@ def build_graph_recommendations(
                 "job_titles_resolved": len(title_map),
             },
             "curator": curator_runs,
+            "curator_batch": batch_meta,
             "limits": {"lr_per_target": final_lr, "comp_per_target": final_comp},
         },
     }
