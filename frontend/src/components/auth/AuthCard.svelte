@@ -1,5 +1,6 @@
 <script lang="ts">
 	import Icon from "@iconify/svelte";
+	import { onMount } from "svelte";
 	import { login, register } from "@/lib/api/auth";
 	import { saveAuth } from "@/lib/features/auth/session";
 
@@ -34,6 +35,42 @@
 	const submitText = $derived(
 		isSubmitting ? "提交中..." : isRegister ? "创建账号" : "登录",
 	);
+
+	const journeySteps = [
+		{
+			icon: "material-symbols:travel-explore-rounded",
+			label: "探索岗位",
+			hint: "从真实 JD 拆解能力要求与成长路径",
+			chip: "10,000+ 样本",
+		},
+		{
+			icon: "material-symbols:radar",
+			label: "八维画像",
+			hint: "把简历与自评收敛成可解释的能力雷达",
+			chip: "8 维模型",
+		},
+		{
+			icon: "material-symbols:compare-arrows-rounded",
+			label: "人岗匹配",
+			hint: "看清差距来自哪些维度，而不是一句「不合适」",
+			chip: "差距可追踪",
+		},
+		{
+			icon: "material-symbols:route-outline",
+			label: "行动报告",
+			hint: "生成阶段计划，并在复盘中动态调整下月任务",
+			chip: "可复盘",
+		},
+	] as const;
+
+	let activeJourney = $state(0);
+
+	onMount(() => {
+		const timer = window.setInterval(() => {
+			activeJourney = (activeJourney + 1) % journeySteps.length;
+		}, 3200);
+		return () => window.clearInterval(timer);
+	});
 
 	function safeRedirectPath(path: string | null): string {
 		if (!path) return "/";
@@ -130,27 +167,41 @@
 			</p>
 		</div>
 
-		<div class="visual-console">
-			<div class="console-head">
-				<span>今日规划状态</span>
-				<strong>Ready</strong>
+		<div class="visual-journey" aria-hidden="true">
+			<div class="journey-glow"></div>
+			<svg class="journey-radar" viewBox="0 0 120 120" role="presentation">
+				<polygon
+					points="60,18 95,45 82,92 38,92 25,45"
+					fill="rgba(45,212,191,0.12)"
+					stroke="rgba(94,234,212,0.55)"
+					stroke-width="1.5"
+				/>
+				<circle cx="60" cy="60" r="3" fill="#fcd34d" />
+			</svg>
+
+			<div class="journey-track">
+				<div class="journey-line" aria-hidden="true">
+					<span class="journey-line-flow"></span>
+				</div>
+				{#each journeySteps as step, index (step.label)}
+					<div
+						class="journey-node"
+						class:is-active={activeJourney === index}
+						class:is-done={activeJourney > index}
+						style={`--node-delay: ${index * 0.12}s`}
+					>
+						<span class="journey-node-ring"></span>
+						<Icon icon={step.icon} />
+					</div>
+				{/each}
 			</div>
-			<div class="console-grid">
-				<div>
-					<Icon icon="material-symbols:radar" />
-					<span>画像</span>
-					<strong>8 维</strong>
-				</div>
-				<div>
-					<Icon icon="material-symbols:compare-arrows-rounded" />
-					<span>匹配</span>
-					<strong>4 维</strong>
-				</div>
-				<div>
-					<Icon icon="material-symbols:task-alt-rounded" />
-					<span>计划</span>
-					<strong>可复盘</strong>
-				</div>
+
+			<div class="journey-caption">
+				{#key activeJourney}
+					<p class="journey-stage">{journeySteps[activeJourney].label}</p>
+					<p class="journey-hint">{journeySteps[activeJourney].hint}</p>
+					<span class="journey-chip">{journeySteps[activeJourney].chip}</span>
+				{/key}
 			</div>
 		</div>
 
@@ -375,64 +426,219 @@
 		line-height: 1.8;
 	}
 
-	.visual-console {
+	.visual-journey {
 		position: relative;
 		z-index: 3;
 		margin-top: 2rem;
 		max-width: 34rem;
-		border: 1px solid rgba(255, 255, 255, 0.14);
-		border-radius: 8px;
-		background: rgba(2, 6, 23, 0.58);
-		padding: 1rem;
-		backdrop-filter: blur(14px);
+		overflow: hidden;
+		border: 1px solid rgba(255, 255, 255, 0.12);
+		border-radius: 1rem;
+		background: rgba(2, 6, 23, 0.52);
+		padding: 1.15rem 1.2rem 1.25rem;
+		backdrop-filter: blur(16px);
 	}
 
-	.console-head {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		gap: 1rem;
-		color: rgba(255, 255, 255, 0.7);
-		font-size: 0.78rem;
-	}
-
-	.console-head strong {
+	.journey-glow {
+		position: absolute;
+		right: -2rem;
+		top: -2.5rem;
+		width: 9rem;
+		height: 9rem;
 		border-radius: 999px;
-		background: rgba(45, 212, 191, 0.15);
-		padding: 0.25rem 0.65rem;
-		color: #99f6e4;
+		background: radial-gradient(circle, rgba(45, 212, 191, 0.35), transparent 68%);
+		pointer-events: none;
+		animation: journey-glow-pulse 4s ease-in-out infinite;
 	}
 
-	.console-grid {
-		display: grid;
-		grid-template-columns: repeat(3, minmax(0, 1fr));
-		gap: 0.7rem;
-		margin-top: 0.9rem;
+	.journey-radar {
+		position: absolute;
+		right: 0.6rem;
+		top: 0.55rem;
+		width: 5.5rem;
+		height: 5.5rem;
+		opacity: 0.55;
+		animation: journey-radar-spin 18s linear infinite;
 	}
 
-	.console-grid div {
-		display: grid;
+	.journey-track {
+		position: relative;
+		display: flex;
+		justify-content: space-between;
 		gap: 0.35rem;
-		border: 1px solid rgba(255, 255, 255, 0.1);
-		border-radius: 8px;
+		padding: 0.35rem 0.15rem 0;
+	}
+
+	.journey-line {
+		position: absolute;
+		left: 10%;
+		right: 10%;
+		top: 1.35rem;
+		height: 3px;
+		border-radius: 999px;
+		background: rgba(255, 255, 255, 0.12);
+		overflow: hidden;
+	}
+
+	.journey-line-flow {
+		display: block;
+		width: 40%;
+		height: 100%;
+		border-radius: inherit;
+		background: linear-gradient(90deg, transparent, #5eead4, #fcd34d, transparent);
+		animation: journey-flow 2.8s ease-in-out infinite;
+	}
+
+	.journey-node {
+		position: relative;
+		z-index: 1;
+		display: grid;
+		place-items: center;
+		width: 2.75rem;
+		height: 2.75rem;
+		border-radius: 999px;
+		border: 1px solid rgba(255, 255, 255, 0.16);
 		background: rgba(255, 255, 255, 0.08);
-		padding: 0.8rem;
+		color: rgba(255, 255, 255, 0.72);
+		transition:
+			transform 320ms ease,
+			border-color 320ms ease,
+			background-color 320ms ease,
+			color 320ms ease,
+			box-shadow 320ms ease;
 	}
 
-	.console-grid :global(svg) {
-		width: 1.35rem;
-		height: 1.35rem;
-		color: #67e8f9;
+	.journey-node :global(svg) {
+		width: 1.25rem;
+		height: 1.25rem;
 	}
 
-	.console-grid span {
-		color: rgba(255, 255, 255, 0.62);
-		font-size: 0.76rem;
+	.journey-node-ring {
+		position: absolute;
+		inset: -0.35rem;
+		border-radius: inherit;
+		border: 1px solid transparent;
+		opacity: 0;
+		transition: opacity 320ms ease;
 	}
 
-	.console-grid strong {
+	.journey-node.is-active {
+		transform: translateY(-2px) scale(1.06);
+		border-color: rgba(94, 234, 212, 0.75);
+		background: rgba(45, 212, 191, 0.22);
+		color: #ecfdf5;
+		box-shadow: 0 0 0 6px rgba(45, 212, 191, 0.12);
+	}
+
+	.journey-node.is-active .journey-node-ring {
+		opacity: 1;
+		border-color: rgba(94, 234, 212, 0.45);
+		animation: journey-ring-pulse 1.6s ease-out infinite;
+	}
+
+	.journey-node.is-done {
+		border-color: rgba(252, 211, 77, 0.45);
+		background: rgba(252, 211, 77, 0.12);
+		color: #fde68a;
+	}
+
+	.journey-caption {
+		position: relative;
+		margin-top: 1.15rem;
+		min-height: 5.5rem;
+	}
+
+	.journey-stage {
+		margin: 0;
 		color: white;
-		font-size: 1rem;
+		font-size: 1.05rem;
+		font-weight: 700;
+		animation: journey-caption-in 420ms ease;
+	}
+
+	.journey-hint {
+		margin: 0.45rem 0 0;
+		max-width: 26rem;
+		color: rgba(255, 255, 255, 0.72);
+		font-size: 0.86rem;
+		line-height: 1.65;
+		animation: journey-caption-in 520ms ease;
+	}
+
+	.journey-chip {
+		display: inline-flex;
+		margin-top: 0.65rem;
+		border-radius: 999px;
+		background: rgba(255, 255, 255, 0.1);
+		padding: 0.28rem 0.65rem;
+		color: #99f6e4;
+		font-size: 0.72rem;
+		font-weight: 700;
+		animation: journey-caption-in 620ms ease;
+	}
+
+	@keyframes journey-flow {
+		0% {
+			transform: translateX(-120%);
+		}
+		100% {
+			transform: translateX(320%);
+		}
+	}
+
+	@keyframes journey-ring-pulse {
+		0% {
+			transform: scale(0.92);
+			opacity: 0.85;
+		}
+		100% {
+			transform: scale(1.18);
+			opacity: 0;
+		}
+	}
+
+	@keyframes journey-caption-in {
+		from {
+			opacity: 0;
+			transform: translateY(6px);
+		}
+		to {
+			opacity: 1;
+			transform: translateY(0);
+		}
+	}
+
+	@keyframes journey-glow-pulse {
+		0%,
+		100% {
+			opacity: 0.55;
+			transform: scale(1);
+		}
+		50% {
+			opacity: 0.9;
+			transform: scale(1.08);
+		}
+	}
+
+	@keyframes journey-radar-spin {
+		from {
+			transform: rotate(0deg);
+		}
+		to {
+			transform: rotate(360deg);
+		}
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		.journey-line-flow,
+		.journey-node.is-active .journey-node-ring,
+		.journey-glow,
+		.journey-radar,
+		.journey-stage,
+		.journey-hint,
+		.journey-chip {
+			animation: none !important;
+		}
 	}
 
 	.visual-links {
