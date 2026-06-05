@@ -43,6 +43,9 @@ function extractApiErrorMessage(
 	} catch {
 		// 非 JSON 响应（如 Nginx 502 页面）走下方兜底
 	}
+	if (status >= 500) {
+		return "后端服务暂时不可用，请确认 Flask 已在 http://127.0.0.1:5000 启动，并检查数据库配置。";
+	}
 	return `请求失败（${status}）`;
 }
 

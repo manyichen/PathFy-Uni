@@ -72,10 +72,11 @@
 	});
 </script>
 
-<section class="fun-wrap rounded-2xl border border-black/10 bg-[var(--card-bg)] p-6 dark:border-white/10 md:p-7">
-	<div class="mb-5 flex flex-wrap items-center justify-between gap-3">
+<section class="fun-wrap space-y-5">
+	<div class="flex flex-wrap items-center justify-between gap-3">
 		<div>
-			<h2 class="bg-gradient-to-r from-[var(--primary)] to-teal-400 bg-clip-text text-xl font-bold text-transparent">
+			<p class="text-xs font-semibold uppercase text-[var(--primary)]">Experience</p>
+			<h2 class="mt-2 text-2xl font-bold tracking-normal text-black dark:text-white">
 				更有趣的职业规划体验
 			</h2>
 			<p class="mt-1 text-sm text-75">点击切换场景，感受从探索到行动的完整旅程。</p>
@@ -88,7 +89,7 @@
 			{#each scenes as scene, i}
 				<button
 					type="button"
-					class="scene-btn w-full rounded-xl border px-4 py-3 text-left transition"
+					class="scene-btn w-full rounded-lg border px-4 py-3 text-left transition"
 					class:active={i === activeIndex}
 					onclick={() => {
 						activeIndex = i;
@@ -104,12 +105,12 @@
 				</button>
 			{/each}
 
-			<div class="rounded-xl border border-black/8 bg-[var(--btn-regular-bg)] p-4 text-sm leading-6 text-75 dark:border-white/10">
+			<div class="rounded-lg border border-black/8 bg-[var(--btn-regular-bg)] p-4 text-sm leading-6 text-75 dark:border-white/10">
 				{activeScene.desc}
 			</div>
 		</div>
 
-		<div class="relative overflow-hidden rounded-2xl border border-black/10 dark:border-white/10">
+		<div class="relative overflow-hidden rounded-lg border border-black/10 dark:border-white/10">
 			<img
 				src={activeScene.image}
 				alt={activeScene.name}

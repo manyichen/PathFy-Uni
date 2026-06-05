@@ -22,6 +22,18 @@ const isHomePage = Astro.url.pathname === "/" || Astro.url.pathname === "";
 const titleText = siteConfig.navbarTitle?.text ?? siteConfig.title;
 const titleIcon =
 	siteConfig.navbarTitle?.icon ?? "/assets/home/fu.svg";
+const currentPath = Astro.url.pathname;
+
+function normalizePath(path: string) {
+	if (!path || path === "/") return "/";
+	return path.endsWith("/") ? path.slice(0, -1) : path;
+}
+
+function isActiveNav(href: string) {
+	const current = normalizePath(currentPath);
+	const target = normalizePath(href);
+	return target === "/" ? current === "/" : current === target || current.startsWith(`${target}/`);
+}
 ---
 
 <div
@@ -64,8 +76,12 @@ const titleIcon =
 					nav.map((item) => (
 						<a
 							href={url(item.href)}
+							data-nav-link={item.href}
 							data-protected={item.protected ? "true" : "false"}
-							class="btn-plain rounded-lg px-3 py-2 text-sm font-medium text-black/75 dark:text-white/75"
+							aria-current={isActiveNav(item.href) ? "page" : undefined}
+							class={`nav-link btn-plain rounded-lg px-3 py-2 text-sm font-medium text-black/75 dark:text-white/75 ${
+								isActiveNav(item.href) ? "is-active" : ""
+							}`}
 						>
 							{item.name}
 						</a>
@@ -128,8 +144,12 @@ const titleIcon =
 					nav.map((item) => (
 						<a
 							href={url(item.href)}
+							data-nav-link={item.href}
 							data-protected={item.protected ? "true" : "false"}
-							class="btn-plain rounded-lg px-3 py-2.5 text-left text-sm font-medium"
+							aria-current={isActiveNav(item.href) ? "page" : undefined}
+							class={`nav-link btn-plain rounded-lg px-3 py-2.5 text-left text-sm font-medium ${
+								isActiveNav(item.href) ? "is-active" : ""
+							}`}
 						>
 							{item.name}
 						</a>
@@ -208,7 +228,7 @@ const titleIcon =
 		const loggedIn = isLoggedIn();
 		const userName = getStoredUserName();
 		const text = loggedIn ? "退出登录" : "登录";
-		const href = loggedIn ? "#" : "/login";
+		const href = loggedIn ? "/" : "/login";
 
 		for (const el of [authEntry, mobileAuthEntry]) {
 			if (!el) continue;
@@ -263,9 +283,35 @@ const titleIcon =
 		navInner.setAttribute("data-is-home", isHome ? "true" : "false");
 	}
 
+	function normalizePath(path: string) {
+		if (!path || path === "/") return "/";
+		return path.endsWith("/") ? path.slice(0, -1) : path;
+	}
+
+	function isCurrentRoute(currentPath: string, href: string) {
+		const current = normalizePath(currentPath);
+		const target = normalizePath(href);
+		return target === "/" ? current === "/" : current === target || current.startsWith(`${target}/`);
+	}
+
+	function syncActiveNavLinks() {
+		const currentPath = window.location.pathname;
+		document.querySelectorAll<HTMLAnchorElement>("[data-nav-link]").forEach((link) => {
+			const href = link.dataset.navLink ?? "/";
+			const active = isCurrentRoute(currentPath, href);
+			link.classList.toggle("is-active", active);
+			if (active) {
+				link.setAttribute("aria-current", "page");
+			} else {
+				link.removeAttribute("aria-current");
+			}
+		});
+	}
+
 	function onPageEnter() {
 		if (!checkProtectedRouteOrRedirect()) return;
 		syncNavbarRouteContext();
+		syncActiveNavLinks();
 		setupAuthEntry();
 		scrollNavbar();
 	}
@@ -377,9 +423,50 @@ const titleIcon =
 	#mobile-nav-panel:not(.float-panel-closed) {
 		display: block;
 	}
+	.nav-link {
+		position: relative;
+		justify-content: flex-start;
+	}
+	.nav-link::after {
+		content: "";
+		position: absolute;
+		left: 0.75rem;
+		right: 0.75rem;
+		bottom: 0.32rem;
+		height: 2px;
+		border-radius: 999px;
+		background: var(--primary);
+		opacity: 0;
+		transform: scaleX(0.25);
+		transition:
+			opacity 160ms ease,
+			transform 160ms ease;
+	}
+	.nav-link.is-active {
+		color: var(--primary) !important;
+		background: color-mix(in oklch, var(--primary) 10%, transparent);
+	}
+	.nav-link.is-active::after {
+		opacity: 1;
+		transform: scaleX(1);
+	}
 	@media (min-width: 1280px) {
 		#mobile-nav-panel {
 			display: none !important;
+		}
+	}
+	@media (max-width: 1279px) {
+		.nav-link::after {
+			left: 0.75rem;
+			right: auto;
+			top: 50%;
+			bottom: auto;
+			width: 3px;
+			height: 1.4rem;
+			transform: translateY(-50%) scaleY(0.35);
+		}
+		.nav-link.is-active::after {
+			transform: translateY(-50%) scaleY(1);
 		}
 	}
 </style>
