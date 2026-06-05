@@ -1,354 +1,589 @@
 <script lang="ts">
 	import { onMount } from "svelte";
+	import Icon from "@iconify/svelte";
 	import {
-		analyzeJobTransition,
 		fetchJobs,
+		fetchLateralPaths,
 		fetchPromotionPath,
+		type CareerActionPhase,
+		type CareerPathCompetition,
+		type CareerPathLearningResource,
 		type JobLiteItem,
 		type JobsPageResult,
+		type LateralPathResult,
 		type PromotionPathResult,
-		type TransitionAnalysisResult,
+		type PromotionRoute,
 	} from "@/lib/api/jobs";
+	import { MATCH_CACHE_KEY_PREFIX, getUser } from "@/lib/features/auth/session";
 	import JobPickerModal from "./JobPickerModal.svelte";
 
-	let loadingJobs = $state(true);
+	type MatchCacheLike = {
+		llmBlock?: {
+			top5?: Array<{
+				job_id?: string;
+				title?: string;
+				company?: string;
+				location?: string;
+				salary?: string;
+			}>;
+		};
+		jobs?: Array<{
+			id?: string;
+			title?: string;
+			company?: string;
+			location?: string;
+			salary?: string;
+		}>;
+	};
+
+	let loadingInitial = $state(true);
 	let loadError = $state("");
+	let currentJobId = $state("");
+	let currentJob = $state<JobLiteItem | null>(null);
+	let selectionSource = $state<"match" | "fallback" | "manual">("fallback");
 
-	let fromJobId = $state("");
-	let fromJob = $state<JobLiteItem | null>(null);
-	let toJobId = $state("");
-	let toJob = $state<JobLiteItem | null>(null);
-	let transitionLoading = $state(false);
-	let transitionError = $state("");
-	let transitionResult = $state<TransitionAnalysisResult | null>(null);
-
-	let promotionJobId = $state("");
-	let promotionJob = $state<JobLiteItem | null>(null);
 	let promotionLoading = $state(false);
 	let promotionError = $state("");
 	let promotionResult = $state<PromotionPathResult | null>(null);
 
+	let lateralLoading = $state(false);
+	let lateralError = $state("");
+	let lateralResult = $state<LateralPathResult | null>(null);
+
 	let pickerOpen = $state(false);
-	let pickerTarget = $state<"from" | "to" | "promotion" | null>(null);
+	let analysisRun = 0;
 
-	function openPicker(target: "from" | "to" | "promotion") {
-		pickerTarget = target;
-		pickerOpen = true;
+	const promotionRoutes = $derived.by(() => promotionResult?.routes ?? []);
+	const lateralRoutes = $derived.by(() => lateralResult?.routes ?? []);
+	const visibleLateralRoutes = $derived.by(() => {
+		const limit = Math.max(1, promotionRoutes.length + 1);
+		return lateralRoutes.slice(0, limit);
+	});
+
+	function matchStateStorageKey(): string {
+		const u = getUser();
+		return `${MATCH_CACHE_KEY_PREFIX}${u?.id ?? "guest"}`;
 	}
 
-	function closePicker() {
-		pickerOpen = false;
-		pickerTarget = null;
-	}
-
-	function handlePick(job: JobLiteItem) {
-		if (pickerTarget === "from") {
-			fromJobId = job.id;
-			fromJob = job;
-			return;
+	function readTopMatchedJob(): JobLiteItem | null {
+		if (typeof window === "undefined") return null;
+		try {
+			const raw = localStorage.getItem(matchStateStorageKey());
+			if (!raw) return null;
+			const parsed = JSON.parse(raw) as MatchCacheLike;
+			const top = parsed.llmBlock?.top5?.[0];
+			if (top?.job_id) {
+				return {
+					id: String(top.job_id),
+					title: top.title || "智能推荐岗位",
+					company: top.company || "",
+					location: top.location || "",
+					salary: top.salary || "",
+				};
+			}
+			const first = parsed.jobs?.[0];
+			if (first?.id) {
+				return {
+					id: String(first.id),
+					title: first.title || "匹配岗位",
+					company: first.company || "",
+					location: first.location || "",
+					salary: first.salary || "",
+				};
+			}
+		} catch {
+			return null;
 		}
-		if (pickerTarget === "to") {
-			toJobId = job.id;
-			toJob = job;
-			return;
-		}
-		if (pickerTarget === "promotion") {
-			promotionJobId = job.id;
-			promotionJob = job;
-		}
+		return null;
 	}
 
-	function selectedJobIdForPicker(): string {
-		if (pickerTarget === "from") return fromJobId;
-		if (pickerTarget === "to") return toJobId;
-		if (pickerTarget === "promotion") return promotionJobId;
-		return "";
-	}
-
-	function pickerTitle(): string {
-		if (pickerTarget === "from") return "选择当前岗位";
-		if (pickerTarget === "to") return "选择目标岗位";
-		if (pickerTarget === "promotion") return "选择升职起始岗位";
-		return "选择岗位";
-	}
-
-	function applySelectionDefaults(seedJobs: JobLiteItem[]) {
-		if (seedJobs.length <= 0) {
-			fromJobId = "";
-			toJobId = "";
-			promotionJobId = "";
-			fromJob = null;
-			toJob = null;
-			promotionJob = null;
-			return;
-		}
-
-		const first = seedJobs[0];
-		const second = seedJobs.length > 1 ? seedJobs[1] : seedJobs[0];
-
-		fromJobId = first.id;
-		fromJob = first;
-		toJobId = second.id;
-		toJob = second;
-		promotionJobId = first.id;
-		promotionJob = first;
+	function applyCurrentJob(job: JobLiteItem, source: "match" | "fallback" | "manual") {
+		currentJobId = job.id;
+		currentJob = job;
+		selectionSource = source;
+		void runCareerPaths(job.id);
 	}
 
 	onMount(async () => {
 		try {
-			const page: JobsPageResult = await fetchJobs({ page: 1, pageSize: 20 });
-			const seedJobs: JobLiteItem[] = page.jobs.map((x) => ({
-				id: x.id,
-				title: x.title,
-				company: x.company,
-				location: x.location,
-			}));
-			applySelectionDefaults(seedJobs);
+			const matched = readTopMatchedJob();
+			if (matched) {
+				applyCurrentJob(matched, "match");
+				return;
+			}
+
+			const page: JobsPageResult = await fetchJobs({ page: 1, pageSize: 1 });
+			const first = page.jobs[0];
+			if (first) {
+				applyCurrentJob(
+					{
+						id: first.id,
+						title: first.title,
+						company: first.company,
+						location: first.location,
+						salary: first.salary,
+					},
+					"fallback",
+				);
+			} else {
+				loadError = "暂无可用于分析的岗位数据。";
+			}
 		} catch (err) {
 			loadError = err instanceof Error ? err.message : "岗位列表加载失败";
 		} finally {
-			loadingJobs = false;
+			loadingInitial = false;
 		}
 	});
 
-	function shortDimensionName(key: string): string {
-		return key.replace("cap_req_", "");
-	}
-
-	async function runTransitionAnalysis() {
-		transitionError = "";
-		transitionResult = null;
-		if (!fromJobId || !toJobId) {
-			transitionError = "请先选择两个岗位";
-			return;
-		}
-
-		transitionLoading = true;
-		try {
-			transitionResult = await analyzeJobTransition(fromJobId, toJobId);
-		} catch (err) {
-			transitionError = err instanceof Error ? err.message : "换岗分析失败";
-		} finally {
-			transitionLoading = false;
-		}
-	}
-
-	async function runPromotionPath() {
-		promotionError = "";
-		promotionResult = null;
-		if (!promotionJobId) {
+	async function runCareerPaths(jobId = currentJobId) {
+		const id = jobId.trim();
+		if (!id) {
 			promotionError = "请先选择岗位";
+			lateralError = "请先选择岗位";
 			return;
 		}
-
+		const runId = ++analysisRun;
 		promotionLoading = true;
-		try {
-			promotionResult = await fetchPromotionPath(promotionJobId, 5, 4);
-		} catch (err) {
-			promotionError = err instanceof Error ? err.message : "升职路径加载失败";
-		} finally {
-			promotionLoading = false;
+		lateralLoading = true;
+		promotionError = "";
+		lateralError = "";
+		promotionResult = null;
+		lateralResult = null;
+
+		const [promotion, lateral] = await Promise.allSettled([
+			fetchPromotionPath(id, 5, 8),
+			fetchLateralPaths(id, 12),
+		]);
+		if (runId !== analysisRun) return;
+
+		if (promotion.status === "fulfilled") {
+			promotionResult = promotion.value;
+		} else {
+			promotionError = promotion.reason instanceof Error ? promotion.reason.message : "升职路径加载失败";
 		}
+		if (lateral.status === "fulfilled") {
+			lateralResult = lateral.value;
+		} else {
+			lateralError = lateral.reason instanceof Error ? lateral.reason.message : "换岗路径加载失败";
+		}
+		promotionLoading = false;
+		lateralLoading = false;
+	}
+
+	function handlePick(job: JobLiteItem) {
+		applyCurrentJob(job, "manual");
+	}
+
+	function sourceLabel(): string {
+		if (selectionSource === "match") return "来自人岗匹配第一名";
+		if (selectionSource === "manual") return "手动选择";
+		return "系统默认岗位";
+	}
+
+	function percent(value: number | undefined): string {
+		const n = Number(value ?? 0);
+		if (!Number.isFinite(n) || n <= 0) return "—";
+		return `${Math.round(Math.min(1, n) * 100)}%`;
+	}
+
+	function routeParts(route: PromotionRoute): string[] {
+		const raw = String(route.route_text || "").trim();
+		const parts = raw
+			.split(/\s*(?:→|->)\s*/)
+			.map((x) => x.trim())
+			.filter(Boolean);
+		if (parts.length) return parts;
+		return route.stages.map((x) => x.role).filter(Boolean);
+	}
+
+	function resourceMeta(resource: CareerPathLearningResource): string {
+		return [resource.resource_type, resource.difficulty, resource.skill_tag].filter(Boolean).join(" · ");
+	}
+
+	function competitionMeta(competition: CareerPathCompetition): string {
+		return [competition.competition_type, competition.difficulty, competition.award_level]
+			.filter(Boolean)
+			.join(" · ");
+	}
+
+	function phaseResources(phase: CareerActionPhase): CareerPathLearningResource[] {
+		return phase.learning_resources?.slice(0, 3) ?? [];
+	}
+
+	function phaseCompetitions(phase: CareerActionPhase): CareerPathCompetition[] {
+		return phase.competitions?.slice(0, 2) ?? [];
 	}
 </script>
 
-<div class="space-y-5">
+<div class="career-preview space-y-5">
 	<section class="rounded-2xl border border-black/10 bg-[var(--page-bg)] p-4 dark:border-white/10">
-		<h3 class="text-base font-semibold">换岗对比分析</h3>
-		<p class="mt-1 text-xs text-75">选择当前岗位与目标岗位，系统会给出技能差异、能力缺口和大模型建议。</p>
+		<div class="flex flex-wrap items-start justify-between gap-3">
+			<div class="min-w-0">
+				<p class="text-xs font-medium text-[var(--primary)]">当前岗位</p>
+				<h3 class="mt-1 text-base font-semibold text-black dark:text-white">
+					{currentJob ? currentJob.title : "尚未选择岗位"}
+				</h3>
+				{#if currentJob}
+					<p class="mt-1 text-sm text-75">
+						{currentJob.company || "未知公司"} · {currentJob.location || "未知地点"}
+						{#if currentJob.salary} · {currentJob.salary}{/if}
+					</p>
+					<p class="mt-2 text-xs text-50">{sourceLabel()}</p>
+				{/if}
+			</div>
+			<div class="flex flex-wrap gap-2">
+				<button
+					type="button"
+					onclick={() => {
+						pickerOpen = true;
+					}}
+					class="inline-flex items-center gap-1.5 rounded-xl border border-black/15 bg-[var(--btn-regular-bg)] px-3 py-2 text-xs font-medium transition hover:opacity-85 dark:border-white/20"
+				>
+					<Icon icon="material-symbols:search-rounded" class="text-base" />
+					选择岗位
+				</button>
+				<button
+					type="button"
+					onclick={() => void runCareerPaths()}
+					disabled={!currentJobId || promotionLoading || lateralLoading}
+					class="inline-flex items-center gap-1.5 rounded-xl border border-[var(--primary)] bg-[var(--btn-regular-bg)] px-3 py-2 text-xs font-medium text-[var(--primary)] transition hover:opacity-85 disabled:opacity-50"
+				>
+					<Icon icon="material-symbols:refresh-rounded" class="text-base" />
+					刷新分析
+				</button>
+			</div>
+		</div>
 
-		{#if loadingJobs}
-			<p class="mt-3 text-sm text-75">岗位数据加载中...</p>
+		{#if loadingInitial}
+			<p class="mt-3 text-sm text-75">正在读取岗位与匹配缓存...</p>
 		{:else if loadError}
 			<p class="mt-3 text-sm text-rose-500">{loadError}</p>
-		{:else}
-			<div class="mt-3 grid gap-3 md:grid-cols-2">
-				<div class="rounded-xl border border-black/10 bg-white/70 p-3 dark:border-white/15 dark:bg-white/5">
-					<p class="text-xs text-75">当前岗位</p>
-					<p class="mt-1 text-sm font-medium">{fromJob ? `${fromJob.title} | ${fromJob.company}` : "未选择"}</p>
-					<button
-						type="button"
-						onclick={() => openPicker("from")}
-						class="mt-2 rounded-lg border border-black/15 px-3 py-1 text-xs transition hover:opacity-80 dark:border-white/20"
-					>
-						选择岗位
-					</button>
-				</div>
-				<div class="rounded-xl border border-black/10 bg-white/70 p-3 dark:border-white/15 dark:bg-white/5">
-					<p class="text-xs text-75">目标岗位</p>
-					<p class="mt-1 text-sm font-medium">{toJob ? `${toJob.title} | ${toJob.company}` : "未选择"}</p>
-					<button
-						type="button"
-						onclick={() => openPicker("to")}
-						class="mt-2 rounded-lg border border-black/15 px-3 py-1 text-xs transition hover:opacity-80 dark:border-white/20"
-					>
-						选择岗位
-					</button>
-				</div>
-			</div>
-
-			<button
-				type="button"
-				onclick={runTransitionAnalysis}
-				disabled={transitionLoading}
-				class="mt-3 rounded-xl border border-[var(--primary)] bg-[var(--btn-regular-bg)] px-4 py-2 text-sm font-medium text-[var(--primary)] transition hover:opacity-90 disabled:opacity-60"
-			>
-				{transitionLoading ? "分析中..." : "开始换岗分析"}
-			</button>
-
-			{#if transitionError}
-				<p class="mt-3 text-sm text-rose-500">{transitionError}</p>
-			{/if}
-
-			{#if transitionResult}
-				<div class="mt-4 space-y-3 rounded-xl border border-black/10 bg-white/70 p-3 text-sm dark:border-white/15 dark:bg-white/5">
-					<div class="grid gap-2 md:grid-cols-4">
-						<div class="rounded-lg bg-[var(--btn-regular-bg)] p-2">
-							<p class="text-xs text-75">经验年限差</p>
-							<p class="text-base font-semibold">{transitionResult.analysis.score_summary.experience_gap}</p>
-						</div>
-						<div class="rounded-lg bg-[var(--btn-regular-bg)] p-2">
-							<p class="text-xs text-75">重叠技能</p>
-							<p class="text-base font-semibold">{transitionResult.analysis.score_summary.overlap_count}</p>
-						</div>
-						<div class="rounded-lg bg-[var(--btn-regular-bg)] p-2">
-							<p class="text-xs text-75">缺失技能</p>
-							<p class="text-base font-semibold">{transitionResult.analysis.score_summary.missing_count}</p>
-						</div>
-						<div class="rounded-lg bg-[var(--btn-regular-bg)] p-2">
-							<p class="text-xs text-75">可行性</p>
-							<p class="text-base font-semibold">{transitionResult.advice.feasibility}</p>
-						</div>
-					</div>
-
-					<p class="rounded-lg border border-black/10 p-2 text-sm dark:border-white/15">{transitionResult.advice.summary}</p>
-
-					<div class="grid gap-3 md:grid-cols-2">
-						<div>
-							<p class="text-xs font-semibold text-75">优势（可迁移）</p>
-							<ul class="mt-1 list-disc pl-5 text-xs">
-								{#each transitionResult.advice.advantages as item (item)}
-									<li>{item}</li>
-								{/each}
-							</ul>
-						</div>
-						<div>
-							<p class="text-xs font-semibold text-75">主要缺口</p>
-							<ul class="mt-1 list-disc pl-5 text-xs">
-								{#each transitionResult.advice.gaps as item (item)}
-									<li>{item}</li>
-								{/each}
-							</ul>
-						</div>
-					</div>
-
-					<div>
-						<p class="text-xs font-semibold text-75">能力维度差（Top 5）</p>
-						<div class="mt-1 grid gap-2 md:grid-cols-2">
-							{#each transitionResult.analysis.capability_gaps.slice(0, 5) as gap (`${gap.dimension}-${gap.gap}`)}
-								<div class="rounded-lg border border-black/10 px-2 py-1 text-xs dark:border-white/15">
-									<span class="font-medium">{shortDimensionName(gap.dimension)}</span>
-									<span class="ml-2 text-75">{gap.from} -> {gap.to}</span>
-									<span class="ml-2 font-semibold">gap {gap.gap}</span>
-								</div>
-							{/each}
-						</div>
-					</div>
-
-					<div>
-						<p class="text-xs font-semibold text-75">学习计划</p>
-						<ul class="mt-1 list-decimal pl-5 text-xs">
-							{#each transitionResult.advice.learning_plan as step (step)}
-								<li>{step}</li>
-							{/each}
-						</ul>
-					</div>
-
-					<p class="rounded-lg border border-amber-400/30 bg-amber-100/40 p-2 text-xs text-amber-900 dark:bg-amber-200/10 dark:text-amber-100">
-						{transitionResult.advice.final_recommendation}
-					</p>
-				</div>
-			{/if}
 		{/if}
 	</section>
 
-	<section class="rounded-2xl border border-black/10 bg-[var(--page-bg)] p-4 dark:border-white/10">
-		<h3 class="text-base font-semibold">升职路径查询</h3>
-		<p class="mt-1 text-xs text-75">基于同公司岗位升职链，展示从当前岗位向上的候选路径。</p>
-
-		{#if !loadingJobs && !loadError}
-			<div class="mt-3 flex flex-wrap items-end gap-3">
-				<div class="min-w-[260px] flex-1 rounded-xl border border-black/10 bg-white/70 p-3 dark:border-white/15 dark:bg-white/5">
-					<p class="text-xs text-75">起始岗位</p>
-					<p class="mt-1 text-sm font-medium">{promotionJob ? `${promotionJob.title} | ${promotionJob.company}` : "未选择"}</p>
-					<button
-						type="button"
-						onclick={() => openPicker("promotion")}
-						class="mt-2 rounded-lg border border-black/15 px-3 py-1 text-xs transition hover:opacity-80 dark:border-white/20"
-					>
-						选择岗位
-					</button>
+	<div class="grid gap-5 xl:grid-cols-2">
+		<section class="rounded-2xl border border-black/10 bg-[var(--page-bg)] p-4 dark:border-white/10">
+			<div class="flex items-start justify-between gap-3">
+				<div>
+					<h3 class="text-base font-semibold">垂直晋升路径</h3>
+					<p class="mt-1 text-xs text-75">先定位当前 Job 的标准 JobTitle，再读取图谱中预置的 JobPromotion 路线。</p>
 				</div>
-				<button
-					type="button"
-					onclick={runPromotionPath}
-					disabled={promotionLoading}
-					class="rounded-xl border border-[var(--primary)] bg-[var(--btn-regular-bg)] px-4 py-2 text-sm font-medium text-[var(--primary)] transition hover:opacity-90 disabled:opacity-60"
-				>
-					{promotionLoading ? "查询中..." : "查询升职路径"}
-				</button>
+				<span class="rounded-full bg-[var(--btn-regular-bg)] px-2.5 py-1 text-xs text-75">
+					{promotionRoutes.length} 条
+				</span>
 			</div>
-		{/if}
 
-		{#if promotionError}
-			<p class="mt-3 text-sm text-rose-500">{promotionError}</p>
-		{/if}
+			{#if promotionLoading}
+				<p class="mt-4 text-sm text-75">正在加载晋升路线...</p>
+			{:else if promotionError}
+				<p class="mt-4 text-sm text-rose-500">{promotionError}</p>
+			{:else if promotionResult && promotionRoutes.length === 0}
+				<p class="mt-4 rounded-xl border border-dashed border-black/20 p-3 text-sm text-75 dark:border-white/20">
+					当前岗位已定位到 {promotionResult.meta.job_title || currentJob?.title}，但暂未配置晋升路线。
+				</p>
+			{:else if promotionRoutes.length}
+				<div class="mt-4 space-y-4">
+					{#each promotionRoutes as route, idx (route.id || `${route.route_title}-${idx}`)}
+						<article class="route-panel">
+							<div class="flex flex-wrap items-start justify-between gap-3">
+								<div class="min-w-0">
+									<p class="text-xs text-[var(--primary)]">路径 {idx + 1}</p>
+									<h4 class="mt-1 text-sm font-semibold text-black dark:text-white">{route.route_title}</h4>
+									<p class="mt-1 text-xs text-75">目标：{route.target_title}</p>
+								</div>
+								{#if route.confidence > 0}
+									<span class="metric-pill">置信度 {percent(route.confidence)}</span>
+								{/if}
+							</div>
 
-		{#if promotionResult}
-			<div class="mt-4 space-y-3 text-sm">
-				{#if promotionResult.paths.length > 0}
-					{#each promotionResult.paths as path, idx (`path-${idx}`)}
-						<div class="rounded-xl border border-black/10 bg-white/70 p-3 dark:border-white/15 dark:bg-white/5">
-							<p class="text-xs text-75">路径 {idx + 1} · 共 {path.hops} 步</p>
-							<div class="mt-2 flex flex-wrap items-center gap-2">
-								{#each path.nodes as node, nidx (`${node.id}-${nidx}`)}
-									<span class="rounded-full border border-black/15 px-3 py-1 text-xs dark:border-white/20">{node.title}</span>
-									{#if nidx < path.nodes.length - 1}
-										<span class="text-xs text-75">-></span>
+							<div class="mt-3 flex flex-wrap items-center gap-2">
+								{#each routeParts(route) as part, partIdx (`${route.id}-${part}-${partIdx}`)}
+									<span class="path-node">{part}</span>
+									{#if partIdx < routeParts(route).length - 1}
+										<Icon icon="material-symbols:arrow-forward-rounded" class="text-sm text-50" />
 									{/if}
 								{/each}
 							</div>
-						</div>
-					{/each}
-				{:else}
-					<p class="rounded-xl border border-dashed border-black/20 p-3 text-sm text-75 dark:border-white/20">
-						当前岗位暂未找到升职链路。可以先运行同公司升职关系构建脚本后再查询。
-					</p>
-				{/if}
 
-				{#if promotionResult.next_steps.length > 0}
-					<div class="rounded-xl border border-black/10 bg-white/70 p-3 dark:border-white/15 dark:bg-white/5">
-						<p class="text-xs font-semibold text-75">可直接晋升的下一步岗位</p>
-						<div class="mt-2 grid gap-2 md:grid-cols-2">
-							{#each promotionResult.next_steps as item (item.id)}
-								<div class="rounded-lg border border-black/10 px-2 py-1 text-xs dark:border-white/15">
-									<div class="font-medium">{item.title}</div>
-									<div class="text-75">{item.company}</div>
-									<div class="text-75">exp_gap: {item.exp_gap} | score_gap: {item.score_gap}</div>
-								</div>
-							{/each}
-						</div>
-					</div>
-				{/if}
+							<p class="mt-3 rounded-lg bg-[var(--btn-regular-bg)]/70 p-2 text-xs leading-relaxed text-75">
+								{route.rationale}
+							</p>
+
+							<div class="mt-3 space-y-3">
+								{#each route.action_plan.phases as phase (`promo-${route.id}-${phase.stage}`)}
+									<div class="phase-panel">
+										<div class="phase-head">
+											<div>
+												<p class="phase-label">{phase.label} · {phase.period}</p>
+												<p class="phase-role">{phase.role}</p>
+											</div>
+											<span class="phase-index">S{phase.stage}</span>
+										</div>
+										<p class="mt-2 text-xs text-75">里程碑：{phase.milestone}</p>
+										<ul class="mt-2 list-disc pl-5 text-xs leading-relaxed text-75">
+											{#each phase.actions as action (action)}
+												<li>{action}</li>
+											{/each}
+										</ul>
+
+										<div class="mt-3 grid gap-2 md:grid-cols-2">
+											<div class="resource-list">
+												<p class="resource-title">学习资源</p>
+												{#each phaseResources(phase) as lr (`promo-lr-${route.id}-${phase.stage}-${lr.resource_id}`)}
+													<a class="resource-item" href={lr.resource_url || undefined} target="_blank" rel="noopener noreferrer">
+														<span>{lr.resource_name}</span>
+														<small>{resourceMeta(lr) || lr.rationale}</small>
+													</a>
+												{:else}
+													<p class="empty-mini">暂无阶段资源</p>
+												{/each}
+											</div>
+											<div class="resource-list">
+												<p class="resource-title">竞赛/实践</p>
+												{#each phaseCompetitions(phase) as cp (`promo-cp-${route.id}-${phase.stage}-${cp.competition_id}`)}
+													<a class="resource-item" href={cp.official_url || undefined} target="_blank" rel="noopener noreferrer">
+														<span>{cp.competition_name}</span>
+														<small>{competitionMeta(cp) || cp.rationale}</small>
+													</a>
+												{:else}
+													<p class="empty-mini">暂无阶段竞赛</p>
+												{/each}
+											</div>
+										</div>
+									</div>
+								{/each}
+							</div>
+						</article>
+					{/each}
+				</div>
+			{/if}
+		</section>
+
+		<section class="rounded-2xl border border-black/10 bg-[var(--page-bg)] p-4 dark:border-white/10">
+			<div class="flex items-start justify-between gap-3">
+				<div>
+					<h3 class="text-base font-semibold">水平换岗路径</h3>
+					<p class="mt-1 text-xs text-75">读取 JobTitle 层的 SIMILAR_FOR_LATERAL 关系，按迁移可行性排序。</p>
+				</div>
+				<span class="rounded-full bg-[var(--btn-regular-bg)] px-2.5 py-1 text-xs text-75">
+					展示 {visibleLateralRoutes.length}/{lateralRoutes.length} 条
+				</span>
 			</div>
-		{/if}
-	</section>
+
+			{#if lateralLoading}
+				<p class="mt-4 text-sm text-75">正在加载换岗路线...</p>
+			{:else if lateralError}
+				<p class="mt-4 text-sm text-rose-500">{lateralError}</p>
+			{:else if lateralResult && lateralRoutes.length === 0}
+				<p class="mt-4 rounded-xl border border-dashed border-black/20 p-3 text-sm text-75 dark:border-white/20">
+					当前岗位对应的 JobTitle「{lateralResult.job_title || currentJob?.title}」暂未配置横向换岗关系。
+				</p>
+			{:else if visibleLateralRoutes.length}
+				<div class="mt-4 space-y-4">
+					{#each visibleLateralRoutes as route (route.id)}
+						<article class="route-panel">
+							<div class="flex flex-wrap items-start justify-between gap-3">
+								<div class="min-w-0">
+									<p class="text-xs text-[var(--primary)]">第 {route.rank} 推荐</p>
+									<h4 class="mt-1 text-sm font-semibold text-black dark:text-white">
+										{route.from_title} → {route.target_title}
+									</h4>
+									<p class="mt-1 text-xs text-75">{route.rationale}</p>
+								</div>
+								<span class="metric-pill">迁移度 {percent(route.score)}</span>
+							</div>
+
+							<div class="mt-3 flex flex-wrap gap-2 text-xs">
+								{#if route.track_to}<span class="tag-pill">{route.track_to}</span>{/if}
+								{#if route.same_track}<span class="tag-pill">同赛道</span>{/if}
+								{#if route.promotion_linked}<span class="tag-pill">与晋升路线相邻</span>{/if}
+								{#if route.cap_similarity}<span class="tag-pill">能力相似 {percent(route.cap_similarity)}</span>{/if}
+							</div>
+
+							{#if route.candidate_jobs.length}
+								<div class="mt-3">
+									<p class="resource-title">可参考的具体岗位</p>
+									<div class="mt-1 grid gap-2">
+										{#each route.candidate_jobs as job (`lat-job-${route.id}-${job.id}`)}
+											<div class="job-mini">
+												<span>{job.title}</span>
+												<small>{job.company || "未知公司"} · {job.location || "未知地点"}{job.salary ? ` · ${job.salary}` : ""}</small>
+											</div>
+										{/each}
+									</div>
+								</div>
+							{/if}
+
+							<div class="mt-3 space-y-3">
+								{#each route.action_plan.phases as phase (`lateral-${route.id}-${phase.stage}`)}
+									<div class="phase-panel">
+										<div class="phase-head">
+											<div>
+												<p class="phase-label">{phase.label} · {phase.period}</p>
+												<p class="phase-role">{phase.role}</p>
+											</div>
+											<span class="phase-index">S{phase.stage}</span>
+										</div>
+										<p class="mt-2 text-xs text-75">里程碑：{phase.milestone}</p>
+										<ul class="mt-2 list-disc pl-5 text-xs leading-relaxed text-75">
+											{#each phase.actions as action (action)}
+												<li>{action}</li>
+											{/each}
+										</ul>
+
+										<div class="mt-3 grid gap-2 md:grid-cols-2">
+											<div class="resource-list">
+												<p class="resource-title">学习资源</p>
+												{#each phaseResources(phase) as lr (`lat-lr-${route.id}-${phase.stage}-${lr.resource_id}`)}
+													<a class="resource-item" href={lr.resource_url || undefined} target="_blank" rel="noopener noreferrer">
+														<span>{lr.resource_name}</span>
+														<small>{resourceMeta(lr) || lr.rationale}</small>
+													</a>
+												{:else}
+													<p class="empty-mini">暂无阶段资源</p>
+												{/each}
+											</div>
+											<div class="resource-list">
+												<p class="resource-title">竞赛/实践</p>
+												{#each phaseCompetitions(phase) as cp (`lat-cp-${route.id}-${phase.stage}-${cp.competition_id}`)}
+													<a class="resource-item" href={cp.official_url || undefined} target="_blank" rel="noopener noreferrer">
+														<span>{cp.competition_name}</span>
+														<small>{competitionMeta(cp) || cp.rationale}</small>
+													</a>
+												{:else}
+													<p class="empty-mini">暂无阶段竞赛</p>
+												{/each}
+											</div>
+										</div>
+									</div>
+								{/each}
+							</div>
+						</article>
+					{/each}
+				</div>
+			{/if}
+		</section>
+	</div>
 </div>
 
 <JobPickerModal
 	open={pickerOpen}
-	modalTitle={pickerTitle()}
-	selectedJobId={selectedJobIdForPicker()}
-	onClose={closePicker}
+	modalTitle="选择当前岗位"
+	selectedJobId={currentJobId}
+	onClose={() => {
+		pickerOpen = false;
+	}}
 	onSelect={handlePick}
 />
+
+<style>
+	.route-panel {
+		border: 1px solid color-mix(in oklch, currentColor 10%, transparent);
+		border-radius: 0.85rem;
+		background: color-mix(in oklch, var(--card-bg) 94%, transparent);
+		padding: 0.85rem;
+	}
+	.metric-pill,
+	.tag-pill,
+	.path-node {
+		display: inline-flex;
+		align-items: center;
+		max-width: 100%;
+		border-radius: 999px;
+		border: 1px solid color-mix(in oklch, currentColor 12%, transparent);
+		background: color-mix(in oklch, var(--btn-regular-bg) 78%, transparent);
+		color: color-mix(in oklch, currentColor 76%, transparent);
+		font-size: 0.72rem;
+		line-height: 1.25;
+	}
+	.metric-pill,
+	.tag-pill {
+		padding: 0.18rem 0.55rem;
+	}
+	.path-node {
+		padding: 0.28rem 0.65rem;
+		font-weight: 600;
+		color: color-mix(in oklch, currentColor 86%, transparent);
+	}
+	.phase-panel {
+		border-radius: 0.75rem;
+		border: 1px solid color-mix(in oklch, currentColor 9%, transparent);
+		background: color-mix(in oklch, var(--btn-regular-bg) 48%, transparent);
+		padding: 0.75rem;
+	}
+	.phase-head {
+		display: flex;
+		align-items: flex-start;
+		justify-content: space-between;
+		gap: 0.75rem;
+	}
+	.phase-label {
+		margin: 0;
+		font-size: 0.72rem;
+		font-weight: 700;
+		color: color-mix(in oklch, var(--primary) 80%, currentColor);
+	}
+	.phase-role {
+		margin: 0.12rem 0 0;
+		font-size: 0.86rem;
+		font-weight: 700;
+		color: color-mix(in oklch, currentColor 88%, transparent);
+	}
+	.phase-index {
+		border-radius: 0.55rem;
+		background: color-mix(in oklch, var(--primary) 12%, transparent);
+		color: color-mix(in oklch, var(--primary) 85%, currentColor);
+		font-size: 0.72rem;
+		font-weight: 800;
+		padding: 0.15rem 0.4rem;
+	}
+	.resource-list {
+		min-width: 0;
+		display: grid;
+		gap: 0.38rem;
+	}
+	.resource-title {
+		margin: 0;
+		font-size: 0.72rem;
+		font-weight: 700;
+		color: color-mix(in oklch, currentColor 64%, transparent);
+	}
+	.resource-item,
+	.job-mini {
+		min-width: 0;
+		display: grid;
+		gap: 0.12rem;
+		border-radius: 0.58rem;
+		background: color-mix(in oklch, var(--card-bg) 90%, transparent);
+		padding: 0.45rem 0.55rem;
+		text-decoration: none;
+	}
+	.resource-item:hover {
+		background: color-mix(in oklch, var(--primary) 8%, var(--card-bg));
+	}
+	.resource-item span,
+	.job-mini span {
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+		font-size: 0.76rem;
+		font-weight: 650;
+		color: color-mix(in oklch, currentColor 88%, transparent);
+	}
+	.resource-item small,
+	.job-mini small {
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+		font-size: 0.68rem;
+		color: color-mix(in oklch, currentColor 55%, transparent);
+	}
+	.empty-mini {
+		margin: 0;
+		border-radius: 0.58rem;
+		border: 1px dashed color-mix(in oklch, currentColor 12%, transparent);
+		padding: 0.45rem 0.55rem;
+		font-size: 0.72rem;
+		color: color-mix(in oklch, currentColor 52%, transparent);
+	}
+</style>

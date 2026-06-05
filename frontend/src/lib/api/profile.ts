@@ -30,6 +30,29 @@ export interface PortraitResult {
   completeness: number;
   competitiveness: number;
   detailed_analysis?: any;
+  materials?: Array<{
+    name: string;
+    kind: string;
+    status: string;
+    chars?: number;
+    extension?: string;
+    error?: string;
+    elapsed_ms?: number;
+  }>;
+}
+
+async function readProfileUploadJson(res: Response): Promise<any> {
+  const text = await res.text().catch(() => "");
+  const trimmed = text.trim();
+  if (!trimmed) {
+    throw new Error(`材料解析失败：后端返回空响应（HTTP ${res.status} ${res.statusText || ""}）`);
+  }
+  try {
+    return JSON.parse(trimmed);
+  } catch {
+    const preview = trimmed.length > 180 ? `${trimmed.slice(0, 180)}...` : trimmed;
+    throw new Error(`材料解析失败：后端返回非 JSON 响应（HTTP ${res.status}）：${preview}`);
+  }
 }
 
 export async function uploadResume(data: FormData) {
@@ -45,12 +68,21 @@ export async function uploadResume(data: FormData) {
     body: data,
   });
 
-  const json = await res.json();
-  if (json.code !== 200) throw new Error(json.msg || '分析失败');
+  const json = await readProfileUploadJson(res);
+  if (json.code !== 200) {
+    const materials = Array.isArray(json.data?.materials)
+      ? json.data.materials as Array<{ name?: string; status?: string; error?: string }>
+      : [];
+    const materialErrors = materials
+      .filter((item) => item.status && item.status !== "ok")
+      .map((item) => `${item.name || "材料"}：${item.error || item.status}`)
+      .join("；");
+    throw new Error([json.msg || '分析失败', materialErrors].filter(Boolean).join("；"));
+  }
   return json.data as PortraitResult;
 }
 
-/** 拉取单条简历画像完整行（含 detailed_analysis），供刷新后恢复下方报告区 */
+/** 拉取单条能力画像完整行（含 detailed_analysis），供刷新后恢复下方报告区 */
 export async function fetchResumePortraitResult(
   resumeId: number,
 ): Promise<Record<string, unknown> | null> {

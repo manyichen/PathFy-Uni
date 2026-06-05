@@ -1,0 +1,16 @@
+---
+import Layout from "@layouts/Layout.astro";
+import GraphManager from "@components/graph/GraphManager.svelte";
+---
+
+<Layout title="图谱管理" description="岗位数据导入、晋升边生成、图谱统计">
+    <section class="onload-animation space-y-6">
+        <div>
+            <h1 class="text-2xl font-bold text-black dark:text-white">图谱管理</h1>
+            <p class="text-75 mt-2 text-sm">
+                招聘数据 ETL：导入岗位、生成晋升关系、查看图谱统计。
+            </p>
+        </div>
+        <GraphManager client:load />
+    </section>
+</Layout>

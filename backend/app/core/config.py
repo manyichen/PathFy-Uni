@@ -37,7 +37,7 @@ class Config:
     # 外发 LLM / 本地存储隐私（见 app/infrastructure/privacy.py）
     LLM_PRIVACY_MODE = _env_bool("LLM_PRIVACY_MODE", "true")
     LLM_MAX_TEXT_CHARS = int(os.getenv("LLM_MAX_TEXT_CHARS", "4000"))
-    LLM_MAX_RESUME_CHARS = int(os.getenv("LLM_MAX_RESUME_CHARS", "6000"))
+    LLM_MAX_RESUME_CHARS = int(os.getenv("LLM_MAX_RESUME_CHARS", "20000"))
     LLM_MAX_FIELD_CHARS = int(os.getenv("LLM_MAX_FIELD_CHARS", "1200"))
     LLM_STORE_RAW_SNIPPETS = _env_bool("LLM_STORE_RAW_SNIPPETS", "false")
     LOCAL_STORE_RAW_RESUME_TEXT = _env_bool("LOCAL_STORE_RAW_RESUME_TEXT", "false")
@@ -57,6 +57,9 @@ class Config:
     OCR_APP_ID = os.getenv("OCR_APP_ID")
     OCR_API_KEY = os.getenv("OCR_API_KEY")
     OCR_SECRET_KEY = os.getenv("OCR_SECRET_KEY")
+    OCR_CONNECT_TIMEOUT_SECONDS = float(os.getenv("OCR_CONNECT_TIMEOUT_SECONDS", "3"))
+    OCR_SOCKET_TIMEOUT_SECONDS = float(os.getenv("OCR_SOCKET_TIMEOUT_SECONDS", "20"))
+    OCR_MAX_PDF_PAGES = int(os.getenv("OCR_MAX_PDF_PAGES", "12"))
 
     DASHSCOPE_API_KEY = os.getenv("DASHSCOPE_API_KEY")
 
@@ -116,3 +119,13 @@ class Config:
     CAREER_COMP_POOL_PER_TARGET = int(os.getenv("CAREER_COMP_POOL_PER_TARGET", "10"))
     CAREER_LR_PER_TARGET = int(os.getenv("CAREER_LR_PER_TARGET", "6"))
     CAREER_COMP_PER_TARGET = int(os.getenv("CAREER_COMP_PER_TARGET", "3"))
+
+    # === Graph ETL 配置 ===
+    GRAPH_LLM_BASE_URL = os.getenv("GRAPH_LLM_BASE_URL", os.getenv("ARK_BASE_URL", ""))
+    GRAPH_LLM_API_KEY = os.getenv("GRAPH_LLM_API_KEY", os.getenv("ARK_API_KEY", ""))
+    GRAPH_LLM_MODEL = os.getenv("GRAPH_LLM_MODEL", "doubao-seed-2-0-mini-260215")
+    GRAPH_BATCH_SIZE = int(os.getenv("GRAPH_BATCH_SIZE", "128"))
+    GRAPH_MAX_RETRIES = int(os.getenv("GRAPH_MAX_RETRIES", "5"))
+    GRAPH_LLM_TIMEOUT_SECONDS = int(os.getenv("GRAPH_LLM_TIMEOUT_SECONDS", "120"))
+    GRAPH_PROMOTION_MIN_CONFIDENCE = float(os.getenv("GRAPH_PROMOTION_MIN_CONFIDENCE", "0.55"))
+    GRAPH_PROMOTION_BACKUP_DIR = os.getenv("GRAPH_PROMOTION_BACKUP_DIR", "")

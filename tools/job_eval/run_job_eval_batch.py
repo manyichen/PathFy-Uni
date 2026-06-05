@@ -68,7 +68,7 @@ cap_req_growth 学习与发展潜力(学习敏捷/适应变化/可持续成长) 
 据此对八维给出相对「评估侧重」：在 0–100 打分时，对与方向强相关的维度可适当抬高、对弱相关维度相对压低，且必须与 job.demand、job.title、skills 交叉印证；禁止仅凭公司名或融资类型堆砌高分；描述模糊时降低相关 cap_conf_*。
 侧重参考（可交叉，非互斥）：①研发/科研/硬科技→cap_req_theory、cap_req_innovation、cap_req_digital 为主，cap_req_practice 次之。②教育/知识服务/内容→cap_req_theory、cap_req_social、cap_req_growth 为主，cap_req_digital 次之。③互联网产品/平台/运营/数据→cap_req_digital、cap_req_cross、cap_req_teamwork 为主，cap_req_innovation 次之。④销售/市场/渠道/商务→cap_req_social、cap_req_practice、cap_req_teamwork 为主，cap_req_cross 次之。⑤生产/供应链/交付实施→cap_req_practice、cap_req_teamwork 为主，cap_req_theory 次之。⑥company_type 仅作组织节奏辅助信号，须与岗位证据一致才可微调。
 evidence 中至少一条用一句话点明公司方向与八维偏重的对应（勿复述 company_detail 长文）。
-【规模薪资与工作价值含量】读 company_size、salary，以月薪 1 万为参照做价值档位辅助；须与 demand/title/skills 一致才可同向微调八维；空/面议在 evidence 或 risk_flags 用一句话说明。
+【规模薪资与工作价值含量】读 company_size、salary，以月薪 6000 CNY 为参照做价值档位辅助；须与 demand/title/skills 一致才可同向微调八维；空/面议在 evidence 或 risk_flags 用一句话说明。
 【数据多元性】技能、demand、图结构、公司信息等多源越少 cap_conf_* 越低。
 【证据与风险文风】evidence 总数≤8，每条为极短依据：点明字段名+结论即可，单条中文≤40字，禁止大段粘贴 JD/公司简介。risk_flags 总数≤8，每项中文≤35字，写结论不写散文。
 """.strip()

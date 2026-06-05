@@ -13,3 +13,7 @@ baidu-aip>=4.16.10
 chardet>=5.0.0
 PyMuPDF>=1.24.0
 pyecharts>=2.0.0
+pandas>=3.0.0
+xlrd>=2.0.1
+openpyxl>=3.1.0
+gunicorn>=23.0.0

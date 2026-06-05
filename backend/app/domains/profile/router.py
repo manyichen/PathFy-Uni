@@ -4,18 +4,37 @@ from uuid import uuid4
 from flask import Blueprint, request, jsonify
 import os
 import json
+import tempfile
+import time
+import zipfile
+import xml.etree.ElementTree as ET
 from werkzeug.utils import secure_filename
 
 from app.core.security import assert_self_user_id, get_bearer_user_id
 from app.core.config import Config
 from app.db import db_cursor
 from app.infrastructure.privacy import redact_text, storage_safe_text
-from app.infrastructure.ocr import ocr_image, pdf_to_image
+from app.infrastructure.ocr import extract_pdf_text, ocr_image, pdf_to_images
 from app.utils import create_radar_chart, score_resume
 
 portrait_bp = Blueprint("profile", __name__, url_prefix="/api/profile")
 
-_ALLOWED_RESUME_EXTENSIONS = {".pdf", ".png", ".jpg", ".jpeg", ".webp"}
+_IMAGE_MATERIAL_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp"}
+_TEXT_MATERIAL_EXTENSIONS = {".txt", ".md", ".markdown", ".csv", ".json"}
+_WORD_MATERIAL_EXTENSIONS = {".docx"}
+_SPREADSHEET_MATERIAL_EXTENSIONS = {".xls", ".xlsx"}
+_PDF_MATERIAL_EXTENSIONS = {".pdf"}
+_ALLOWED_RESUME_EXTENSIONS = (
+    _PDF_MATERIAL_EXTENSIONS
+    | _IMAGE_MATERIAL_EXTENSIONS
+    | _TEXT_MATERIAL_EXTENSIONS
+    | _WORD_MATERIAL_EXTENSIONS
+    | _SPREADSHEET_MATERIAL_EXTENSIONS
+)
+_MAX_MATERIALS = 12
+_MAX_DIRECT_TEXT_CHARS = 20000
+_MAX_EXTRACTED_CHARS_PER_MATERIAL = 30000
+_MIN_PDF_TEXT_CHARS_BEFORE_OCR = 80
 
 
 def _jsonable_row(row: dict | None) -> dict | None:
@@ -40,10 +59,24 @@ def _resume_extension(filename: str) -> str:
 
 
 def _resume_upload_dir() -> str:
-    """简历 OCR 用临时目录（不在 Flask static 下，不可通过 URL 直接访问）。"""
-    path = Config.RESUME_UPLOAD_DIR
-    os.makedirs(path, mode=0o700, exist_ok=True)
-    return path
+    """为单个材料创建独立 OCR 临时工作目录。"""
+    base_dirs = []
+    configured = str(getattr(Config, "RESUME_UPLOAD_DIR", "") or "").strip()
+    if configured:
+        base_dirs.append(os.path.abspath(configured))
+    temp_root = tempfile.gettempdir()
+    if temp_root not in base_dirs:
+        base_dirs.append(temp_root)
+
+    last_error: OSError | None = None
+    for base_dir in base_dirs:
+        try:
+            os.makedirs(base_dir, mode=0o700, exist_ok=True)
+            return tempfile.mkdtemp(prefix="pathfy_profile_", dir=base_dir)
+        except OSError as exc:
+            last_error = exc
+
+    raise OSError(f"无法创建可写的材料上传临时目录: {last_error}")
 
 
 def _discard_path(path: str | None) -> None:
@@ -51,6 +84,15 @@ def _discard_path(path: str | None) -> None:
         return
     try:
         os.remove(path)
+    except OSError:
+        pass
+
+
+def _discard_empty_dir(path: str | None) -> None:
+    if not path or not os.path.isdir(path):
+        return
+    try:
+        os.rmdir(path)
     except OSError:
         pass
 
@@ -75,7 +117,7 @@ def _discard_pdf_preview_artifacts(pdf_path: str | None) -> None:
 def _cleanup_resume_upload_artifacts(
     file_path: str | None, ocr_path: str | None, *, from_pdf: bool
 ) -> None:
-    """OCR 结束后删除磁盘上的简历原文件与 PDF 预览图。"""
+    """OCR 结束后删除磁盘上的画像材料原文件与 PDF 预览图。"""
     if not getattr(Config, "DELETE_UPLOADED_RESUME_AFTER_OCR", True):
         return
     if ocr_path and ocr_path != file_path:
@@ -86,13 +128,13 @@ def _cleanup_resume_upload_artifacts(
 
 
 def _save_resume_upload(file) -> tuple[str | None, str | None]:
-    """校验并保存简历文件，返回 (磁盘路径, 错误信息)。"""
+    """校验并保存画像材料文件，返回 (磁盘路径, 错误信息)。"""
     if not file or not file.filename:
-        return None, "请上传简历文件"
+        return None, "请上传画像材料"
 
     ext = _resume_extension(file.filename)
     if ext not in _ALLOWED_RESUME_EXTENSIONS:
-        return None, "仅支持 PDF、PNG、JPG、JPEG、WEBP 格式"
+        return None, "仅支持 PDF、图片、TXT/MD/CSV/JSON、DOCX、XLS/XLSX 格式"
 
     file.seek(0, os.SEEK_END)
     size = file.tell()
@@ -103,12 +145,257 @@ def _save_resume_upload(file) -> tuple[str | None, str | None]:
     if size > max_bytes:
         return None, f"文件大小不能超过 {Config.MAX_UPLOAD_MB}MB"
 
-    safe_name = secure_filename(file.filename) or "resume"
+    safe_name = secure_filename(file.filename)
+    if not safe_name or "." not in safe_name:
+        safe_name = f"material{ext or ''}"
     stored_name = f"{uuid4().hex}_{safe_name}"
-    upload_dir = _resume_upload_dir()
-    file_path = os.path.join(upload_dir, stored_name)
-    file.save(file_path)
-    return file_path, None
+    upload_dir: str | None = None
+    try:
+        upload_dir = _resume_upload_dir()
+        file_path = os.path.join(upload_dir, stored_name)
+        file.save(file_path)
+        return file_path, None
+    except OSError as exc:
+        if upload_dir:
+            _discard_empty_dir(upload_dir)
+        return None, f"保存材料失败: {exc}"
+
+
+def _decode_text_bytes(data: bytes) -> str:
+    for enc in ("utf-8-sig", "utf-8", "gb18030", "gbk"):
+        try:
+            return data.decode(enc)
+        except UnicodeDecodeError:
+            continue
+    return data.decode("utf-8", errors="ignore")
+
+
+def _trim_material_text(text: str, *, limit: int = _MAX_EXTRACTED_CHARS_PER_MATERIAL) -> str:
+    clean = str(text or "").replace("\x00", "").strip()
+    if len(clean) <= limit:
+        return clean
+    return clean[:limit] + "\n...[材料内容过长，已截断]"
+
+
+def _extract_text_file(file_path: str) -> str:
+    with open(file_path, "rb") as f:
+        return _decode_text_bytes(f.read())
+
+
+def _extract_docx_text(file_path: str) -> str:
+    parts: list[str] = []
+    with zipfile.ZipFile(file_path) as zf:
+        names = [
+            name
+            for name in zf.namelist()
+            if name == "word/document.xml"
+            or name.startswith("word/header")
+            or name.startswith("word/footer")
+        ]
+        for name in names:
+            xml_bytes = zf.read(name)
+            root = ET.fromstring(xml_bytes)
+            texts = []
+            for elem in root.iter():
+                if elem.tag.endswith("}t") and elem.text:
+                    texts.append(elem.text)
+                elif elem.tag.endswith("}tab"):
+                    texts.append("\t")
+                elif elem.tag.endswith("}br"):
+                    texts.append("\n")
+            if texts:
+                parts.append("".join(texts))
+    return "\n".join(parts)
+
+
+def _extract_spreadsheet_text(file_path: str) -> str:
+    import pandas as pd
+
+    chunks: list[str] = []
+    workbook = pd.ExcelFile(file_path)
+    for sheet_name in workbook.sheet_names[:3]:
+        frame = pd.read_excel(workbook, sheet_name=sheet_name, dtype=str, nrows=80)
+        frame = frame.fillna("")
+        rows = []
+        for _, row in frame.iterrows():
+            values = [str(x).strip() for x in row.tolist() if str(x).strip()]
+            if values:
+                rows.append(" | ".join(values))
+        if rows:
+            chunks.append(f"[表格：{sheet_name}]\n" + "\n".join(rows))
+    return "\n\n".join(chunks)
+
+
+def _extract_pdf_material_text(file_path: str) -> tuple[str, list[str]]:
+    artifacts: list[str] = []
+    max_pages = max(1, int(getattr(Config, "OCR_MAX_PDF_PAGES", 12)))
+
+    text = extract_pdf_text(file_path, max_pages=max_pages).strip()
+    if len(text) >= _MIN_PDF_TEXT_CHARS_BEFORE_OCR:
+        return text, artifacts
+
+    page_images = pdf_to_images(file_path, max_pages=max_pages)
+    artifacts.extend(page_images)
+    chunks = [text] if text else []
+    for idx, img_path in enumerate(page_images, start=1):
+        page_text = ocr_image(img_path).strip()
+        if page_text:
+            chunks.append(f"[PDF OCR 第 {idx} 页]\n{page_text}")
+    return "\n\n".join(chunks).strip(), artifacts
+
+
+def _extract_material_text(file_path: str, filename: str) -> tuple[str, str, list[str]]:
+    ext = _resume_extension(filename)
+    artifacts: list[str] = []
+    if ext in _TEXT_MATERIAL_EXTENSIONS:
+        return _extract_text_file(file_path), "文本文件", artifacts
+    if ext in _WORD_MATERIAL_EXTENSIONS:
+        return _extract_docx_text(file_path), "Word 文档", artifacts
+    if ext in _SPREADSHEET_MATERIAL_EXTENSIONS:
+        return _extract_spreadsheet_text(file_path), "表格材料", artifacts
+    if ext in _IMAGE_MATERIAL_EXTENSIONS:
+        return ocr_image(file_path), "图片 OCR", artifacts
+    if ext in _PDF_MATERIAL_EXTENSIONS:
+        text, artifacts = _extract_pdf_material_text(file_path)
+        return text, "PDF 文档", artifacts
+    raise ValueError(f"不支持的文件类型：{ext}")
+
+
+def _material_form_files() -> list:
+    files = []
+    legacy = request.files.get("resume")
+    if legacy and legacy.filename:
+        files.append(legacy)
+    for item in request.files.getlist("materials"):
+        if item and item.filename and item is not legacy:
+            files.append(item)
+    return files[:_MAX_MATERIALS]
+
+
+def _direct_profile_text() -> str:
+    fields = [
+        "profile_text",
+        "direct_text",
+        "self_intro",
+        "self_intro_text",
+        "extra_text",
+    ]
+    chunks = []
+    for field in fields:
+        value = str(request.form.get(field) or "").strip()
+        if value:
+            chunks.append(value)
+    text = "\n\n".join(chunks).strip()
+    if len(text) > _MAX_DIRECT_TEXT_CHARS:
+        text = text[:_MAX_DIRECT_TEXT_CHARS] + "\n...[直接输入内容过长，已截断]"
+    return text
+
+
+def _collect_profile_materials() -> tuple[str, list[dict], list[str], list[str]]:
+    """返回 (合并文本, 材料元信息, 保存文件路径, 临时衍生文件路径)。"""
+    files = _material_form_files()
+    direct_text = _direct_profile_text()
+    saved_paths: list[str] = []
+    artifact_paths: list[str] = []
+    metas: list[dict] = []
+    sections: list[str] = []
+
+    if direct_text:
+        sections.append(f"[直接输入 | 自我介绍/补充材料]\n{direct_text}")
+        metas.append(
+            {
+                "name": "直接输入",
+                "kind": "direct_text",
+                "status": "ok",
+                "chars": len(direct_text),
+            }
+        )
+
+    for file in files:
+        file_path, upload_err = _save_resume_upload(file)
+        if upload_err or not file_path:
+            metas.append(
+                {
+                    "name": file.filename or "未命名材料",
+                    "kind": "file",
+                    "status": "error",
+                    "error": upload_err or "上传失败",
+                    "chars": 0,
+                }
+            )
+            continue
+        saved_paths.append(file_path)
+        filename = file.filename or os.path.basename(file_path)
+        ext = _resume_extension(filename)
+        started_at = time.monotonic()
+        try:
+            raw_text, kind, artifacts = _extract_material_text(file_path, filename)
+            artifact_paths.extend(artifacts)
+            material_text = _trim_material_text(raw_text)
+            elapsed_ms = int((time.monotonic() - started_at) * 1000)
+            if material_text:
+                sections.append(f"[{filename} | {kind}]\n{material_text}")
+                metas.append(
+                    {
+                        "name": filename,
+                        "kind": kind,
+                        "extension": ext,
+                        "status": "ok",
+                        "chars": len(material_text),
+                        "elapsed_ms": elapsed_ms,
+                    }
+                )
+            else:
+                metas.append(
+                    {
+                        "name": filename,
+                        "kind": kind,
+                        "extension": ext,
+                        "status": "empty",
+                        "error": "未识别到有效文本",
+                        "chars": 0,
+                        "elapsed_ms": elapsed_ms,
+                    }
+                )
+        except Exception as exc:  # noqa: BLE001
+            elapsed_ms = int((time.monotonic() - started_at) * 1000)
+            metas.append(
+                {
+                    "name": filename,
+                    "kind": "file",
+                    "extension": ext,
+                    "status": "error",
+                    "error": str(exc),
+                    "chars": 0,
+                    "elapsed_ms": elapsed_ms,
+                }
+            )
+
+    combined_text = "\n\n---\n\n".join(sections).strip()
+    return combined_text, metas, saved_paths, artifact_paths
+
+
+def _cleanup_material_upload_artifacts(file_paths: list[str], artifact_paths: list[str]) -> None:
+    if not getattr(Config, "DELETE_UPLOADED_RESUME_AFTER_OCR", True):
+        return
+    upload_dirs = {os.path.dirname(path) for path in file_paths if path}
+    for path in artifact_paths:
+        _discard_path(path)
+    seen_dirs = {os.path.dirname(path) for path in artifact_paths if path}
+    for path in file_paths:
+        _discard_pdf_preview_artifacts(path)
+        _discard_path(path)
+    for directory in seen_dirs:
+        if os.path.basename(directory) != "pdf_images":
+            continue
+        try:
+            if os.path.isdir(directory) and not os.listdir(directory):
+                os.rmdir(directory)
+        except OSError:
+            pass
+    for directory in upload_dirs:
+        if os.path.basename(directory).startswith("pathfy_profile_"):
+            _discard_empty_dir(directory)
 
 
 # ===================== 行业能力要求数据 =====================
@@ -363,7 +650,7 @@ def generate_long_term_goals(scores):
     return goals[:4]  # 最多返回4个目标
 
 def extract_resume_keywords(resume_text):
-    """提取简历关键词并分析"""
+    """提取画像材料关键词并分析"""
     # 常见技能关键词库
     skill_keywords = {
         "编程语言": ["Python", "Java", "C++", "JavaScript", "Go", "Rust", "SQL", "R", "MATLAB", "PHP"],
@@ -395,7 +682,7 @@ def extract_resume_keywords(resume_text):
     }
 
 def generate_keyword_suggestions(found_keywords, skill_density):
-    """生成简历关键词优化建议"""
+    """生成画像材料关键词优化建议"""
     suggestions = []
 
     # 检查缺失的技能类别
@@ -405,14 +692,14 @@ def generate_keyword_suggestions(found_keywords, skill_density):
         suggestions.append(f"建议补充以下技能领域：{', '.join(missing_categories[:3])}")
 
     if skill_density < 50:
-        suggestions.append("简历中技能关键词较少，建议增加技术技能描述，如熟练使用的工具、掌握的技术栈等")
+        suggestions.append("画像材料中技能关键词较少，建议增加技术技能描述，如熟练使用的工具、掌握的技术栈等")
 
     # 检查软硬技能比例
     soft_skills = found_keywords.get("软技能", [])
     hard_skills_count = sum(len(kws) for cat, kws in found_keywords.items() if cat != "软技能")
 
     if len(soft_skills) > hard_skills_count:
-        suggestions.append("建议增加更多硬技能描述，如编程语言、工具使用等，使简历更具技术说服力")
+        suggestions.append("建议增加更多硬技能描述，如编程语言、工具使用等，使材料更具技术说服力")
     elif len(soft_skills) < 2 and hard_skills_count > 5:
         suggestions.append("建议适当增加软技能描述，如团队协作、沟通能力等，展现综合素质")
 
@@ -428,7 +715,7 @@ def generate_detailed_analysis(scores, resume_text=""):
         "short_term_plan": [],  # 短期提升计划
         "long_term_goals": [],  # 长期发展目标
         "industry_match": [],  # 行业适配性分析
-        "resume_analysis": {}  # 简历关键词分析
+        "resume_analysis": {}  # 画像材料关键词分析
     }
 
     # 1. 各维度详细分析
@@ -463,7 +750,7 @@ def generate_detailed_analysis(scores, resume_text=""):
     # 5. 行业适配性分析
     analysis["industry_match"] = calculate_industry_match(scores)
 
-    # 6. 简历关键词分析
+    # 6. 画像材料关键词分析
     if resume_text:
         analysis["resume_analysis"] = extract_resume_keywords(resume_text)
 
@@ -549,7 +836,7 @@ def generate_overall_evaluation(scores, avg_score):
 
 @portrait_bp.route("/resumes", methods=["GET"])
 def list_my_resumes():
-    """当前登录用户的能力画像（简历分析）列表，供人岗匹配选用。"""
+    """当前登录用户的能力画像列表，供人岗匹配选用。"""
     uid = get_bearer_user_id()
     if uid is None:
         return jsonify({"code": 401, "msg": "需要登录（Authorization: Bearer）"}), 401
@@ -614,9 +901,8 @@ def list_my_resumes():
 
 @portrait_bp.route("/upload", methods=["POST"])
 def upload_resume():
-    file_path: str | None = None
-    ocr_path: str | None = None
-    from_pdf = False
+    file_paths: list[str] = []
+    artifact_paths: list[str] = []
     try:
         uid = get_bearer_user_id()
         if uid is None:
@@ -624,31 +910,32 @@ def upload_resume():
 
         name = request.form.get("name")
         major = request.form.get("major")
-        file = request.files.get("resume")
 
-        if not all([name, major, file]):
-            return jsonify({"code": 400, "msg": "参数不全"}), 400
+        if not all([name, major]):
+            return jsonify({"code": 400, "msg": "请填写姓名和专业"}), 400
 
-        file_path, upload_err = _save_resume_upload(file)
-        if upload_err or not file_path:
-            status = 413 if upload_err and "不能超过" in upload_err else 400
-            return jsonify({"code": status, "msg": upload_err or "上传失败"}), status
+        resume_text, material_metas, file_paths, artifact_paths = _collect_profile_materials()
+        if not resume_text.strip():
+            return (
+                jsonify(
+                    {
+                        "code": 400,
+                        "msg": "未识别到可用于能力画像的材料内容，请上传文件或填写补充文本",
+                        "data": {"materials": material_metas},
+                    }
+                ),
+                400,
+            )
 
-        from_pdf = _resume_extension(file.filename) == ".pdf"
-        if from_pdf:
-            ocr_path = pdf_to_image(file_path)
-        else:
-            ocr_path = file_path
-
-        resume_text = ocr_image(ocr_path)
         scores, confidences = score_resume(resume_text)
         radar_html = create_radar_chart(scores)
 
         detailed_analysis = generate_detailed_analysis(scores, resume_text)
+        detailed_analysis["material_summary"] = material_metas
         stored_resume_text = storage_safe_text(
             resume_text,
             kind="resume",
-            max_chars=int(getattr(Config, "LLM_MAX_RESUME_CHARS", 6000)),
+            max_chars=int(getattr(Config, "LLM_MAX_RESUME_CHARS", 20000)),
         )
 
         with db_cursor() as (_, cur):
@@ -726,13 +1013,14 @@ def upload_resume():
                     "completeness": completeness,
                     "competitiveness": competitiveness,
                     "detailed_analysis": detailed_analysis,
+                    "materials": material_metas,
                 },
             }
         )
     except Exception as e:
         return jsonify({"code": 500, "msg": f"服务器错误: {str(e)}"}), 500
     finally:
-        _cleanup_resume_upload_artifacts(file_path, ocr_path, from_pdf=from_pdf)
+        _cleanup_material_upload_artifacts(file_paths, artifact_paths)
 
 
 @portrait_bp.route("/result/<int:resume_id>", methods=["GET"])
