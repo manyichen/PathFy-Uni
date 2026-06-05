@@ -3,19 +3,19 @@ import Layout from '../../layouts/Layout.astro';
 import RadarChart from '../../components/profile/RadarChart.svelte';
 ---
 
-<Layout title="能力画像" description="学生就业能力画像分析，支持简历上传与表单录入。">
+<Layout title="能力画像" description="学生就业能力画像分析，支持多材料上传与直接文本录入。">
   <section class="onload-animation space-y-8">
     <div>
       <h1 class="mb-2 text-2xl font-bold text-black dark:text-white">学生就业能力画像</h1>
       <p class="max-w-3xl text-sm leading-relaxed text-75">
-        支持简历上传与表单录入；后端通过大模型拆解为结构化画像，并给出完整度与竞争力评分。
+        支持简历、竞赛证书、成绩单、项目说明、图片与直接文本接入；后端通过大模型拆解为结构化画像，并给出完整度与竞争力评分。
       </p>
     </div>
 
     <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
-      <!-- 左侧：简历上传区 -->
+      <!-- 左侧：材料上传区 -->
       <div class="rounded-2xl border bg-background p-6 shadow-sm lg:col-span-1">
-        <h2 class="mb-4 text-lg font-semibold text-black dark:text-white">简历接入</h2>
+        <h2 class="mb-4 text-lg font-semibold text-black dark:text-white">多材料接入</h2>
         <div class="space-y-4">
           <div>
             <label class="mb-1 block font-medium text-black dark:text-white">姓名</label>
@@ -26,14 +26,27 @@ import RadarChart from '../../components/profile/RadarChart.svelte';
             <input type="text" id="majorInput" required class="w-full rounded-lg border bg-background px-3 py-2 text-sm text-black dark:border-gray-700 dark:bg-gray-800 dark:text-white" placeholder="请输入专业" />
           </div>
           <div>
-            <label class="mb-1 block font-medium text-black dark:text-white">上传简历（图片/PDF）</label>
+            <label class="mb-1 block font-medium text-black dark:text-white">上传材料</label>
             <input
               type="file"
               id="resumeInput"
-              required
+              multiple
               class="w-full rounded-lg border bg-background px-3 py-2 text-sm text-black dark:border-gray-700 dark:bg-gray-800 dark:text-white"
-              accept=".jpg,.jpeg,.png,.pdf"
+              accept=".jpg,.jpeg,.png,.webp,.pdf,.txt,.md,.markdown,.csv,.json,.docx,.xls,.xlsx"
             />
+            <p class="mt-1 text-xs leading-relaxed text-75">
+              可一次多选，也可分多次添加，最多组成 12 份材料包。
+            </p>
+            <div id="materialList" class="mt-2 space-y-1 text-xs text-75"></div>
+          </div>
+          <div>
+            <label class="mb-1 block font-medium text-black dark:text-white">补充文本</label>
+            <textarea
+              id="profileTextInput"
+              rows="5"
+              class="w-full resize-y rounded-lg border bg-background px-3 py-2 text-sm text-black dark:border-gray-700 dark:bg-gray-800 dark:text-white"
+              placeholder="可粘贴个人自我介绍、竞赛经历、项目说明、获奖记录、课程成绩摘要等"
+            ></textarea>
           </div>
           <button id="submitBtn" type="button" class="w-full rounded-lg bg-[var(--primary)] px-4 py-3 text-center text-sm font-medium text-white hover:bg-[var(--primary)]/90 focus:outline-none focus:ring-2 focus:ring-[var(--primary)]/50">
             生成能力画像
@@ -84,11 +97,11 @@ import RadarChart from '../../components/profile/RadarChart.svelte';
         <div class="space-y-4">
           <div class="rounded-lg border bg-gray-50 p-4 dark:border-gray-700 dark:bg-gray-800/50">
             <h3 class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">完整度分析</h3>
-            <p class="text-sm text-gray-600 dark:text-gray-400" id="completeness_analysis">请上传简历以获取分析结果</p>
+            <p class="text-sm text-gray-600 dark:text-gray-400" id="completeness_analysis">请上传材料以获取分析结果</p>
           </div>
           <div class="rounded-lg border bg-gray-50 p-4 dark:border-gray-700 dark:bg-gray-800/50">
             <h3 class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">竞争力分析</h3>
-            <p class="text-sm text-gray-600 dark:text-gray-400" id="competitiveness_analysis">请上传简历以获取分析结果</p>
+            <p class="text-sm text-gray-600 dark:text-gray-400" id="competitiveness_analysis">请上传材料以获取分析结果</p>
           </div>
         </div>
       </div>
@@ -101,7 +114,7 @@ import RadarChart from '../../components/profile/RadarChart.svelte';
         class="rounded-2xl border bg-background p-8 text-center shadow-sm"
       >
         <p class="mx-auto max-w-lg text-sm leading-relaxed text-75">
-          请上传简历并完成分析，下面的区域以后再来探索吧~
+          请上传材料并完成分析，下面的区域以后再来探索吧~
         </p>
       </div>
 
@@ -111,6 +124,14 @@ import RadarChart from '../../components/profile/RadarChart.svelte';
         <h2 class="mb-4 text-lg font-semibold text-black dark:text-white">📊 整体评价</h2>
         <div class="rounded-lg border bg-gradient-to-r from-blue-50 to-purple-50 p-4 dark:border-blue-900/30 dark:from-blue-900/10 dark:to-purple-900/10">
           <p class="text-sm leading-relaxed text-gray-700 dark:text-gray-300" id="overall_evaluation">-</p>
+        </div>
+      </div>
+
+      <!-- 材料来源 -->
+      <div class="rounded-2xl border bg-background p-6 shadow-sm">
+        <h2 class="mb-4 text-lg font-semibold text-black dark:text-white">📎 材料来源</h2>
+        <div class="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3" id="material_summary">
+          <!-- 动态填充 -->
         </div>
       </div>
 
@@ -168,9 +189,9 @@ import RadarChart from '../../components/profile/RadarChart.svelte';
         </div>
       </div>
 
-      <!-- 简历关键词分析 -->
+      <!-- 画像材料关键词分析 -->
       <div class="rounded-2xl border bg-background p-6 shadow-sm" id="resume_analysis_section">
-        <h2 class="mb-4 text-lg font-semibold text-black dark:text-white">📝 简历关键词分析</h2>
+        <h2 class="mb-4 text-lg font-semibold text-black dark:text-white">📝 材料关键词分析</h2>
         <div class="space-y-4">
           <div class="flex items-center justify-between">
             <span class="text-sm text-gray-600 dark:text-gray-400">技能密度</span>
@@ -226,6 +247,15 @@ import RadarChart from '../../components/profile/RadarChart.svelte';
       hint.classList.add('hidden');
       cards.classList.remove('hidden');
     }
+  }
+
+  function escapeHtml(value: unknown): string {
+    return String(value ?? '')
+      .replaceAll('&', '&amp;')
+      .replaceAll('<', '&lt;')
+      .replaceAll('>', '&gt;')
+      .replaceAll('"', '&quot;')
+      .replaceAll("'", '&#039;');
   }
 
   function generateCompletenessAnalysis(completeness, scores) {
@@ -295,6 +325,34 @@ import RadarChart from '../../components/profile/RadarChart.svelte';
         typeof analysisData.overall_evaluation === 'string'
           ? analysisData.overall_evaluation
           : '';
+    }
+
+    const materialContainer = document.getElementById('material_summary');
+    if (materialContainer) {
+      materialContainer.innerHTML = '';
+      const materials = Array.isArray(analysisData.material_summary)
+        ? analysisData.material_summary as Array<Record<string, unknown>>
+        : [];
+      if (materials.length) {
+        materials.forEach((item) => {
+          const status = String(item.status || '');
+          const ok = status === 'ok';
+          const name = escapeHtml(item.name || '未命名材料');
+          const kind = escapeHtml(item.kind || '材料');
+          const chars = Number(item.chars || 0);
+          const error = escapeHtml(item.error || '');
+          const elapsedMs = Number(item.elapsed_ms || 0);
+          const elapsedText = elapsedMs > 0 ? ` · ${(elapsedMs / 1000).toFixed(1)}s` : '';
+          materialContainer.innerHTML += `
+            <div class="rounded-lg border ${ok ? 'border-cyan-200 bg-cyan-50 dark:border-cyan-900/30 dark:bg-cyan-900/10' : 'border-orange-200 bg-orange-50 dark:border-orange-900/30 dark:bg-orange-900/10'} p-3">
+              <p class="truncate text-sm font-medium text-black dark:text-white">${name}</p>
+              <p class="mt-1 text-xs text-75">${kind} · ${ok ? `${chars} 字${elapsedText}` : `${error || '未识别'}${elapsedText}`}</p>
+            </div>
+          `;
+        });
+      } else {
+        materialContainer.innerHTML = '<p class="text-sm text-75">暂无材料来源记录</p>';
+      }
     }
 
     const advantageContainer = document.getElementById('advantage_dimensions');
@@ -468,9 +526,62 @@ import RadarChart from '../../components/profile/RadarChart.svelte';
     const nameInput = document.getElementById('nameInput') as HTMLInputElement | null;
     const majorInput = document.getElementById('majorInput') as HTMLInputElement | null;
     const resumeInput = document.getElementById('resumeInput') as HTMLInputElement | null;
-    if (!submitBtn || !nameInput || !majorInput || !resumeInput) return;
+    const profileTextInput = document.getElementById('profileTextInput') as HTMLTextAreaElement | null;
+    const materialList = document.getElementById('materialList');
+    if (!submitBtn || !nameInput || !majorInput || !resumeInput || !profileTextInput) return;
     if (submitBtn.dataset.bound === '1') return;
     submitBtn.dataset.bound = '1';
+    let selectedMaterialFiles: File[] = [];
+
+    function materialFileKey(file: File): string {
+      return `${file.name}::${file.size}::${file.lastModified}::${file.type}`;
+    }
+
+    function addMaterialFiles(files: File[]) {
+      const seen = new Set(selectedMaterialFiles.map(materialFileKey));
+      for (const file of files) {
+        if (selectedMaterialFiles.length >= 12) break;
+        const key = materialFileKey(file);
+        if (seen.has(key)) continue;
+        selectedMaterialFiles.push(file);
+        seen.add(key);
+      }
+    }
+
+    function paintSelectedMaterials() {
+      if (!materialList) return;
+      if (!selectedMaterialFiles.length) {
+        materialList.innerHTML = '';
+        return;
+      }
+      materialList.innerHTML = selectedMaterialFiles
+        .map((file, index) => `
+          <div class="flex items-center justify-between gap-2 rounded bg-[var(--btn-regular-bg)] px-2 py-1">
+            <span class="min-w-0 truncate">${escapeHtml(file.name)}</span>
+            <button
+              type="button"
+              class="shrink-0 text-xs text-[var(--primary)] hover:underline"
+              data-material-remove="${index}"
+            >移除</button>
+          </div>
+        `)
+        .join('');
+      materialList.querySelectorAll<HTMLButtonElement>('[data-material-remove]').forEach((button) => {
+        button.addEventListener('click', () => {
+          const index = Number(button.dataset.materialRemove);
+          if (Number.isInteger(index)) {
+            selectedMaterialFiles = selectedMaterialFiles.filter((_, i) => i !== index);
+            paintSelectedMaterials();
+          }
+        });
+      });
+    }
+
+    resumeInput.addEventListener('change', () => {
+      addMaterialFiles(Array.from(resumeInput.files || []));
+      resumeInput.value = '';
+      paintSelectedMaterials();
+    });
 
     const token = getToken();
     const user = getUser();
@@ -551,8 +662,14 @@ import RadarChart from '../../components/profile/RadarChart.svelte';
     }
 
     submitBtn.addEventListener('click', async () => {
-      if (!nameInput.value || !majorInput.value || !resumeInput.files?.length) {
-        alert('请填写完整信息并上传简历');
+      const files = selectedMaterialFiles;
+      const directText = profileTextInput.value.trim();
+      if (!nameInput.value || !majorInput.value) {
+        alert('请填写姓名和专业');
+        return;
+      }
+      if (!files.length && !directText) {
+        alert('请上传材料或填写补充文本');
         return;
       }
 
@@ -565,10 +682,13 @@ import RadarChart from '../../components/profile/RadarChart.svelte';
       const formData = new FormData();
       formData.append('name', nameInput.value);
       formData.append('major', majorInput.value);
-      formData.append('resume', resumeInput.files[0]);
+      formData.append('profile_text', directText);
+      files.slice(0, 12).forEach((file) => {
+        formData.append('materials', file);
+      });
 
       submitBtn.disabled = true;
-      submitBtn.textContent = '分析中...';
+      submitBtn.textContent = '材料分析中...';
 
       try {
         const result = await uploadResume(formData);
@@ -604,7 +724,7 @@ import RadarChart from '../../components/profile/RadarChart.svelte';
         setTimeout(() => emitProfileRadarScores(scores), 200);
       } catch (err) {
         console.error(err);
-        alert('❌ 上传失败：' + (err instanceof Error ? err.message : '未知错误'));
+        alert('❌ 材料解析失败：' + (err instanceof Error ? err.message : '未知错误'));
       } finally {
         submitBtn.disabled = false;
         submitBtn.textContent = '生成能力画像';

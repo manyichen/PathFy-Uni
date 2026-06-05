@@ -37,7 +37,7 @@ class Config:
     # 外发 LLM / 本地存储隐私（见 app/infrastructure/privacy.py）
     LLM_PRIVACY_MODE = _env_bool("LLM_PRIVACY_MODE", "true")
     LLM_MAX_TEXT_CHARS = int(os.getenv("LLM_MAX_TEXT_CHARS", "4000"))
-    LLM_MAX_RESUME_CHARS = int(os.getenv("LLM_MAX_RESUME_CHARS", "6000"))
+    LLM_MAX_RESUME_CHARS = int(os.getenv("LLM_MAX_RESUME_CHARS", "20000"))
     LLM_MAX_FIELD_CHARS = int(os.getenv("LLM_MAX_FIELD_CHARS", "1200"))
     LLM_STORE_RAW_SNIPPETS = _env_bool("LLM_STORE_RAW_SNIPPETS", "false")
     LOCAL_STORE_RAW_RESUME_TEXT = _env_bool("LOCAL_STORE_RAW_RESUME_TEXT", "false")
@@ -57,6 +57,9 @@ class Config:
     OCR_APP_ID = os.getenv("OCR_APP_ID")
     OCR_API_KEY = os.getenv("OCR_API_KEY")
     OCR_SECRET_KEY = os.getenv("OCR_SECRET_KEY")
+    OCR_CONNECT_TIMEOUT_SECONDS = float(os.getenv("OCR_CONNECT_TIMEOUT_SECONDS", "3"))
+    OCR_SOCKET_TIMEOUT_SECONDS = float(os.getenv("OCR_SOCKET_TIMEOUT_SECONDS", "20"))
+    OCR_MAX_PDF_PAGES = int(os.getenv("OCR_MAX_PDF_PAGES", "12"))
 
     DASHSCOPE_API_KEY = os.getenv("DASHSCOPE_API_KEY")
 

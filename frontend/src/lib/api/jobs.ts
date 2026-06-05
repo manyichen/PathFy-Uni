@@ -93,6 +93,75 @@ export type TransitionAnalysisResult = {
 	};
 };
 
+export type CareerPathLearningResource = {
+	resource_id: string;
+	resource_name: string;
+	resource_desc?: string;
+	resource_url: string;
+	resource_type?: string;
+	difficulty?: string;
+	source?: string;
+	skill_tag?: string;
+	stage?: number;
+	stage_role?: string;
+	rank?: number;
+	score?: number;
+	rationale?: string;
+};
+
+export type CareerPathCompetition = {
+	competition_id: string;
+	competition_name: string;
+	competition_desc?: string;
+	official_url: string;
+	competition_type?: string;
+	organizer?: string;
+	target_audience?: string;
+	team_mode?: string;
+	frequency?: string;
+	difficulty?: string;
+	cap_tags?: string[];
+	skill_tags?: string[];
+	award_level?: string;
+	stage?: number;
+	stage_role?: string;
+	rank?: number;
+	score?: number;
+	match_via?: string;
+	rationale?: string;
+};
+
+export type CareerActionPhase = {
+	stage: number;
+	label: string;
+	role: string;
+	period: string;
+	milestone: string;
+	actions: string[];
+	learning_resources: CareerPathLearningResource[];
+	competitions: CareerPathCompetition[];
+};
+
+export type CareerActionPlan = {
+	summary: string;
+	phases: CareerActionPhase[];
+};
+
+export type PromotionRoute = {
+	id: string;
+	job_title: string;
+	route_title: string;
+	route_text: string;
+	target_title: string;
+	confidence: number;
+	rationale: string;
+	notes?: string;
+	stages: CareerActionPhase[];
+	action_plan: CareerActionPlan;
+	learning_resources: CareerPathLearningResource[];
+	competitions: CareerPathCompetition[];
+};
+
 export type PromotionPathResult = {
 	job: JobLiteItem;
 	paths: Array<{
@@ -122,11 +191,42 @@ export type PromotionPathResult = {
 			stage3_job_title?: string;
 		}
 	>;
+	routes?: PromotionRoute[];
+	resources?: CareerPathLearningResource[];
+	competitions?: CareerPathCompetition[];
 	meta: {
 		source: string;
 		sources?: string[];
 		job_title?: string;
 		max_depth: number;
+		max_paths: number;
+	};
+};
+
+export type LateralTransferRoute = {
+	id: string;
+	from_title: string;
+	target_title: string;
+	score: number;
+	rank: number;
+	track_from?: string;
+	track_to?: string;
+	cap_similarity?: number;
+	same_track?: boolean;
+	promotion_linked?: boolean;
+	rationale: string;
+	candidate_jobs: Array<JobLiteItem & { score_avg?: number }>;
+	learning_resources: CareerPathLearningResource[];
+	competitions: CareerPathCompetition[];
+	action_plan: CareerActionPlan;
+};
+
+export type LateralPathResult = {
+	job: JobLiteItem;
+	job_title: string;
+	routes: LateralTransferRoute[];
+	meta: {
+		source: string;
 		max_paths: number;
 	};
 };
@@ -156,6 +256,12 @@ type TransitionAnalysisResponse = {
 type PromotionPathResponse = {
 	ok: boolean;
 	data?: PromotionPathResult;
+	message?: string;
+};
+
+type LateralPathResponse = {
+	ok: boolean;
+	data?: LateralPathResult;
 	message?: string;
 };
 
@@ -357,6 +463,23 @@ export async function fetchPromotionPath(jobId: string, maxDepth = 4, maxPaths =
 	);
 	if (!res.ok || !res.data) {
 		throw new Error(res.message || "升职路径加载失败");
+	}
+	return res.data;
+}
+
+export async function fetchLateralPaths(jobId: string, maxPaths = 6): Promise<LateralPathResult> {
+	const id = jobId.trim();
+	if (!id) {
+		throw new Error("岗位 ID 不能为空");
+	}
+	const query = new URLSearchParams();
+	query.set("max_paths", String(Math.max(1, Math.min(maxPaths, 12))));
+
+	const res = await apiJson<LateralPathResponse>(
+		`/api/jobs/${encodeURIComponent(id)}/lateral-paths?${query.toString()}`,
+	);
+	if (!res.ok || !res.data) {
+		throw new Error(res.message || "换岗路径加载失败");
 	}
 	return res.data;
 }

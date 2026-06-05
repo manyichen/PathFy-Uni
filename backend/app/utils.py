@@ -53,15 +53,16 @@ def score_resume(resume_text: str) -> Tuple[Dict[str, int], Dict[str, float]]:
 
     safe_resume_text = redact_text(
         resume_text,
-        max_chars=int(getattr(Config, "LLM_MAX_RESUME_CHARS", 6000)),
+        max_chars=int(getattr(Config, "LLM_MAX_RESUME_CHARS", 20000)),
     )
     privacy_notice = llm_privacy_notice()
     privacy_block = f"\n{privacy_notice}\n" if privacy_notice else ""
 
     prompt = f"""
-你是专业大学生就业能力评估师。根据简历文本，为 8 个能力维度给出 0–100 的供给分，
+你是专业大学生就业能力评估师。根据学生画像材料文本，为 8 个能力维度给出 0–100 的供给分，
+画像材料可能来自简历、竞赛证书、成绩单、项目说明、获奖记录、自我介绍等多种来源。
 并为每一维给出 0~1 的置信度(cap_conf_*)：表示你在该维上打分的证据充分程度
-（简历中该维相关经历越具体、可核验，置信度越高；越模糊或缺证据则越低）。
+（材料中该维相关经历越具体、可核验，置信度越高；越模糊或缺证据则越低）。
 
 8 个分数维度(cap_req_*):
 cap_req_theory: 专业理论知识
@@ -77,7 +78,7 @@ cap_req_growth: 学习与发展潜力
 cap_conf_theory, cap_conf_cross, cap_conf_practice, cap_conf_digital,
 cap_conf_innovation, cap_conf_teamwork, cap_conf_social, cap_conf_growth
 
-简历内容：
+画像材料内容：
 {safe_resume_text}
 {privacy_block}
 只输出一个标准 JSON 对象，不要其它文字。格式示例：

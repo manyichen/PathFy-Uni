@@ -149,6 +149,350 @@ def _safe_float(value, default=0.0):
         return default
 
 
+def _safe_int(value, default=0):
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _as_text_list(value: Any) -> List[str]:
+    if isinstance(value, list):
+        return [str(x).strip() for x in value if str(x).strip()]
+    raw = str(value or "").strip()
+    if not raw:
+        return []
+    sep = "|" if "|" in raw else ","
+    return [x.strip() for x in raw.split(sep) if x.strip()]
+
+
+def _dedupe_by_key(rows: List[Dict[str, Any]], key_fn) -> List[Dict[str, Any]]:
+    seen = set()
+    out = []
+    for row in rows:
+        key = key_fn(row)
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(row)
+    return out
+
+
+def _serialize_graph_resource(row: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        "resource_id": str(row.get("resource_id") or "").strip(),
+        "resource_name": str(row.get("resource_name") or "").strip(),
+        "resource_desc": str(row.get("resource_desc") or "")[:500],
+        "resource_url": str(row.get("resource_url") or "").strip(),
+        "resource_type": str(row.get("resource_type") or "").strip(),
+        "difficulty": str(row.get("difficulty") or "").strip(),
+        "source": str(row.get("source") or "").strip(),
+        "skill_tag": str(row.get("skill_tag") or "").strip(),
+        "stage": _safe_int(row.get("stage"), 0),
+        "stage_role": str(row.get("stage_role") or "").strip(),
+        "rank": _safe_int(row.get("rank"), 0),
+        "score": round(_safe_float(row.get("score")), 4),
+        "rationale": str(row.get("rationale") or "").strip(),
+    }
+
+
+def _serialize_graph_competition(row: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        "competition_id": str(row.get("competition_id") or "").strip(),
+        "competition_name": str(row.get("competition_name") or "").strip(),
+        "competition_desc": str(row.get("competition_desc") or "")[:500],
+        "official_url": str(row.get("official_url") or "").strip(),
+        "competition_type": str(row.get("competition_type") or "").strip(),
+        "organizer": str(row.get("organizer") or "").strip(),
+        "target_audience": str(row.get("target_audience") or "").strip(),
+        "team_mode": str(row.get("team_mode") or "").strip(),
+        "frequency": str(row.get("frequency") or "").strip(),
+        "difficulty": str(row.get("difficulty") or "").strip(),
+        "cap_tags": _as_text_list(row.get("cap_tags")),
+        "skill_tags": _as_text_list(row.get("skill_tags")),
+        "award_level": str(row.get("award_level") or "").strip(),
+        "stage": _safe_int(row.get("stage"), 0),
+        "stage_role": str(row.get("stage_role") or "").strip(),
+        "rank": _safe_int(row.get("rank"), 0),
+        "score": round(_safe_float(row.get("score")), 4),
+        "match_via": str(row.get("match_via") or "").strip(),
+        "rationale": str(row.get("rationale") or "").strip(),
+    }
+
+
+def _normalize_graph_resources(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    cleaned = [
+        _serialize_graph_resource(x)
+        for x in rows
+        if isinstance(x, dict) and str(x.get("resource_id") or x.get("resource_name") or "").strip()
+    ]
+    cleaned.sort(
+        key=lambda x: (
+            x.get("stage") or 99,
+            x.get("rank") or 999,
+            -float(x.get("score") or 0),
+            x.get("resource_id") or "",
+        )
+    )
+    return _dedupe_by_key(cleaned, lambda x: (x.get("resource_id"), x.get("stage")))
+
+
+def _normalize_graph_competitions(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    cleaned = [
+        _serialize_graph_competition(x)
+        for x in rows
+        if isinstance(x, dict) and str(x.get("competition_id") or x.get("competition_name") or "").strip()
+    ]
+    cleaned.sort(
+        key=lambda x: (
+            x.get("stage") or 99,
+            x.get("rank") or 999,
+            -float(x.get("score") or 0),
+            x.get("competition_id") or "",
+        )
+    )
+    return _dedupe_by_key(cleaned, lambda x: (x.get("competition_id"), x.get("stage")))
+
+
+def _fetch_title_materials(session, title_names: List[str]) -> Dict[str, Dict[str, List[Dict[str, Any]]]]:
+    titles = sorted({str(x or "").strip() for x in title_names if str(x or "").strip()})
+    if not titles:
+        return {}
+    out: Dict[str, Dict[str, List[Dict[str, Any]]]] = {
+        title: {"learning_resources": [], "competitions": []} for title in titles
+    }
+    resource_query = """
+    UNWIND $titles AS title
+    MATCH (jt:JobTitle {name: title})<-[:FOR_JOB_TITLE]-(lr:LearningResource)
+    RETURN
+      title,
+      lr.resource_id AS resource_id,
+      lr.resource_name AS resource_name,
+      lr.resource_desc AS resource_desc,
+      lr.resource_url AS resource_url,
+      lr.resource_type AS resource_type,
+      lr.difficulty AS difficulty,
+      lr.source AS source,
+      lr.skill_tag AS skill_tag
+    ORDER BY title ASC, lr.difficulty ASC, lr.resource_id ASC
+    """
+    competition_query = """
+    UNWIND $titles AS title
+    MATCH (jt:JobTitle {name: title})<-[:FOR_JOB_TITLE]-(c:Competition)
+    RETURN
+      title,
+      c.competition_id AS competition_id,
+      c.competition_name AS competition_name,
+      c.competition_desc AS competition_desc,
+      c.official_url AS official_url,
+      c.competition_type AS competition_type,
+      c.organizer AS organizer,
+      c.target_audience AS target_audience,
+      c.team_mode AS team_mode,
+      c.frequency AS frequency,
+      c.difficulty AS difficulty,
+      c.cap_tags AS cap_tags,
+      c.skill_tags AS skill_tags,
+      c.award_level AS award_level
+    ORDER BY title ASC, c.difficulty ASC, c.competition_id ASC
+    """
+    for row in session.run(resource_query, {"titles": titles}):
+        rec = dict(row)
+        title = str(rec.pop("title") or "").strip()
+        if title in out:
+            out[title]["learning_resources"].append(rec)
+    for row in session.run(competition_query, {"titles": titles}):
+        rec = dict(row)
+        title = str(rec.pop("title") or "").strip()
+        if title in out:
+            out[title]["competitions"].append(rec)
+
+    for title, block in out.items():
+        block["learning_resources"] = _normalize_graph_resources(block["learning_resources"])[:8]
+        block["competitions"] = _normalize_graph_competitions(block["competitions"])[:4]
+    return out
+
+
+def _stage_period(stage: int) -> str:
+    if stage <= 1:
+        return "0-3个月"
+    if stage == 2:
+        return "3-9个月"
+    return "9-12个月"
+
+
+def _promotion_stage_label(stage: int) -> str:
+    if stage <= 1:
+        return "基础补齐"
+    if stage == 2:
+        return "岗位化实践"
+    return "成果冲刺"
+
+
+def _promotion_actions(stage: int, role: str, target_title: str) -> List[str]:
+    role_name = role or target_title or "目标岗位"
+    if stage <= 1:
+        return [
+            f"围绕「{role_name}」补齐岗位基础知识，优先完成入门课程与核心工具练习。",
+            "把学习内容整理为笔记、代码片段或案例复盘，形成后续项目素材。",
+        ]
+    if stage == 2:
+        return [
+            f"按「{role_name}」的真实工作场景完成一个可展示项目，突出个人职责和技术取舍。",
+            "结合图谱推荐竞赛或实践任务，补充团队协作、交付和问题解决证据。",
+        ]
+    return [
+        f"面向「{target_title or role_name}」整理作品集、简历关键词和面试讲述线。",
+        "用岗位 JD 反向检查能力缺口，完成模拟面试和投递反馈复盘。",
+    ]
+
+
+def _build_promotion_route(
+    item: Dict[str, Any],
+    *,
+    fallback_resources: List[Dict[str, Any]],
+    fallback_competitions: List[Dict[str, Any]],
+) -> Dict[str, Any]:
+    promotion_resources = _normalize_graph_resources(item.get("resources") or [])
+    promotion_competitions = _normalize_graph_competitions(item.get("competitions") or [])
+    stage_roles = [
+        str(item.get("stage1") or "").strip(),
+        str(item.get("stage2") or "").strip(),
+        str(item.get("stage3") or "").strip(),
+    ]
+    target_title = (
+        str(item.get("stage3_job_title") or "").strip()
+        or stage_roles[2]
+        or str(item.get("to_title") or "").strip()
+        or str(item.get("promotion_name") or "").strip()
+        or "未命名岗位"
+    )
+
+    stages = []
+    for idx, role in enumerate(stage_roles, start=1):
+        if not role and idx < 3:
+            continue
+        stage_resources = [x for x in promotion_resources if x.get("stage") == idx]
+        stage_competitions = [x for x in promotion_competitions if x.get("stage") == idx]
+        if not stage_resources and idx <= 2:
+            stage_resources = fallback_resources[:3]
+        if not stage_competitions and idx >= 2:
+            stage_competitions = fallback_competitions[:2]
+        stage_role = role or target_title
+        stages.append(
+            {
+                "stage": idx,
+                "label": _promotion_stage_label(idx),
+                "role": stage_role,
+                "period": _stage_period(idx),
+                "milestone": f"达到「{stage_role}」阶段可展示水平",
+                "actions": _promotion_actions(idx, stage_role, target_title),
+                "learning_resources": stage_resources[:4],
+                "competitions": stage_competitions[:2],
+            }
+        )
+
+    if not stages:
+        stages.append(
+            {
+                "stage": 1,
+                "label": "路径准备",
+                "role": target_title,
+                "period": "0-3个月",
+                "milestone": f"明确「{target_title}」能力要求并完成基础补齐",
+                "actions": _promotion_actions(1, target_title, target_title),
+                "learning_resources": fallback_resources[:4],
+                "competitions": fallback_competitions[:2],
+            }
+        )
+
+    route_title = str(item.get("promotion_name") or item.get("title") or target_title).strip()
+    from_title = str(item.get("from_title") or "").strip()
+    route_text = str(item.get("promotion") or "").strip() or " → ".join(
+        [x["role"] for x in stages if x.get("role")]
+    )
+    confidence = round(_safe_float(item.get("confidence")), 4)
+    rationale = str(item.get("rationale") or item.get("notes") or "").strip()
+    if not rationale:
+        rationale = f"该路线来自 JobTitle「{from_title}」关联的 JobPromotion 模板。"
+
+    return {
+        "id": str(item.get("id") or "").strip(),
+        "job_title": from_title,
+        "route_title": route_title,
+        "route_text": route_text,
+        "target_title": target_title,
+        "confidence": confidence,
+        "rationale": rationale,
+        "notes": str(item.get("notes") or "").strip(),
+        "stages": stages,
+        "action_plan": {
+            "summary": f"沿「{route_title}」推进：先补齐基础，再完成岗位化项目，最后沉淀可投递成果。",
+            "phases": stages,
+        },
+        "learning_resources": promotion_resources[:10],
+        "competitions": promotion_competitions[:6],
+    }
+
+
+def _build_lateral_action_plan(
+    *,
+    target_title: str,
+    score: float,
+    rationale: str,
+    resources: List[Dict[str, Any]],
+    competitions: List[Dict[str, Any]],
+    candidate_jobs: List[Dict[str, Any]],
+) -> Dict[str, Any]:
+    job_hint = candidate_jobs[0].get("title") if candidate_jobs else target_title
+    early_resources = resources[:3]
+    mid_resources = resources[3:6] or resources[:2]
+    mid_competitions = competitions[:2]
+    phases = [
+        {
+            "stage": 1,
+            "label": "迁移评估",
+            "role": target_title,
+            "period": "0-2个月",
+            "milestone": f"明确转向「{target_title}」的能力重合点和关键短板",
+            "actions": [
+                f"对照「{target_title}」岗位要求梳理可迁移能力，优先保留已有项目中的通用证据。",
+                "完成入门资源学习，并把缺口整理为 2-3 个可训练任务。",
+            ],
+            "learning_resources": early_resources,
+            "competitions": [],
+        },
+        {
+            "stage": 2,
+            "label": "转岗项目",
+            "role": target_title,
+            "period": "2-6个月",
+            "milestone": f"形成一个面向「{target_title}」的项目或竞赛成果",
+            "actions": [
+                f"围绕「{job_hint or target_title}」常见场景做小型项目，补齐目标岗位表达方式。",
+                "选择一项竞赛、开源任务或业务案例作为转岗证明，强调问题定义、过程和结果。",
+            ],
+            "learning_resources": mid_resources,
+            "competitions": mid_competitions,
+        },
+        {
+            "stage": 3,
+            "label": "投递准备",
+            "role": target_title,
+            "period": "6-9个月",
+            "milestone": f"具备投递「{target_title}」同类岗位的材料和面试叙事",
+            "actions": [
+                "将原岗位经历改写为目标岗位可理解的成果语言，突出迁移逻辑。",
+                "优先投递图谱中同 JobTitle 的具体岗位，按面试反馈迭代项目和简历。",
+            ],
+            "learning_resources": resources[:2],
+            "competitions": competitions[:1],
+        },
+    ]
+    summary = f"相似度约 {score:.0%}。{rationale or '该方向由 JobTitle 横向迁移关系推荐。'}"
+    return {"summary": summary, "phases": phases}
+
+
 def _fetch_job_for_analysis(session, job_id):
     row = session.run(
         f"""
@@ -606,18 +950,58 @@ def get_promotion_path(job_id: str):
     WITH title_name, coalesce(direct_jt, fallback_jt) AS jt
     WHERE jt IS NOT NULL
     MATCH (promotion:JobPromotion)-[:FOR_JOB_TITLE]->(jt)
+    OPTIONAL MATCH (promotion)-[rr:RECOMMENDS_RESOURCE]->(lr:LearningResource)
+    OPTIONAL MATCH (promotion)-[rc:RECOMMENDS_COMPETITION]->(c:Competition)
     RETURN
       coalesce(jt.name, title_name) AS from_title,
       coalesce(promotion.promotion_id, promotion.name, '') AS id,
-      coalesce(promotion.to_title, promotion.stage3_job_title, promotion.title, promotion.name, '未命名岗位') AS to_title,
+      coalesce(promotion.stage3_job_title, promotion.stage3, promotion.title, promotion.name, '未命名岗位') AS to_title,
       coalesce(promotion.title, promotion.name, '') AS promotion_name,
+      coalesce(promotion.promotion, '') AS promotion,
       coalesce(promotion.stage1, '') AS stage1,
       coalesce(promotion.stage2, '') AS stage2,
       coalesce(promotion.stage3, '') AS stage3,
       coalesce(promotion.stage3_job_title, '') AS stage3_job_title,
       coalesce(promotion.confidence, 0.0) AS confidence,
-      coalesce(promotion.rationale, '') AS rationale
-    ORDER BY confidence DESC, to_title ASC
+      coalesce(promotion.rationale, '') AS rationale,
+      coalesce(promotion.notes, '') AS notes,
+      collect(DISTINCT CASE WHEN lr IS NULL THEN null ELSE {
+        resource_id: lr.resource_id,
+        resource_name: lr.resource_name,
+        resource_desc: lr.resource_desc,
+        resource_url: lr.resource_url,
+        resource_type: lr.resource_type,
+        difficulty: lr.difficulty,
+        source: lr.source,
+        skill_tag: lr.skill_tag,
+        stage: rr.stage,
+        stage_role: rr.stage_role,
+        rank: rr.rank,
+        score: rr.score,
+        rationale: rr.rationale
+      } END) AS resources,
+      collect(DISTINCT CASE WHEN c IS NULL THEN null ELSE {
+        competition_id: c.competition_id,
+        competition_name: c.competition_name,
+        competition_desc: c.competition_desc,
+        official_url: c.official_url,
+        competition_type: c.competition_type,
+        organizer: c.organizer,
+        target_audience: c.target_audience,
+        team_mode: c.team_mode,
+        frequency: c.frequency,
+        difficulty: c.difficulty,
+        cap_tags: c.cap_tags,
+        skill_tags: c.skill_tags,
+        award_level: c.award_level,
+        stage: rc.stage,
+        stage_role: rc.stage_role,
+        rank: rc.rank,
+        score: rc.score,
+        match_via: rc.match_via,
+        rationale: rc.rationale
+      } END) AS competitions
+    ORDER BY confidence DESC, promotion_name ASC, to_title ASC
     LIMIT $limit
     """
 
@@ -634,14 +1018,30 @@ def get_promotion_path(job_id: str):
                 {"job_id": job_id, "limit": promotion_limit},
             )
         ]
+        job_title_name = promotion_rows[0]["from_title"] if promotion_rows else str(start_row.get("title") or "")
+        title_materials = _fetch_title_materials(session, [job_title_name]).get(
+            job_title_name,
+            {"learning_resources": [], "competitions": []},
+        )
 
     start_job = dict(start_row)
     normalized_paths = []
     next_steps = []
+    routes = []
+    fallback_resources = title_materials.get("learning_resources") or []
+    fallback_competitions = title_materials.get("competitions") or []
 
     for item in promotion_rows:
+        item["resources"] = [x for x in (item.get("resources") or []) if x]
+        item["competitions"] = [x for x in (item.get("competitions") or []) if x]
+        route = _build_promotion_route(
+            item,
+            fallback_resources=fallback_resources,
+            fallback_competitions=fallback_competitions,
+        )
+        routes.append(route)
         confidence = round(_safe_float(item.get("confidence")), 4)
-        title = str(item.get("to_title") or item.get("stage3_job_title") or "未命名岗位")
+        title = str(route.get("target_title") or item.get("to_title") or "未命名岗位")
         target = {
             "id": f"jobtitle::{title}",
             "title": title,
@@ -660,14 +1060,31 @@ def get_promotion_path(job_id: str):
 
         if len(normalized_paths) >= max_paths:
             continue
+        path_nodes = [start_job]
+        for stage in route.get("stages", []):
+            role = str(stage.get("role") or "").strip()
+            if not role:
+                continue
+            if path_nodes and str(path_nodes[-1].get("title") or "") == role:
+                continue
+            path_nodes.append(
+                {
+                    "id": f"jobtitle::{role}",
+                    "title": role,
+                    "company": "JobTitle",
+                    "location": "",
+                    "salary": "",
+                    "experience_years": 0.0,
+                }
+            )
         normalized_paths.append(
             {
-                "hops": 1,
-                "nodes": [start_job, target],
+                "hops": max(1, len(path_nodes) - 1),
+                "nodes": path_nodes,
                 "edges": [
                     {
                         "source": "JobPromotion",
-                        "reason": str(item.get("rationale") or item.get("promotion_name") or ""),
+                        "reason": str(route.get("rationale") or item.get("promotion_name") or ""),
                         "confidence": confidence,
                         "stage1": str(item.get("stage1") or ""),
                         "stage2": str(item.get("stage2") or ""),
@@ -685,10 +1102,168 @@ def get_promotion_path(job_id: str):
                 "job": start_job,
                 "paths": normalized_paths,
                 "next_steps": next_steps,
+                "routes": routes[:max_paths],
+                "resources": fallback_resources,
+                "competitions": fallback_competitions,
                 "meta": {
                     "source": "JobPromotion",
                     "job_title": promotion_rows[0]["from_title"] if promotion_rows else start_job.get("title", ""),
                     "max_depth": max_depth,
+                    "max_paths": max_paths,
+                },
+            },
+        }
+    )
+
+
+@jobs_bp.get("/<path:job_id>/lateral-paths")
+def get_lateral_paths(job_id: str):
+    uri, user, password, database = neo4j_settings()
+    if not password:
+        return jsonify({"ok": False, "message": "缺少 NEO4J_PASSWORD"}), 500
+
+    try:
+        max_paths = int(request.args.get("max_paths", "6"))
+    except ValueError:
+        max_paths = 6
+    max_paths = max(1, min(max_paths, 12))
+
+    start_query = f"""
+    MATCH (j:Job)
+    WHERE coalesce(j.job_key, j.job_code, j.name, j.title, elementId(j)) = $job_id
+    OPTIONAL MATCH (j)-[:HAS_TITLE]->(jt:JobTitle)
+    RETURN
+      coalesce(j.job_key, j.job_code, j.name, j.title, elementId(j)) AS id,
+      coalesce(j.title, j.name, '未命名岗位') AS title,
+      coalesce(j.company, '') AS company,
+      coalesce(j.location, '') AS location,
+      {_SALARY_DISP},
+      {_SALARY_RAW},
+      coalesce(j.experience_years, 0.0) AS experience_years,
+      coalesce(jt.name, trim(coalesce(j.title, j.name, ''))) AS job_title
+    LIMIT 1
+    """
+
+    lateral_query = """
+    MATCH (start:Job)
+    WHERE coalesce(start.job_key, start.job_code, start.name, start.title, elementId(start)) = $job_id
+    WITH start, trim(coalesce(start.title, start.name, '')) AS title_name
+    OPTIONAL MATCH (start)-[:HAS_TITLE]->(direct_jt:JobTitle)
+    OPTIONAL MATCH (fallback_jt:JobTitle {name: title_name})
+    WITH title_name, coalesce(direct_jt, fallback_jt) AS jt
+    WHERE jt IS NOT NULL
+    MATCH (jt)-[rel:SIMILAR_FOR_LATERAL]->(target:JobTitle)
+    RETURN
+      coalesce(jt.name, title_name) AS from_title,
+      target.name AS target_title,
+      coalesce(rel.score, 0.0) AS score,
+      coalesce(rel.rank, 999) AS rank,
+      coalesce(rel.track_from, '') AS track_from,
+      coalesce(rel.track_to, '') AS track_to,
+      coalesce(rel.cap_similarity, 0.0) AS cap_similarity,
+      coalesce(rel.same_track, false) AS same_track,
+      coalesce(rel.promotion_linked, false) AS promotion_linked,
+      coalesce(rel.rationale, '') AS rationale
+    ORDER BY rank ASC, score DESC, target_title ASC
+    LIMIT $limit
+    """
+
+    candidate_jobs_query = f"""
+    UNWIND $titles AS title
+    MATCH (jt:JobTitle {{name: title}})
+    CALL (jt) {{
+      MATCH (j:Job)-[:HAS_TITLE]->(jt)
+      WHERE j.source IS NULL OR trim(toString(j.source)) = ''
+      WITH j,
+        (coalesce(j.cap_req_theory, 0.0) +
+         coalesce(j.cap_req_cross, 0.0) +
+         coalesce(j.cap_req_practice, 0.0) +
+         coalesce(j.cap_req_digital, 0.0) +
+         coalesce(j.cap_req_innovation, 0.0) +
+         coalesce(j.cap_req_teamwork, 0.0) +
+         coalesce(j.cap_req_social, 0.0) +
+         coalesce(j.cap_req_growth, 0.0)) AS total_score
+      RETURN collect({{
+        id: coalesce(j.job_key, j.job_code, j.name, j.title, elementId(j)),
+        title: coalesce(j.title, j.name, '未命名岗位'),
+        company: coalesce(j.company, ''),
+        location: coalesce(j.location, ''),
+        salary: coalesce(j.salary_norm, j.salary, '薪资面议'),
+        experience_years: coalesce(j.experience_years, 0.0),
+        score_avg: round(total_score / 8.0, 2)
+      }})[..3] AS jobs
+    }}
+    RETURN title, jobs
+    """
+
+    driver = neo4j_driver(uri, user, password)
+    with driver.session(database=database) as session:
+        start_row = session.run(start_query, {"job_id": job_id}).single()
+        if not start_row:
+            return jsonify({"ok": False, "message": "岗位不存在"}), 404
+
+        lateral_rows = [
+            dict(r)
+            for r in session.run(
+                lateral_query,
+                {"job_id": job_id, "limit": max_paths},
+            )
+        ]
+        target_titles = [str(r.get("target_title") or "").strip() for r in lateral_rows]
+        materials = _fetch_title_materials(session, target_titles)
+        candidate_jobs: Dict[str, List[Dict[str, Any]]] = {}
+        if target_titles:
+            for row in session.run(candidate_jobs_query, {"titles": target_titles}):
+                rec = dict(row)
+                candidate_jobs[str(rec.get("title") or "")] = rec.get("jobs") or []
+
+    start_job = dict(start_row)
+    job_title_name = str(start_job.pop("job_title", "") or start_job.get("title") or "").strip()
+    routes = []
+    for item in lateral_rows:
+        target_title = str(item.get("target_title") or "").strip()
+        block = materials.get(target_title, {"learning_resources": [], "competitions": []})
+        resources = block.get("learning_resources") or []
+        competitions = block.get("competitions") or []
+        jobs = candidate_jobs.get(target_title) or []
+        score = round(_safe_float(item.get("score")), 4)
+        rationale = str(item.get("rationale") or "").strip()
+        routes.append(
+            {
+                "id": f"{job_title_name}->{target_title}",
+                "from_title": job_title_name,
+                "target_title": target_title,
+                "score": score,
+                "rank": _safe_int(item.get("rank"), 999),
+                "track_from": str(item.get("track_from") or "").strip(),
+                "track_to": str(item.get("track_to") or "").strip(),
+                "cap_similarity": round(_safe_float(item.get("cap_similarity")), 4),
+                "same_track": bool(item.get("same_track")),
+                "promotion_linked": bool(item.get("promotion_linked")),
+                "rationale": rationale,
+                "candidate_jobs": jobs,
+                "learning_resources": resources,
+                "competitions": competitions,
+                "action_plan": _build_lateral_action_plan(
+                    target_title=target_title,
+                    score=score,
+                    rationale=rationale,
+                    resources=resources,
+                    competitions=competitions,
+                    candidate_jobs=jobs,
+                ),
+            }
+        )
+
+    return jsonify(
+        {
+            "ok": True,
+            "data": {
+                "job": start_job,
+                "job_title": job_title_name,
+                "routes": routes,
+                "meta": {
+                    "source": "SIMILAR_FOR_LATERAL",
                     "max_paths": max_paths,
                 },
             },
