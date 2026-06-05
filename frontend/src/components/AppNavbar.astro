@@ -84,14 +84,12 @@ const titleIcon =
 								data-protected={item.protected ? "true" : "false"}
 								data-admin-only={item.adminOnly ? "true" : undefined}
 								data-user-only={item.userOnly ? "true" : undefined}
-								data-nav-href={item.href}
+								data-nav-link={item.href}
 								aria-current={active ? "page" : undefined}
 								class:list={[
-									"btn-plain nav-link rounded-lg px-3 py-2 text-sm font-medium no-underline",
+									"nav-link btn-plain rounded-lg px-3 py-2 text-sm font-medium no-underline",
 									item.adminOnly ? "hidden" : "",
-									active
-										? "nav-link--active"
-										: "text-black/75 dark:text-white/75",
+									active ? "is-active" : "text-black/75 dark:text-white/75",
 								]}
 							>
 								{item.name}
@@ -161,14 +159,12 @@ const titleIcon =
 								data-protected={item.protected ? "true" : "false"}
 								data-admin-only={item.adminOnly ? "true" : undefined}
 								data-user-only={item.userOnly ? "true" : undefined}
-								data-nav-href={item.href}
+								data-nav-link={item.href}
 								aria-current={active ? "page" : undefined}
 								class:list={[
-									"btn-plain nav-link rounded-lg px-3 py-2.5 text-left text-sm font-medium no-underline",
+									"nav-link btn-plain rounded-lg px-3 py-2.5 text-left text-sm font-medium no-underline",
 									item.adminOnly ? "hidden" : "",
-									active
-										? "nav-link--active"
-										: "text-black/75 dark:text-white/75",
+									active ? "is-active" : "text-black/75 dark:text-white/75",
 								]}
 							>
 								{item.name}
@@ -257,7 +253,7 @@ const titleIcon =
 		const userName = getStoredUserName();
 		const isAdmin = loggedIn && isStoredAdmin();
 		const text = loggedIn ? "退出登录" : "登录";
-		const href = loggedIn ? "#" : "/login";
+		const href = loggedIn ? "/" : "/login";
 
 		for (const el of [authEntry, mobileAuthEntry]) {
 			if (!el) continue;
@@ -328,14 +324,12 @@ const titleIcon =
 		return path === href || path.startsWith(`${href}/`);
 	}
 
-	function syncNavbarActiveLinks() {
+	function syncActiveNavLinks() {
 		const path = window.location.pathname;
-		for (const link of document.querySelectorAll<HTMLAnchorElement>(
-			"a.nav-link[data-nav-href]",
-		)) {
-			const href = link.getAttribute("data-nav-href") ?? "";
+		for (const link of document.querySelectorAll<HTMLAnchorElement>("[data-nav-link]")) {
+			const href = link.dataset.navLink ?? "/";
 			const active = isNavItemActive(href, path);
-			link.classList.toggle("nav-link--active", active);
+			link.classList.toggle("is-active", active);
 			link.classList.toggle("text-black/75", !active);
 			link.classList.toggle("dark:text-white/75", !active);
 			if (active) link.setAttribute("aria-current", "page");
@@ -349,7 +343,7 @@ const titleIcon =
 		const p = window.location.pathname;
 		const isHome = p === "/" || p === "";
 		navInner.setAttribute("data-is-home", isHome ? "true" : "false");
-		syncNavbarActiveLinks();
+		syncActiveNavLinks();
 	}
 
 	function onPageEnter() {
@@ -460,26 +454,56 @@ const titleIcon =
 </script>
 
 <style>
-	/* 当前页：圆角浅底（与岗位探索页一致），避免 ClientRouter 换页后仅留下划线/主色字 */
-	.nav-link.nav-link--active {
-		background-color: var(--btn-plain-bg-hover);
-		color: var(--primary);
-		text-decoration: none;
-	}
-	.nav-link.nav-link--active:hover {
-		background-color: var(--btn-plain-bg-hover);
-		color: var(--primary);
-	}
-
 	#mobile-nav-panel.float-panel-closed {
 		display: none;
 	}
 	#mobile-nav-panel:not(.float-panel-closed) {
 		display: block;
 	}
+	.nav-link {
+		position: relative;
+		justify-content: flex-start;
+	}
+	.nav-link::after {
+		content: "";
+		position: absolute;
+		left: 0.75rem;
+		right: 0.75rem;
+		bottom: 0.32rem;
+		height: 2px;
+		border-radius: 999px;
+		background: var(--primary);
+		opacity: 0;
+		transform: scaleX(0.25);
+		transition:
+			opacity 160ms ease,
+			transform 160ms ease;
+	}
+	.nav-link.is-active {
+		color: var(--primary) !important;
+		background: color-mix(in oklch, var(--primary) 10%, transparent);
+	}
+	.nav-link.is-active::after {
+		opacity: 1;
+		transform: scaleX(1);
+	}
 	@media (min-width: 1280px) {
 		#mobile-nav-panel {
 			display: none !important;
+		}
+	}
+	@media (max-width: 1279px) {
+		.nav-link::after {
+			left: 0.75rem;
+			right: auto;
+			top: 50%;
+			bottom: auto;
+			width: 3px;
+			height: 1.4rem;
+			transform: translateY(-50%) scaleY(0.35);
+		}
+		.nav-link.is-active::after {
+			transform: translateY(-50%) scaleY(1);
 		}
 	}
 </style>
