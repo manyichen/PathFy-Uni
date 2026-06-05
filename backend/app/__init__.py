@@ -8,6 +8,7 @@ from app.domains.match.router import match_bp
 from app.domains.personality.router import personality_bp
 from app.domains.profile.router import portrait_bp
 from app.core.errors import register_error_handlers
+from app.domains.graph.router import graph_bp
 from app.domains.report.router import career_report_bp
 from app.core.config import Config
 
@@ -76,4 +77,5 @@ def create_app() -> Flask:
     app.register_blueprint(jobs_assistant_bp)
     app.register_blueprint(match_bp)
     app.register_blueprint(career_report_bp)
+    app.register_blueprint(graph_bp)
     return app

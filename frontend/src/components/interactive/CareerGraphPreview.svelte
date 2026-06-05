@@ -274,7 +274,7 @@
 
 	<section class="rounded-2xl border border-black/10 bg-[var(--page-bg)] p-4 dark:border-white/10">
 		<h3 class="text-base font-semibold">升职路径查询</h3>
-		<p class="mt-1 text-xs text-75">基于同公司岗位升职链，展示从当前岗位向上的候选路径。</p>
+		<p class="mt-1 text-xs text-75">基于 JobTitle 层的晋升路径，展示从当前岗位名称向上的候选方向。</p>
 
 		{#if !loadingJobs && !loadError}
 			<div class="mt-3 flex flex-wrap items-end gap-3">
@@ -318,11 +318,14 @@
 									{/if}
 								{/each}
 							</div>
+							{#if path.edges[0]?.reason}
+								<p class="mt-2 text-xs text-75">{path.edges[0].reason}</p>
+							{/if}
 						</div>
 					{/each}
 				{:else}
 					<p class="rounded-xl border border-dashed border-black/20 p-3 text-sm text-75 dark:border-white/20">
-						当前岗位暂未找到升职链路。可以先运行同公司升职关系构建脚本后再查询。
+						当前岗位暂未找到 JobTitle 晋升路径。可以先在图谱管理中同步 JobTitle 并生成晋升路径后再查询。
 					</p>
 				{/if}
 
@@ -334,7 +337,14 @@
 								<div class="rounded-lg border border-black/10 px-2 py-1 text-xs dark:border-white/15">
 									<div class="font-medium">{item.title}</div>
 									<div class="text-75">{item.company}</div>
-									<div class="text-75">exp_gap: {item.exp_gap} | score_gap: {item.score_gap}</div>
+									{#if item.confidence !== undefined}
+										<div class="text-75">confidence: {(item.confidence * 100).toFixed(0)}%</div>
+									{:else}
+										<div class="text-75">exp_gap: {item.exp_gap ?? 0} | score_gap: {item.score_gap ?? 0}</div>
+									{/if}
+									{#if item.stage1 || item.stage2 || item.stage3}
+										<div class="text-75">{[item.stage1, item.stage2, item.stage3].filter(Boolean).join(" -> ")}</div>
+									{/if}
 								</div>
 							{/each}
 						</div>

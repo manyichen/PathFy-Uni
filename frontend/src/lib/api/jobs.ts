@@ -101,13 +101,31 @@ export type PromotionPathResult = {
 		edges: Array<{
 			source: string;
 			reason: string;
-			score_gap: number;
-			exp_gap: number;
+			score_gap?: number;
+			exp_gap?: number;
+			confidence?: number;
+			stage1?: string;
+			stage2?: string;
+			stage3?: string;
+			stage3_job_title?: string;
 		}>;
 	}>;
-	next_steps: Array<JobLiteItem & { score_gap: number; exp_gap: number }>;
+	next_steps: Array<
+		JobLiteItem & {
+			score_gap?: number;
+			exp_gap?: number;
+			confidence?: number;
+			rationale?: string;
+			stage1?: string;
+			stage2?: string;
+			stage3?: string;
+			stage3_job_title?: string;
+		}
+	>;
 	meta: {
 		source: string;
+		sources?: string[];
+		job_title?: string;
 		max_depth: number;
 		max_paths: number;
 	};

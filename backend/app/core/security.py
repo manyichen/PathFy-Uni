@@ -37,7 +37,7 @@ def assert_self_user_id(requested: int, jwt_uid: int) -> bool:
     return int(requested) == int(jwt_uid)
 
 
-def create_token(user_id: int, username: str, email: str) -> str:
+def create_token(user_id: int, username: str, email: str, is_admin: bool = False) -> str:
     expires = datetime.now(tz=timezone.utc) + timedelta(
         hours=current_app.config["TOKEN_EXPIRES_HOURS"]
     )
@@ -45,6 +45,7 @@ def create_token(user_id: int, username: str, email: str) -> str:
         "sub": str(user_id),
         "username": username,
         "email": email,
+        "is_admin": is_admin,
         "exp": expires,
         "iat": datetime.now(tz=timezone.utc),
     }
