@@ -13,7 +13,12 @@ def test_load_hiring_table_has_java():
     assert java["rank"] == 1
 
 
-def test_build_track_profile_java_top_visibility():
+def test_build_track_profile_java_top_visibility(monkeypatch):
+    # Unit tests must not inherit a developer's backend/.env and contact Neo4j.
+    monkeypatch.setattr(
+        "app.domains.report.trends.fetch_track_graph_stats_batch",
+        lambda: {},
+    )
     tp = build_track_profile(job_title_name="Java")
     assert tp["job_title"] == "Java"
     assert tp["hiring"]["record_count"] == 591

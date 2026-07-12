@@ -33,3 +33,19 @@ def test_not_found_envelope(client):
     assert res.status_code == 404
     body = res.get_json()
     assert body["ok"] is False
+
+
+def test_route_contract_inventory(app):
+    """Guard the public route surface while internal modules are reorganized."""
+    routes = {
+        (rule.rule, method)
+        for rule in app.url_map.iter_rules()
+        if rule.endpoint != "static"
+        for method in rule.methods - {"HEAD", "OPTIONS"}
+    }
+    assert len(routes) == 50
+    assert ("/api/profile/upload", "POST") in routes
+    assert ("/api/jobs/<path:job_id>/promotion-path", "GET") in routes
+    assert ("/api/match/preview", "POST") in routes
+    assert ("/api/report/generate", "POST") in routes
+    assert ("/api/graph/sync/job-titles", "POST") in routes

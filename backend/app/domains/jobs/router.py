@@ -1,4 +1,3 @@
-import hashlib
 import json
 from typing import Any, Dict, List, Tuple
 
@@ -16,6 +15,12 @@ from app.infrastructure.salary import (
     cypher_job_salary_display,
     cypher_job_salary_raw,
     parse_salary_range,
+)
+from app.domains.jobs.listing import (
+    jobs_order_clause,
+    jobs_page_payload,
+    jobs_shuffle_key,
+    normalize_jobs_sort,
 )
 
 _SALARY_DISP = cypher_job_salary_display()
@@ -64,23 +69,6 @@ _JOBS_SHUFFLE_CACHE_ORDER: List[Tuple[str, str]] = []
 _MAX_JOBS_SHUFFLE_CACHES = 32
 
 
-def _normalize_jobs_sort(raw: str) -> str:
-    value = str(raw or "").strip().lower()
-    if value in {"random", "score_asc", "score_desc"}:
-        return value
-    return "default"
-
-
-def _jobs_order_clause(sort_mode: str) -> str:
-    if sort_mode == "score_asc":
-        return "ORDER BY total_score ASC, title ASC"
-    return "ORDER BY total_score DESC, title ASC"
-
-
-def _jobs_shuffle_key(job_id: str, seed: str) -> str:
-    return hashlib.md5(f"{seed}:{job_id}".encode("utf-8")).hexdigest()
-
-
 def _shuffled_job_rows(keyword: str, seed: str) -> List[Dict[str, Any]]:
     cache_key = (keyword, seed)
     cached = _JOBS_SHUFFLE_CACHE.get(cache_key)
@@ -106,40 +94,13 @@ def _shuffled_job_rows(keyword: str, seed: str) -> List[Dict[str, Any]]:
     driver = neo4j_driver(uri, user, password)
     with driver.session(database=database) as session:
         rows = [dict(r) for r in session.run(query, {"q": keyword})]
-    rows.sort(key=lambda row: _jobs_shuffle_key(str(row.get("id") or ""), seed))
+    rows.sort(key=lambda row: jobs_shuffle_key(str(row.get("id") or ""), seed))
     _JOBS_SHUFFLE_CACHE[cache_key] = rows
     _JOBS_SHUFFLE_CACHE_ORDER.append(cache_key)
     while len(_JOBS_SHUFFLE_CACHE_ORDER) > _MAX_JOBS_SHUFFLE_CACHES:
         old_key = _JOBS_SHUFFLE_CACHE_ORDER.pop(0)
         _JOBS_SHUFFLE_CACHE.pop(old_key, None)
     return rows
-
-
-def _jobs_page_payload(
-    rows: List[Dict[str, Any]],
-    *,
-    page: int,
-    page_size: int,
-    sort_mode: str,
-    seed: str = "",
-) -> Dict[str, Any]:
-    total = len(rows)
-    total_pages = max(1, (total + page_size - 1) // page_size) if total else 1
-    page_num = min(max(1, page), total_pages)
-    start = (page_num - 1) * page_size
-    page_rows = rows[start : start + page_size]
-    data = [serialize_job_row(r) for r in page_rows]
-    payload: Dict[str, Any] = {
-        "jobs": data,
-        "total": total,
-        "page": page_num,
-        "page_size": page_size,
-        "total_pages": total_pages,
-        "sort": sort_mode,
-    }
-    if sort_mode == "random" and seed:
-        payload["seed"] = seed
-    return payload
 
 
 def _safe_float(value, default=0.0):
@@ -631,14 +592,14 @@ def list_jobs():
     page_size = max(1, min(int(request.args.get("page_size", "40")), 200))
     skip = (page - 1) * page_size
     keyword = (request.args.get("q") or "").strip()
-    sort_mode = _normalize_jobs_sort(request.args.get("sort") or "")
+    sort_mode = normalize_jobs_sort(request.args.get("sort") or "")
     seed = str(request.args.get("seed") or "").strip()
 
     if sort_mode == "random":
         if not seed:
             return jsonify({"ok": False, "message": "随机排序需要提供 seed"}), 400
         rows = _shuffled_job_rows(keyword, seed)
-        return jsonify({"ok": True, "data": _jobs_page_payload(rows, page=page, page_size=page_size, sort_mode=sort_mode, seed=seed)})
+        return jsonify({"ok": True, "data": jobs_page_payload(rows, page=page, page_size=page_size, sort_mode=sort_mode, seed=seed)})
 
     count_query = f"""
     MATCH (j:Job)
@@ -660,7 +621,7 @@ def list_jobs():
        coalesce(j.cap_req_growth, 0.0)) AS total_score
     RETURN
       {_JOBS_RETURN_FIELDS}
-    {_jobs_order_clause(sort_mode)}
+    {jobs_order_clause(sort_mode)}
     SKIP $skip
     LIMIT $limit
     """

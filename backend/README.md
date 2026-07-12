@@ -21,8 +21,8 @@
 
 ```bash
 cd backend
-python -m venv .venv
-.venv\Scripts\activate
+python3.12 -m venv .venv
+source .venv/bin/activate  # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
@@ -36,6 +36,8 @@ mysql -u ... -p suilli_mizi < migrations/002_student_resume_cap_conf.sql
 mysql -u ... -p suilli_mizi < migrations/003_student_resume_detailed_analysis.sql
 mysql -u ... -p suilli_mizi < migrations/004_career_reports.sql
 mysql -u ... -p suilli_mizi < migrations/005_match_runs.sql
+mysql -u ... -p suilli_mizi < migrations/006_add_users_is_admin.sql
+mysql -u ... -p suilli_mizi < migrations/007_create_job_titles.sql
 ```
 
 或使用 `tools/run_migration_00x.py`（见各脚本说明）。
@@ -69,6 +71,12 @@ pip install -r requirements-dev.txt
 pytest tests/ -q
 ```
 
+虚拟环境包含创建时解释器的绝对路径。Python 安装位置改变后请删除并重建 `.venv`，不要复制或提交虚拟环境。重构前后可用以下命令比较完整路由清单：
+
+```bash
+PYTHONPATH=. python tools/list_routes.py
+```
+
 生产环境见 [`deploy/DEPLOY.md`](../deploy/DEPLOY.md)（Gunicorn + Supervisor）。
 
 ## 5) 常用 API
@@ -81,4 +89,4 @@ pytest tests/ -q
 - `POST /api/match/preview` — 人岗匹配（需登录）
 - `POST /api/report/generate` — 生成生涯报告（需登录）
 
-完整接口说明见 [`PathFy-Uni项目总体设计文档.md`](../PathFy-Uni项目总体设计文档.md) 附录 A。
+完整接口说明见 [`PathFy-Uni项目总体设计文档.md`](../docs/project/PathFy-Uni项目总体设计文档.md) 附录 A。
