@@ -11,7 +11,7 @@
 | 文档 | 用途 |
 |------|------|
 | **本文件 `README.md`** | 仓库概览、架构、目录结构、本地启动 |
-| [`PathFy-Uni项目总体设计文档.md`](./PathFy-Uni项目总体设计文档.md) | 系统设计、模块分析、答辩/软著长文 |
+| [`docs/project/PathFy-Uni项目总体设计文档.md`](./docs/project/PathFy-Uni项目总体设计文档.md) | 系统设计、模块分析、答辩/软著长文 |
 | [`deploy/DEPLOY.md`](./deploy/DEPLOY.md) | 生产部署（Nginx + Gunicorn + 宝塔 ECS） |
 | [`backend/README.md`](./backend/README.md) | 后端依赖、数据库初始化、API 入口 |
 | [`frontend/README.md`](./frontend/README.md) | 前端开发、构建、环境变量 |
@@ -22,7 +22,7 @@
 | [`docs/API_CONTRACT.md`](./docs/API_CONTRACT.md) | API 双包络响应契约 |
 | [`docs/auth-audit.md`](./docs/auth-audit.md) | 接口鉴权审计清单 |
 | [`docs/privacy-security.md`](./docs/privacy-security.md) | 隐私与安全加固变更说明 |
-| [`paper-brief/`](./paper-brief/) | 论文/研究背景材料（非运行依赖） |
+| [`docs/research/`](./docs/research/) | 论文/研究背景材料（非运行依赖） |
 
 ---
 
@@ -142,7 +142,7 @@ suilli_mizi/
 ### 前置条件
 
 - Python 3.11+、Node.js 18+、pnpm
-- MySQL（执行 `backend/schema.sql` 及 `migrations/002`–`005`）
+- MySQL（执行 `backend/schema.sql` 及 `migrations/002`–`007`）
 - Neo4j（需先跑 `generate_graph/` 导入岗位，或使用已有图库）
 - 复制 `backend/.env.example` → `backend/.env`，填写数据库与 API Key
 
@@ -202,7 +202,7 @@ pnpm build
 
 ## 研究与答辩说明
 
-- **工程实现**：本 README 与 [`PathFy-Uni项目总体设计文档.md`](./PathFy-Uni项目总体设计文档.md) 描述的是**当前可运行系统**；总体设计文档中部分旧路径（如根级 `auth.py`、`src/lib/auth.ts`）以本 README 为准。
+- **工程实现**：本 README 与 [`PathFy-Uni项目总体设计文档.md`](./docs/project/PathFy-Uni项目总体设计文档.md) 描述的是**当前可运行系统**；总体设计文档中部分旧路径（如根级 `auth.py`、`src/lib/auth.ts`）以本 README 为准。
 - **研究叙事**：立项/论文中「知识图谱嵌入、动态 GNN 画像、学习排序」等可作为**方法展望或后续版本**；答辩时建议明确：**V1 采用 Neo4j 图谱检索 + 可解释规则/统计匹配 + 多模型 LLM 增强**，而非端到端深度学习推荐。
 - **创新点（与代码一致）**：八维能力—岗位需求—发展规划三位一体；匹配可解释（维度差距 + 可选 LLM 说明）；报告支持复盘闭环与自动重规划。
 

@@ -48,7 +48,7 @@ pip install -r generate_graph/requirements.txt
 cd /path/to/PathFy-Uni
 # 激活虚拟环境后：
 python generate_graph/script.py \
-  --excel-path generate_graph/20260226105856_457.xls \
+  --excel-path datasets/20260226105856_457.xls \
   --llm-provider ollama \
   --ollama-base-url http://localhost:11434 \
   --ollama-model qwen3.5:9b \

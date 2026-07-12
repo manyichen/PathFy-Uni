@@ -107,7 +107,7 @@ Multi-model LLM orchestration: DeepSeek / 通义 (DashScope) / 豆包 (Ark) for 
 
 - MySQL for users, resumes, capability profiles, match snapshots, career reports
 - Neo4j for the job graph (positions, skill dimensions, promotion relationships)
-- Schema: `backend/schema.sql` + migrations in `backend/migrations/` (numbered 002-005)
+- Schema: `backend/schema.sql` + migrations in `backend/migrations/` (numbered 002-007)
 - Run migrations with scripts in `backend/tools/run_migration_*.py`
 - **Never commit**: SQL dumps with real user/resume data, `.env` files, SSH keys
 
@@ -127,7 +127,7 @@ See `deploy/DEPLOY.md`. Topology: Nginx (static files + `/api` reverse proxy) �
 | Doc | Purpose |
 |-----|---------|
 | `README.md` | Full project overview, tech stack, local setup |
-| `PathFy-Uni项目总体设计文档.md` | Comprehensive system design (Chinese, for thesis/defense) |
+| `docs/project/PathFy-Uni项目总体设计文档.md` | Comprehensive system design (Chinese, for thesis/defense) |
 | `docs/REFACTOR_ROADMAP.md` | Backend layered architecture |
 | `docs/API_CONTRACT.md` | API response envelope specification |
 | `docs/auth-audit.md` | Endpoint authentication audit |

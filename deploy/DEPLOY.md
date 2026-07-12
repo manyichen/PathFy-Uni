@@ -264,6 +264,8 @@ mysql -u root -p suilli_mizi < backend/migrations/002_student_resume_cap_conf.sq
 mysql -u root -p suilli_mizi < backend/migrations/003_student_resume_detailed_analysis.sql
 mysql -u root -p suilli_mizi < backend/migrations/004_career_reports.sql
 mysql -u root -p suilli_mizi < backend/migrations/005_match_runs.sql
+mysql -u root -p suilli_mizi < backend/migrations/006_add_users_is_admin.sql
+mysql -u root -p suilli_mizi < backend/migrations/007_create_job_titles.sql
 ```
 
 也可使用 Python 迁移脚本（效果等价）：
@@ -750,4 +752,4 @@ free -h
 - 后端 API 与本地启动：[`backend/README.md`](../backend/README.md)
 - 前端开发与构建：[`frontend/README.md`](../frontend/README.md)
 - Neo4j 岗位数据 ETL：[`generate_graph/README.md`](../generate_graph/README.md)
-- 项目总体设计：[`PathFy-Uni项目总体设计文档.md`](../PathFy-Uni项目总体设计文档.md)
+- 项目总体设计：[`PathFy-Uni项目总体设计文档.md`](../docs/project/PathFy-Uni项目总体设计文档.md)

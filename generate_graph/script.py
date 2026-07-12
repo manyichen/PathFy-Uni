@@ -18,7 +18,9 @@ from ollama import Client as OllamaClient
 from py2neo import Graph
 
 
-DEFAULT_XLS_PATH = os.path.join("..", "datasets", "20260226105856_457.xls")
+DEFAULT_XLS_PATH = os.path.abspath(
+    os.path.join(os.path.dirname(__file__), "..", "datasets", "20260226105856_457.xls")
+)
 DEFAULT_BATCH_SIZE = 128
 MAX_RETRIES = 5
 DEFAULT_OLLAMA_BASE_URL = "http://127.0.0.1:11434"

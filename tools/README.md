@@ -22,6 +22,8 @@ tools/
 │   ├── backfill_job_salary_norm.py
 │   ├── cleanup_neo4j_inferred_jobs.py
 │   └── check_neo4j_duplicates.py
+├── repository/               # 仓库卫生检查
+│   └── check_repo_hygiene.py
 └── job_eval/                 # 岗位八维能力 LLM 批量评估（独立依赖）
     ├── README.md
     ├── requirements.txt
@@ -120,7 +122,7 @@ python run_job_eval_batch.py --dry-run
 ```bash
 cd backend
 python tools/run_migration_002.py
-# … 003、004、005
+# … 按顺序执行 003、004、005；006、007 见 migrations/ 中的 SQL
 python tools/analyze_neo4j_graph.py
 ```
 
