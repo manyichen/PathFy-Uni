@@ -37,7 +37,7 @@ tools/
 
 | 路径 | 用途 |
 |------|------|
-| `backend/tools/` | MySQL 迁移 `run_migration_00x.py`、图谱分析 `analyze_neo4j_graph.py` |
+| `backend/tools/` | Alembic 基线校验、历史迁移工具、图谱分析 |
 | `generate_graph/` | 从招聘数据批量生成/导入 `Job` 节点 |
 | `datasets/` | CSV 源数据：`master/`、`promotion/`、`snapshots/` |
 
@@ -121,12 +121,13 @@ python run_job_eval_batch.py --dry-run
 
 ```bash
 cd backend
-python tools/run_migration_002.py
-# … 按顺序执行 003、004、005；006、007 见 migrations/ 中的 SQL
+python tools/verify_alembic_baseline.py
+alembic stamp 20260712_0001  # 仅首次接入
+alembic upgrade head
 python tools/analyze_neo4j_graph.py
 ```
 
-部署文档若写 `python tools/run_migration_*.py`，请改为 **`python backend/tools/run_migration_*.py`**（或在 `backend/` 目录下执行）。
+`run_migration_00x.py` 与根级历史 SQL 只供旧环境审计，新的数据库变更必须创建 `backend/migrations/versions/` 下的 Alembic revision。
 
 ---
 

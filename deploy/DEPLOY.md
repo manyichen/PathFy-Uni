@@ -252,31 +252,24 @@ mysql -h 127.0.0.1 -P 3306 -u 你的用户 -p suilli_mizi -e "SHOW TABLES;"
 
 ### 6.2 导入表结构（若尚未执行）
 
-若 `SHOW TABLES` 为空或缺少新功能表，按顺序补跑：
-
-按顺序执行（SSH 或 phpMyAdmin）：
+全新数据库导入完整 schema 后登记 Alembic 基线：
 
 ```bash
 cd /www/wwwroot/pathfy-uni
 
 mysql -u root -p suilli_mizi < backend/schema.sql
-mysql -u root -p suilli_mizi < backend/migrations/002_student_resume_cap_conf.sql
-mysql -u root -p suilli_mizi < backend/migrations/003_student_resume_detailed_analysis.sql
-mysql -u root -p suilli_mizi < backend/migrations/004_career_reports.sql
-mysql -u root -p suilli_mizi < backend/migrations/005_match_runs.sql
-mysql -u root -p suilli_mizi < backend/migrations/006_add_users_is_admin.sql
-mysql -u root -p suilli_mizi < backend/migrations/007_create_job_titles.sql
+cd backend
+alembic stamp 20260712_0001
 ```
 
-也可使用 Python 迁移脚本（效果等价）：
+已有数据库先校验历史结构，再 stamp；之后每次部署只执行 upgrade：
 
 ```bash
 cd /www/wwwroot/pathfy-uni/backend
 source .venv/bin/activate   # 若尚未创建 venv，见下一节
-python tools/run_migration_002.py
-python tools/run_migration_003.py
-python tools/run_migration_004.py
-python tools/run_migration_005.py
+python tools/verify_alembic_baseline.py
+alembic stamp 20260712_0001   # 仅首次接入 Alembic 时执行
+alembic upgrade head          # 后续部署执行
 ```
 
 ### 6.3 MySQL 内存调优（2G 机器，可选）

@@ -28,19 +28,14 @@ pip install -r requirements.txt
 
 ## 2) 初始化数据库
 
-在 MySQL 中依次执行：
+新数据库先导入当前完整 schema，再登记 Alembic 基线：
 
 ```bash
 mysql -u ... -p suilli_mizi < schema.sql
-mysql -u ... -p suilli_mizi < migrations/002_student_resume_cap_conf.sql
-mysql -u ... -p suilli_mizi < migrations/003_student_resume_detailed_analysis.sql
-mysql -u ... -p suilli_mizi < migrations/004_career_reports.sql
-mysql -u ... -p suilli_mizi < migrations/005_match_runs.sql
-mysql -u ... -p suilli_mizi < migrations/006_add_users_is_admin.sql
-mysql -u ... -p suilli_mizi < migrations/007_create_job_titles.sql
+alembic stamp 20260712_0001
 ```
 
-或使用 `tools/run_migration_00x.py`（见各脚本说明）。
+已有数据库先运行 `python tools/verify_alembic_baseline.py`，通过后执行相同的 `alembic stamp`。此后部署只运行 `alembic upgrade head`。历史 `002_*.sql`–`007_*.sql` 和 `run_migration_00x.py` 仅供审计，不再作为迁移入口；详见 [`migrations/README.md`](migrations/README.md)。
 
 ## 3) 配置环境变量
 

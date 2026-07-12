@@ -122,9 +122,10 @@ suilli_mizi/
 │   │   ├── schemas/
 │   │   └── utils.py
 │   ├── migrations/
+│   │   └── versions/        # Alembic revision 链
 │   ├── schema.sql
 │   ├── tests/               # pytest（无需 MySQL/Neo4j）
-│   └── tools/                 # 数据库迁移脚本 run_migration_*.py
+│   └── tools/               # 数据库基线校验、图谱分析等工具
 ├── docs/
 ├── generate_graph/
 ├── deploy/
@@ -142,7 +143,7 @@ suilli_mizi/
 ### 前置条件
 
 - Python 3.11+、Node.js 18+、pnpm
-- MySQL（执行 `backend/schema.sql` 及 `migrations/002`–`007`）
+- MySQL（新库导入 `backend/schema.sql` 后 stamp Alembic 基线；见 `backend/migrations/README.md`）
 - Neo4j（需先跑 `generate_graph/` 导入岗位，或使用已有图库）
 - 复制 `backend/.env.example` → `backend/.env`，填写数据库与 API Key
 
@@ -195,7 +196,7 @@ pnpm build
 ## 数据与隐私
 
 - **勿提交**：MySQL 全库 dump（含用户/简历）、`.env`、SSH 私钥 — 见 [`.gitignore`](./.gitignore) 与 [`datasets/README.md`](./datasets/README.md)
-- **初始化库表**：只用 `backend/schema.sql` + migrations，不要用含真实用户的 Navicat 导出灌库
+- **初始化库表**：新库使用 `backend/schema.sql` 并 stamp Alembic 基线；后续只运行 `alembic upgrade head`，不要使用含真实用户的 Navicat 导出灌库
 - **简历文件**：上传至 Web 不可访问的私有目录，OCR 入库后删除原文件
 
 ---

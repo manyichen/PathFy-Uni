@@ -138,7 +138,7 @@
 业务编排层对应 `backend/app/*.py` 各业务蓝图。系统通过 Flask Blueprint 拆分为认证、岗位、画像、性格、匹配、报告等模块，集中在 `create_app()` 中注册。  
 智能增强层主要由 LLM 调用与 OCR/解析能力组成，分布在 `jobs_assistant.py`、`match_llm_refine.py`、`career_report.py`、`profile.py` 与 `utils.py`。  
 数据存储层由 MySQL + Neo4j 组成。MySQL 存储用户行为与结果快照，Neo4j 支撑岗位检索及维度信息读取。  
-运行支撑层由环境变量配置、依赖管理、开发代理、迁移脚本组成，对应 `config.py`、`requirements.txt`、`astro.config.mjs`、`backend/tools/run_migration_*.py`。
+运行支撑层由环境变量配置、依赖管理、开发代理、Alembic 迁移组成，对应 `config.py`、`requirements.txt`、`astro.config.mjs`、`backend/migrations/`。
 
 ![图2-2 五层架构与模块映射图（待补）](images/fig2-2-五层架构图.png)
 
@@ -648,4 +648,3 @@ V3 阶段定位为“可推广应用版”，重点是可配置化、可观测�
 [6] `backend/app/auth.py`、`jobs.py`、`jobs_assistant.py`、`profile.py`、`personality.py`、`match_preview.py`、`career_report.py`（核心业务实现）  
 [7] `frontend/src/pages/*` 与 `frontend/src/components/*`（页面组织与交互实现）  
 [8] `frontend/src/lib/api.ts`、`jobs.ts`、`match.ts`、`report.ts`、`profile.ts`（前端数据调用链）
-
