@@ -1,0 +1,16 @@
+name: Repository hygiene
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  tracked-artifacts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Reject private, generated, and oversized tracked files
+        run: python tools/repository/check_repo_hygiene.py

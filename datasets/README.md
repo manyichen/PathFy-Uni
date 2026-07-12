@@ -1,6 +1,21 @@
 # datasets 数据目录说明
 
-本目录存放 **PathFy-Uni 职业规划知识图谱** 的结构化 CSV、生成结果与 schema 文档。数据经 `tools/csv/` 加工后，由 `tools/neo4j/` 导入远程 Neo4j，供后端报告、岗位推荐、晋升路径等能力使用。
+本目录存放 **PathFy-Uni 职业规划知识图谱** 的小型、可审查结构化 CSV 与 schema 文档。数据经 `tools/csv/` 加工后，由 `tools/neo4j/` 导入 Neo4j，供后端报告、岗位推荐、晋升路径等能力使用。原始招聘表、全库快照和批量评估结果属于外部制品，不进入代码仓库。
+
+## 外部制品恢复清单
+
+以下文件已从代码仓当前版本移除。制品存储位置由项目维护者配置；恢复时必须核对 SHA-256，并仅放入对应的已忽略路径。
+
+| 制品 | 本地恢复路径 | SHA-256 |
+|---|---|---|
+| Neo4j 全库快照 | `datasets/snapshots/neo4j_graph_full.json` | `61c88fc93f9cf1dd5a7d46cb804b121cdb321aa21f0d103d12db09e6e13e2454` |
+| 招聘原始表 | `datasets/20260226105856_457.xls` | `8f919fea8f045593ed009d2365fb76969eb6db1e9d424a2f094842d9412b73ea` |
+
+批量岗位评估结果由 `tools/job_eval/run_job_eval_batch.py` 重新生成，文件名匹配 `job_eval_results_*.jsonl`。这些输出可能包含来源数据片段，不得提交。提交前运行：
+
+```bash
+python tools/repository/check_repo_hygiene.py
+```
 
 ## 目录结构
 
@@ -20,8 +35,7 @@ datasets/
 │   ├── promotion_competitions.csv         # 脚本生成
 │   ├── job_title_promotions_schema.md
 │   └── job_title_promotion_recommendations_schema.md
-└── snapshots/
-    └── neo4j_graph_full.json              # 全库导出快照
+└── snapshots/                             # 本地外部制品目录（Git 忽略）
 ```
 
 招聘原始 Excel（如 `20260226105856_457.xls`）可放本目录根下仅本地使用，勿提交含隐私文件。
@@ -39,7 +53,7 @@ datasets/
 | **D. 晋升排除** | `promotion/job_title_promotions_excluded.csv` | 2 | 暂不配置路线及原因 |
 | **E. 晋升×资源（生成）** | `promotion/promotion_learning_resources.csv` | 1216 | 路线分阶段推荐学习资源 |
 | **E. 晋升×竞赛（生成）** | `promotion/promotion_competitions.csv` | 340 | 路线分阶段推荐竞赛 |
-| **F. 图谱快照** | `snapshots/neo4j_graph_full.json` | — | 全库导出（约 47MB） |
+| **F. 图谱快照** | `snapshots/neo4j_graph_full.json` | — | 外部制品，不进入 Git |
 | **G. 字段说明** | `promotion/job_title_promotions_schema.md` | — | 晋升主表字段与命名 |
 | **G. 字段说明** | `promotion/job_title_promotion_recommendations_schema.md` | — | 推荐生成与导入逻辑 |
 | **H. 水平换岗相似** | `master/job_title_lateral_transfer.csv` | 408 | JobTitle 间 `SIMILAR_FOR_LATERAL`（生成） |
@@ -307,7 +321,7 @@ python tools/neo4j/sync_neo4j_promotion_recommendations.py
 ### 允许提交
 
 - 本目录下 **CSV / schema.md**（无用户账号与简历正文）
-- `snapshots/neo4j_graph_full.json` 若不含隐私可提交；体积大时建议本地保留或 Git LFS
+- 本目录下小型 **CSV / schema.md**；`snapshots/`、原始 Excel 和批量结果始终作为外部制品
 
 ### 初始化数据库
 
@@ -315,7 +329,7 @@ python tools/neo4j/sync_neo4j_promotion_recommendations.py
 
 ```bash
 mysql -u ... -p suilli_mizi < backend/schema.sql
-# 再按序执行 backend/migrations/002–005（见 backend/tools/run_migration_*.py）
+# 再按序执行 backend/migrations/002–007（见 backend/README.md）
 ```
 
 ### 误提交隐私文件

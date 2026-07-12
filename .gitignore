@@ -61,6 +61,23 @@ __pycache__/
 .idea/
 backend/app/static
 
+# --- Runtime uploads and OCR derivatives ---
+backend/app/static/uploads/
+backend/app/static/uploads/pdf_images/
+**/pdf_images/
+
+# --- Large/raw data artifacts (curated CSVs stay tracked) ---
+datasets/snapshots/*
+!datasets/snapshots/.gitkeep
+datasets/*.[xX][lL][sS]
+datasets/*.[xX][lL][sS][xX]
+tools/job_eval/job_eval_results_*.jsonl
+tools/job_eval/IMG_*
+tools/job_eval/*_qc_report.*
+generate_graph/promotion_backups/
+generate_graph/*.xls
+generate_graph/*.xlsx
+
 # --- 编辑器 / 系统 ---
 .vscode/
 .dist
