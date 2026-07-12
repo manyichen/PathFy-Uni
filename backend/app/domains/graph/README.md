@@ -198,15 +198,25 @@ CREATE TABLE job_titles (
 | `file` | File | 是 | .xls 或 .xlsx 文件，需包含 12 个指定中文列 |
 | `batch_size` | int | 否 | 每批处理条数，默认 128 |
 | `clear_all` | bool | 否 | 是否先清空图谱再导入，默认 false |
+| `mode` | string | 否 | `merge`（默认）或 `snapshot` |
+| `source_id` | string | snapshot 必填 | 稳定的数据源标识，用于限定陈旧岗位删除范围 |
+| `dry_run` | bool | 否 | 仅计算新增、变更、未变统计，不调用 LLM、不写库 |
 
-请求亦支持 JSON body 模式：`{"file_path": "/path/to/data.xls", "batch_size": 128, "clear_all": false}`
+请求亦支持 JSON body 模式：`{"file_path": "/path/to/data.xls", "batch_size": 128, "mode": "merge", "dry_run": true}`
 
 **响应：**
 ```json
 {
   "ok": true,
   "data": {
+    "run_id": "...",
+    "source_id": "monthly-feed",
+    "mode": "merge",
     "total_jobs": 457,
+    "new_or_changed_jobs": 12,
+    "unchanged_jobs": 445,
+    "jobs_written": 12,
+    "pruned_jobs": 0,
     "batches_completed": 4,
     "batches_failed": 0,
     "core_templates": ["前端工程师", "Java开发", "数据分析师", ...],
@@ -218,6 +228,10 @@ CREATE TABLE job_titles (
 ### `POST /api/graph/generate-promotions` 已废弃
 
 旧接口曾用于生成具体 `:Job` 节点之间的晋升边。该写入路径已废弃，调用时只返回 `410 Gone`，不会写 Neo4j。请改用 `POST /api/graph/sync/job-titles` 和 `POST /api/graph/generate/promotion-paths`。
+
+### `GET /api/graph/import-runs` — 导入运行记录
+
+返回最近的 `GraphImportRun` 审计节点，支持 `limit=1..100`。每次正式导入记录来源、模式、输入/变化/写入/删除数量、错误数和起止时间；若进程异常退出，记录会保留为 `running`，便于排查未完成任务。
 
 **响应：**
 ```json
@@ -412,17 +426,18 @@ Excel .xls
   │
   ├─ 1. pd.read_excel() 加载，校验 12 个中文列名
   ├─ 2. 列名映射（COLUMN_ALIASES）：岗位名称→name，公司名称→company...
-  ├─ 3. compute_core_templates()：按归一化标题频率取 top 10
+  ├─ 3. 按 job_key 去重并计算内容指纹；读取 Neo4j 当前指纹
+  ├─ 4. 只保留新增或内容/提取器版本发生变化的岗位
   │
-  ├─ 4. 分批循环（batch_size=128）：
+  ├─ 5. 对变化集分批循环（batch_size=128）：
   │     ├─ build_ai_payload()：DataFrame → JSON 数组
   │     ├─ 调用 LLM（OpenAI 兼容，temperature=0.1，response_format=json_object）
   │     │     提取：hard_skills[], soft_skills{innovation/learning/stress/comm},
   │     │           certificates[], experience_req, internship_req
   │     ├─ 重试最多 5 次，指数退避（2s/4s/6s/8s/10s）
-  │     └─ 最终失败 → 返回空结构兜底（不阻塞其他批次）
+  │     └─ 最终失败 → 当前批次不写入，snapshot 也不会删除该批已有岗位
   │
-  ├─ 5. merge_batch_to_neo4j()：单事务内 MERGE 所有节点+关系
+  ├─ 6. merge_batch_to_neo4j()：单事务内 MERGE 节点并对托管关系做 reconcile
   │     ├─ MERGE (:Job {job_key}) → 设置 title/company/location/salary...
   │     ├─ MERGE (:Company) → BELONGS_TO
   │     ├─ MERGE (:Skill) → REQUIRES（每个 hard_skill）
@@ -430,7 +445,9 @@ Excel .xls
   │     ├─ MERGE (:SoftSkill) → REQUIRES（4 维软技能）
   │     └─ MERGE (:CareerLevel) → BELONGS_TO
   │
-  ├─ 6. _sync_job_titles()：按岗位名称分组统计 → INSERT ON DUPLICATE KEY UPDATE
+  ├─ 7. snapshot 模式仅删除同 source_id 且本 run 未见的 Job
+  ├─ 8. 从 Neo4j 实际提交状态重建 JobTitle/HAS_TITLE
+  ├─ 9. 将 Neo4j 聚合统计镜像到 MySQL job_titles
   └─ 返回统计
 ```
 
@@ -467,9 +484,13 @@ Neo4j :Job 节点
 
 ## 增量更新机制
 
-1. **岗位导入幂等性**：`MERGE` 使用 `job_key` 作为业务主键。同一 Excel 重复导入 → 更新属性，不创建重复节点。新数据追加 → 新 job_key 的节点被创建，已有 job_key 的节点属性被覆盖
-2. **JobTitle 同步幂等性**：`sync/job-titles` 通过 `MERGE (:JobTitle {name})` 和 `MERGE (:Job)-[:HAS_TITLE]->(:JobTitle)` 重复执行不会创建重复标题节点
-3. **晋升路径更新幂等性**：`generate/promotion-paths` 通过 `promotion_id` 合并 `JobPromotion`，重复生成会更新阶段说明、置信度和 rationale
+1. **变化检测**：`job_key` 保持兼容，SHA-256 指纹覆盖业务字段与提取器版本；未变化岗位跳过 LLM 和写库。
+2. **关系一致性**：变化岗位写入前删除该导入器托管的旧 `REQUIRES/BELONGS_TO`，再在同一事务重建，已移除技能不会残留。
+3. **来源隔离**：`merge` 只新增/更新；`snapshot` 必须显式传稳定 `source_id`，只删除该来源本轮未出现的托管 Job。批次失败时整轮禁止 prune。
+4. **可追踪性**：Job 保存 `import_fingerprint`、`import_source_id`、`last_seen_run_id`、`last_imported_at`，响应返回 `run_id` 与增量统计。
+5. **派生数据一致性**：JobTitle 与 MySQL `job_titles` 从 Neo4j 成功提交后的实际状态重建，不再按未成功写入的 Excel 全表统计。
+6. **生成数据隔离**：LLM 晋升和换岗结果带 `generation_source/run_id`；刷新时只清理本生成器旧结果，不删除 CSV 或人工维护数据。
+7. **并发保护**：所有管理端图谱写操作使用 MySQL `GET_LOCK('pathfy:graph-write')` 跨 Gunicorn worker 串行化；已有任务运行时新请求返回 HTTP 409。
 
 ---
 
@@ -530,10 +551,25 @@ curl -X POST http://localhost:5000/api/graph/generate/promotion-paths \
 ### 增量更新：导入新一期数据
 
 ```bash
-# 不清空已有图谱，新数据以 MERGE 方式追加
+# 先预览变化集，不调用 LLM、不写库
 curl -X POST http://localhost:5000/api/graph/import-jobs \
   -H "Authorization: Bearer <admin_token>" \
-  -F "file=@datasets/20260701_new_jobs.xls"
+  -F "file=@datasets/20260701_new_jobs.xls" \
+  -F "mode=merge" \
+  -F "dry_run=true"
+
+# 确认后增量写入；相同文件再次导入会跳过未变化岗位
+curl -X POST http://localhost:5000/api/graph/import-jobs \
+  -H "Authorization: Bearer <admin_token>" \
+  -F "file=@datasets/20260701_new_jobs.xls" \
+  -F "mode=merge"
+
+# 完整快照替换必须使用跨月份稳定的 source_id
+curl -X POST http://localhost:5000/api/graph/import-jobs \
+  -H "Authorization: Bearer <admin_token>" \
+  -F "file=@datasets/20260701_full_jobs.xls" \
+  -F "mode=snapshot" \
+  -F "source_id=recruitment-main"
 
 # 刷新 JobTitle 和晋升路径
 curl -X POST http://localhost:5000/api/graph/sync/job-titles \

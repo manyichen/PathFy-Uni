@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from io import BytesIO
 from pathlib import Path
+from contextlib import nullcontext
 
 import pytest
 
@@ -14,18 +15,28 @@ from app.domains.graph import sync_service as graph_sync_service
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
+@pytest.fixture(autouse=True)
+def _no_graph_write_lock(monkeypatch):
+    monkeypatch.setattr(graph_router, "graph_write_lock", nullcontext)
+
+
 def test_import_jobs_reads_multipart_options(client, monkeypatch):
     captured = {}
 
     monkeypatch.setattr(graph_router, "_require_admin", lambda: (1, None))
 
-    def fake_import_jobs_from_excel(*, excel_path, uploaded_file, batch_size, clear_all):
+    def fake_import_jobs_from_excel(
+        *, excel_path, uploaded_file, batch_size, clear_all, mode, source_id, dry_run
+    ):
         captured.update(
             {
                 "excel_path": excel_path,
                 "uploaded_filename": uploaded_file.filename,
                 "batch_size": batch_size,
                 "clear_all": clear_all,
+                "mode": mode,
+                "source_id": source_id,
+                "dry_run": dry_run,
             }
         )
         return {"total_jobs": 0, "batches_completed": 0, "batches_failed": 0}
@@ -50,6 +61,9 @@ def test_import_jobs_reads_multipart_options(client, monkeypatch):
         "uploaded_filename": "jobs.xls",
         "batch_size": 256,
         "clear_all": True,
+        "mode": "merge",
+        "source_id": None,
+        "dry_run": False,
     }
 
 
@@ -58,13 +72,18 @@ def test_import_jobs_keeps_json_options(client, monkeypatch):
 
     monkeypatch.setattr(graph_router, "_require_admin", lambda: (1, None))
 
-    def fake_import_jobs_from_excel(*, excel_path, uploaded_file, batch_size, clear_all):
+    def fake_import_jobs_from_excel(
+        *, excel_path, uploaded_file, batch_size, clear_all, mode, source_id, dry_run
+    ):
         captured.update(
             {
                 "excel_path": excel_path,
                 "uploaded_file": uploaded_file,
                 "batch_size": batch_size,
                 "clear_all": clear_all,
+                "mode": mode,
+                "source_id": source_id,
+                "dry_run": dry_run,
             }
         )
         return {"total_jobs": 0, "batches_completed": 0, "batches_failed": 0}
@@ -75,7 +94,14 @@ def test_import_jobs_keeps_json_options(client, monkeypatch):
 
     res = client.post(
         "/api/graph/import-jobs",
-        json={"file_path": "/data/jobs.xls", "batch_size": 64, "clear_all": True},
+        json={
+            "file_path": "/data/jobs.xls",
+            "batch_size": 64,
+            "clear_all": True,
+            "mode": "snapshot",
+            "source_id": "monthly-feed",
+            "dry_run": True,
+        },
     )
 
     assert res.status_code == 200
@@ -84,7 +110,23 @@ def test_import_jobs_keeps_json_options(client, monkeypatch):
         "uploaded_file": None,
         "batch_size": 64,
         "clear_all": True,
+        "mode": "snapshot",
+        "source_id": "monthly-feed",
+        "dry_run": True,
     }
+
+
+def test_import_runs_endpoint_is_admin_scoped(client, monkeypatch):
+    monkeypatch.setattr(graph_router, "_require_admin", lambda: (1, None))
+    monkeypatch.setattr(
+        graph_router,
+        "get_import_runs",
+        lambda limit: [{"run_id": "run-1", "status": "succeeded", "limit": limit}],
+    )
+
+    res = client.get("/api/graph/import-runs?limit=5")
+    assert res.status_code == 200
+    assert res.get_json()["data"]["items"][0]["limit"] == 5
 
 
 def test_delete_edges_by_source_keeps_relationships_in_scope():

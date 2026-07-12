@@ -7,6 +7,7 @@ import json
 import re
 import time
 from typing import Any, Dict, List
+from uuid import uuid4
 
 from app.domains.graph.services import _build_graph_llm_client, _llm_model
 from app.infrastructure.neo4j import neo4j_driver, neo4j_settings
@@ -149,8 +150,7 @@ def _call_llm_json(system_prompt: str, user_content: str, *, label: str = "") ->
             return json.loads(content)
         except Exception as exc:
             if attempt == 5:
-                print(f"[WARN] {label} LLM 调用失败: {exc}")
-                return {}
+                raise RuntimeError(f"{label} LLM 调用失败，已停止写入: {exc}") from exc
             wait = attempt * 2
             print(f"[WARN] {label} LLM 重试 {attempt}: {exc}")
             time.sleep(wait)
@@ -214,6 +214,12 @@ def _promotion_id(from_title: str, to_title: str) -> str:
     return f"promotion_{digest[:16]}"
 
 
+def _generated_id(prefix: str, title: str, name: str) -> str:
+    """Stable bounded id without collisions caused by string truncation."""
+    digest = hashlib.sha1(f"{title}\0{name}".encode("utf-8")).hexdigest()
+    return f"{prefix}_{digest[:20]}"
+
+
 # ============================================================
 # 1. 岗位名称实体同步
 # ============================================================
@@ -228,12 +234,23 @@ def sync_job_titles(*, dry_run: bool = False) -> Dict[str, Any]:
             """
             MATCH (j:Job)
             WHERE coalesce(trim(j.title), '') <> ''
-            WITH trim(j.title) AS t, count(j) AS cnt
-            RETURN t, cnt
+            WITH trim(j.title) AS t,
+                 count(j) AS cnt,
+                 count(DISTINCT coalesce(j.company, '')) AS company_count,
+                 count(DISTINCT coalesce(j.job_code, '')) AS job_code_count
+            RETURN t, cnt, company_count, job_code_count
             ORDER BY cnt DESC
             """
         )
-        titles = [{"name": r["t"], "count": r["cnt"]} for r in result]
+        titles = [
+            {
+                "name": r["t"],
+                "count": int(r["cnt"]),
+                "company_count": int(r["company_count"]),
+                "job_code_count": int(r["job_code_count"]),
+            }
+            for r in result
+        ]
 
     if dry_run:
         return {"dry_run": True, "title_count": len(titles), "sample": titles[:10]}
@@ -251,18 +268,28 @@ def sync_job_titles(*, dry_run: bool = False) -> Dict[str, Any]:
         except Exception:
             pass  # 约束已存在
 
-        for t in titles:
-            session.run(
-                """
-                MERGE (jt:JobTitle {name: $name})
-                SET jt.job_count = $cnt
-                """,
-                name=t["name"],
-                cnt=t["count"],
-            )
-            created_jt += 1
+        session.run("MATCH (jt:JobTitle) SET jt.job_count = 0")
+        session.run(
+            """
+            UNWIND $titles AS title
+            MERGE (jt:JobTitle {name: title.name})
+            SET jt.job_count = title.count,
+                jt.company_count = title.company_count,
+                jt.job_code_count = title.job_code_count,
+                jt.updated_at = datetime()
+            """,
+            titles=titles,
+        )
+        created_jt = len(titles)
 
-        # HAS_TITLE 关系
+        # Remove outdated title links before recreating the current mapping.
+        session.run(
+            """
+            MATCH (j:Job)-[r:HAS_TITLE]->(jt:JobTitle)
+            WHERE coalesce(trim(j.title), '') <> jt.name
+            DELETE r
+            """
+        )
         session.run(
             """
             MATCH (j:Job), (jt:JobTitle)
@@ -281,6 +308,7 @@ def sync_job_titles(*, dry_run: bool = False) -> Dict[str, Any]:
         "title_count": len(titles),
         "created_jobtitle_nodes": created_jt,
         "has_title_relationships": created_rel,
+        "titles": titles,
     }
 
 
@@ -320,7 +348,9 @@ def generate_promotion_paths(*, dry_run: bool = False) -> Dict[str, Any]:
             "preview": all_paths[:20],
         }
 
-    # 写入 Neo4j
+    run_id = uuid4().hex
+    generation_source = "graph_admin_llm"
+    # 写入 Neo4j；只替换本生成器拥有的节点，不触碰 CSV/人工维护路径。
     created = 0
     with driver.session(database=database) as session:
         try:
@@ -359,7 +389,10 @@ def generate_promotion_paths(*, dry_run: bool = False) -> Dict[str, Any]:
                     pr.stage3 = $stage3,
                     pr.stage3_job_title = $stage3_job,
                     pr.confidence = $confidence,
-                    pr.rationale = $rationale
+                    pr.rationale = $rationale,
+                    pr.generation_source = $generation_source,
+                    pr.generation_run_id = $run_id,
+                    pr.updated_at = datetime()
                 WITH pr, jt
                 MERGE (pr)-[:FOR_JOB_TITLE]->(jt)
                 """,
@@ -373,14 +406,26 @@ def generate_promotion_paths(*, dry_run: bool = False) -> Dict[str, Any]:
                 stage3_job=str(p.get("stage3_job_title", "")),
                 confidence=confidence,
                 rationale=str(p.get("rationale", "")),
+                generation_source=generation_source,
+                run_id=run_id,
             )
             created += 1
+        session.run(
+            """
+            MATCH (pr:JobPromotion {generation_source: $generation_source})
+            WHERE coalesce(pr.generation_run_id, '') <> $run_id
+            DETACH DELETE pr
+            """,
+            generation_source=generation_source,
+            run_id=run_id,
+        )
 
     return {
         "dry_run": False,
         "titles_scanned": len(titles),
         "candidate_paths": len(all_paths),
         "created_promotions": created,
+        "run_id": run_id,
     }
 
 
@@ -414,25 +459,49 @@ def generate_lateral_transfers(*, dry_run: bool = False) -> Dict[str, Any]:
         if isinstance(pairs, list):
             all_pairs.extend([p for p in pairs if isinstance(p, dict)])
 
+    valid_titles = set(top_titles)
+    validated_pairs: List[Dict[str, Any]] = []
+    seen_pairs = set()
+    for p in all_pairs:
+        frm = str(p.get("from") or "").strip()
+        to = str(p.get("to") or "").strip()
+        pair = (frm, to)
+        score = _parse_confidence(p.get("score"))
+        if (
+            not frm
+            or not to
+            or frm == to
+            or frm not in valid_titles
+            or to not in valid_titles
+            or score <= 0.4
+            or pair in seen_pairs
+        ):
+            continue
+        seen_pairs.add(pair)
+        item = dict(p)
+        item["from"] = frm
+        item["to"] = to
+        item["score"] = score
+        item["cap_similarity"] = _parse_confidence(p.get("cap_similarity"))
+        validated_pairs.append(item)
+
     if dry_run:
         return {
             "dry_run": True,
             "titles_considered": len(top_titles),
-            "candidate_pairs": len(all_pairs),
-            "preview": all_pairs[:20],
+            "candidate_pairs": len(validated_pairs),
+            "preview": validated_pairs[:20],
         }
 
-    # 写入 Neo4j
+    # 写入 Neo4j。旧实现删除所有 SIMILAR_FOR_LATERAL，可能破坏 CSV/人工边；
+    # 现在仅清理本生成器拥有且本次未重新产生的关系。
+    run_id = uuid4().hex
+    generation_source = "graph_admin_llm"
     created = 0
     with driver.session(database=database) as session:
-        # 清旧边
-        session.run("MATCH ()-[r:SIMILAR_FOR_LATERAL]->() DELETE r")
-
-        for rank, p in enumerate(all_pairs, 1):
-            frm = (p.get("from") or "").strip()
-            to = (p.get("to") or "").strip()
-            if not frm or not to or frm == to:
-                continue
+        for rank, p in enumerate(validated_pairs, 1):
+            frm = p["from"]
+            to = p["to"]
             session.run(
                 """
                 MATCH (a:JobTitle {name: $from})
@@ -444,26 +513,41 @@ def generate_lateral_transfers(*, dry_run: bool = False) -> Dict[str, Any]:
                     r.track_to = $track_to,
                     r.cap_similarity = $cap_sim,
                     r.same_track = $same_track,
-                    r.rationale = $rationale
+                    r.rationale = $rationale,
+                    r.generation_source = $generation_source,
+                    r.generation_run_id = $run_id,
+                    r.updated_at = datetime()
                 """,
                 **{
                     "from": frm, "to": to,
-                    "score": float(p.get("score", 0)),
+                    "score": p["score"],
                     "rank": rank,
                     "track_from": str(p.get("track_from", "")),
                     "track_to": str(p.get("track_to", "")),
-                    "cap_sim": float(p.get("cap_similarity", 0)),
+                    "cap_sim": p["cap_similarity"],
                     "same_track": bool(p.get("same_track", False)),
                     "rationale": str(p.get("rationale", "")),
+                    "generation_source": generation_source,
+                    "run_id": run_id,
                 },
             )
             created += 1
+        session.run(
+            """
+            MATCH ()-[r:SIMILAR_FOR_LATERAL {generation_source: $generation_source}]->()
+            WHERE coalesce(r.generation_run_id, '') <> $run_id
+            DELETE r
+            """,
+            generation_source=generation_source,
+            run_id=run_id,
+        )
 
     return {
         "dry_run": False,
         "titles_considered": len(top_titles),
-        "candidate_pairs": len(all_pairs),
+        "candidate_pairs": len(validated_pairs),
         "created_relationships": created,
+        "run_id": run_id,
     }
 
 
@@ -505,6 +589,8 @@ def generate_learning_resources(*, dry_run: bool = False) -> Dict[str, Any]:
             "preview": [{"title": r["_for_title"], "name": r.get("resource_name", "")} for r in all_resources[:20]],
         }
 
+    run_id = uuid4().hex
+    generation_source = "graph_admin_llm"
     # 写入 Neo4j
     created = 0
     with driver.session(database=database) as session:
@@ -517,7 +603,10 @@ def generate_learning_resources(*, dry_run: bool = False) -> Dict[str, Any]:
             pass
 
         for r in all_resources:
-            rid = f"lr_{r['_for_title']}_{r.get('resource_name', '')}".replace(" ", "_").replace("/", "_")[:191]
+            name = str(r.get("resource_name") or "").strip()
+            if not name:
+                continue
+            rid = _generated_id("lr", r["_for_title"], name)
             session.run(
                 """
                 MERGE (lr:LearningResource {resource_id: $rid})
@@ -526,26 +615,41 @@ def generate_learning_resources(*, dry_run: bool = False) -> Dict[str, Any]:
                     lr.resource_type = $type,
                     lr.difficulty = $diff,
                     lr.skill_tag = $skill,
-                    lr.source = 'llm_generated'
+                    lr.source = 'llm_generated',
+                    lr.generation_source = $generation_source,
+                    lr.generation_run_id = $run_id,
+                    lr.updated_at = datetime()
                 WITH lr
                 MATCH (jt:JobTitle {name: $title})
                 MERGE (lr)-[:FOR_JOB_TITLE]->(jt)
                 """,
                 rid=rid,
-                name=str(r.get("resource_name", "")),
+                name=name,
                 desc=str(r.get("resource_desc", "")),
                 type=str(r.get("resource_type", "")),
                 diff=str(r.get("difficulty", "")),
                 skill=str(r.get("skill_tag", "")),
                 title=r["_for_title"],
+                generation_source=generation_source,
+                run_id=run_id,
             )
             created += 1
+        session.run(
+            """
+            MATCH (lr:LearningResource {generation_source: $generation_source})
+            WHERE coalesce(lr.generation_run_id, '') <> $run_id
+            DETACH DELETE lr
+            """,
+            generation_source=generation_source,
+            run_id=run_id,
+        )
 
     return {
         "dry_run": False,
         "titles_processed": len(eligible),
         "candidate_resources": len(all_resources),
         "created_resources": created,
+        "run_id": run_id,
     }
 
 
@@ -585,6 +689,8 @@ def generate_competitions(*, dry_run: bool = False) -> Dict[str, Any]:
             "preview": [{"title": c["_for_title"], "name": c.get("competition_name", "")} for c in all_competitions[:20]],
         }
 
+    run_id = uuid4().hex
+    generation_source = "graph_admin_llm"
     created = 0
     with driver.session(database=database) as session:
         try:
@@ -596,7 +702,10 @@ def generate_competitions(*, dry_run: bool = False) -> Dict[str, Any]:
             pass
 
         for c in all_competitions:
-            cid = f"comp_{c['_for_title']}_{c.get('competition_name', '')}".replace(" ", "_").replace("/", "_")[:191]
+            name = str(c.get("competition_name") or "").strip()
+            if not name:
+                continue
+            cid = _generated_id("comp", c["_for_title"], name)
             session.run(
                 """
                 MERGE (comp:Competition {competition_id: $cid})
@@ -610,13 +719,16 @@ def generate_competitions(*, dry_run: bool = False) -> Dict[str, Any]:
                     comp.difficulty = $diff,
                     comp.cap_tags = $cap_tags,
                     comp.skill_tags = $skill_tags,
-                    comp.award_level = $award
+                    comp.award_level = $award,
+                    comp.generation_source = $generation_source,
+                    comp.generation_run_id = $run_id,
+                    comp.updated_at = datetime()
                 WITH comp
                 MATCH (jt:JobTitle {name: $title})
                 MERGE (comp)-[:FOR_JOB_TITLE]->(jt)
                 """,
                 cid=cid,
-                name=str(c.get("competition_name", "")),
+                name=name,
                 desc=str(c.get("competition_desc", "")),
                 type=str(c.get("competition_type", "")),
                 organizer=str(c.get("organizer", "")),
@@ -628,12 +740,24 @@ def generate_competitions(*, dry_run: bool = False) -> Dict[str, Any]:
                 skill_tags=str(c.get("skill_tags", "")),
                 award=str(c.get("award_level", "")),
                 title=c["_for_title"],
+                generation_source=generation_source,
+                run_id=run_id,
             )
             created += 1
+        session.run(
+            """
+            MATCH (comp:Competition {generation_source: $generation_source})
+            WHERE coalesce(comp.generation_run_id, '') <> $run_id
+            DETACH DELETE comp
+            """,
+            generation_source=generation_source,
+            run_id=run_id,
+        )
 
     return {
         "dry_run": False,
         "titles_processed": len(eligible),
         "candidate_competitions": len(all_competitions),
         "created_competitions": created,
+        "run_id": run_id,
     }
