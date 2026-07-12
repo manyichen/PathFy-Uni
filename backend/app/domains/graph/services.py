@@ -8,6 +8,7 @@ import re
 import time
 from datetime import datetime
 from typing import Any, Dict, List
+from uuid import uuid4
 
 import pandas as pd
 from flask import current_app
@@ -28,8 +29,20 @@ from app.domains.graph.constants import (
 )
 from app.domains.graph.repository import (
     clear_all_graph,
+    fetch_job_import_fingerprints,
+    finish_import_run,
     get_graph_statistics,
+    mark_existing_jobs_seen,
     merge_batch_to_neo4j,
+    prune_missing_jobs,
+    start_import_run,
+    list_import_runs,
+)
+from app.domains.graph.incremental import (
+    deduplicate_jobs,
+    import_keys,
+    normalize_source_id,
+    plan_incremental_rows,
 )
 from app.infrastructure.neo4j import neo4j_driver, neo4j_settings
 from app.infrastructure.privacy import privacy_mode_enabled, redact_payload
@@ -140,8 +153,10 @@ def _call_llm_batch_extract(payload: List[Dict[str, Any]]) -> List[Dict[str, Any
             return parsed["records"]
         except Exception as exc:
             if attempt == MAX_RETRIES:
-                print(f"[WARN] 批量提取 LLM 调用失败（第 {attempt} 次）: {exc}，返回空结构兜底")
-                return []
+                raise GraphServiceError(
+                    f"批量提取 LLM 调用失败（已重试 {attempt} 次）: {exc}",
+                    502,
+                ) from exc
             wait_seconds = attempt * 2
             print(f"[WARN] 批量提取 LLM 调用失败，第 {attempt} 次重试: {exc}")
             time.sleep(wait_seconds)
@@ -285,35 +300,12 @@ def _backup_edges_json(
 # job_titles 表同步
 # ============================================================
 
-def _sync_job_titles(df: pd.DataFrame) -> None:
-    """根据导入的 DataFrame 更新 MySQL job_titles 表。"""
+def _sync_job_titles_from_graph(titles: List[Dict[str, Any]]) -> None:
+    """Mirror Neo4j's post-commit JobTitle statistics into MySQL."""
     from app.db import db_cursor
 
-    col_name = "name"  # COLUMN_ALIASES 已将"岗位名称"映射为 name
-    col_company = "company"
-    col_code = "job_code"
-
-    titles_series = df[col_name].astype(str).str.strip()
-    titles_series = titles_series.replace({"nan": "", "None": "", "NaT": ""})
-    valid = df[titles_series != ""].copy()
-    if valid.empty:
-        return
-
-    valid["_title"] = valid[col_name].astype(str).str.strip()
-
-    stats = (
-        valid.groupby("_title", dropna=False)
-        .agg(
-            record_count=(col_name, "size"),
-            company_count=(col_company, lambda s: s.astype(str).str.strip().nunique()),
-            job_code_count=(col_code, lambda s: s.astype(str).str.strip().nunique()),
-        )
-        .reset_index()
-        .rename(columns={"_title": "title"})
-    )
-
     with db_cursor() as (conn, cur):
-        for _, row in stats.iterrows():
+        for row in titles:
             cur.execute(
                 """
                 INSERT INTO job_titles (title, record_count, company_count, job_code_count)
@@ -324,12 +316,18 @@ def _sync_job_titles(df: pd.DataFrame) -> None:
                     job_code_count = VALUES(job_code_count)
                 """,
                 (
-                    row["title"],
-                    int(row["record_count"]),
+                    row["name"],
+                    int(row["count"]),
                     int(row["company_count"]),
                     int(row["job_code_count"]),
                 ),
             )
+        names = [str(row["name"]) for row in titles]
+        if names:
+            placeholders = ",".join(["%s"] * len(names))
+            cur.execute(f"DELETE FROM job_titles WHERE title NOT IN ({placeholders})", names)
+        else:
+            cur.execute("DELETE FROM job_titles")
         conn.commit()
 
 
@@ -343,6 +341,9 @@ def import_jobs_from_excel(
     *,
     batch_size: int = DEFAULT_BATCH_SIZE,
     clear_all: bool = False,
+    mode: str = "merge",
+    source_id: str | None = None,
+    dry_run: bool = False,
 ) -> Dict[str, Any]:
     """
     从 Excel 导入岗位到 Neo4j。
@@ -351,10 +352,18 @@ def import_jobs_from_excel(
         excel_path: 服务器上的 Excel 文件路径（与 uploaded_file 二选一）
         uploaded_file: Flask FileStorage 上传文件对象
         batch_size: 每批处理条数
-        clear_all: 是否先清空图谱再导入
+        clear_all: 兼容旧接口；是否先清空图谱再导入
+        mode: merge 仅新增/更新，snapshot 还会删除同 source_id 中未出现的岗位
+        source_id: 数据源稳定标识；snapshot 模式必须显式提供
+        dry_run: 只计算增量计划，不调用 LLM、不写数据库
     """
-    if batch_size <= 0:
-        raise GraphServiceError("batch_size 必须大于 0")
+    if batch_size <= 0 or batch_size > 1000:
+        raise GraphServiceError("batch_size 必须在 1 到 1000 之间")
+    mode = str(mode or "merge").strip().lower()
+    if mode not in {"merge", "snapshot"}:
+        raise GraphServiceError("mode 仅支持 merge 或 snapshot")
+    if mode == "snapshot" and not str(source_id or "").strip():
+        raise GraphServiceError("snapshot 模式必须显式提供 source_id")
 
     # 1. 加载 Excel
     try:
@@ -379,30 +388,85 @@ def import_jobs_from_excel(
     from app.domains.graph.constants import COLUMN_ALIASES
 
     df = df.rename(columns=COLUMN_ALIASES)
+    df, duplicate_rows = deduplicate_jobs(df)
+    resolved_source_id = normalize_source_id(source_id or excel_path or getattr(uploaded_file, "filename", None))
+    run_id = uuid4().hex
 
     # 3. 获取 Neo4j 连接
     uri, user, password, database = neo4j_settings()
     if not password:
         raise GraphServiceError("未配置 NEO4J_PASSWORD", 500)
     driver = neo4j_driver(uri, user, password)
+    if not dry_run:
+        from app.domains.graph.repository import ensure_graph_schema
 
-    # 4. 可选清空
+        ensure_graph_schema(driver, database)
+
+    # 4. 规划真正的增量：只有新增或内容指纹变化的岗位进入 LLM。
+    keys = import_keys(df)
+    existing = fetch_job_import_fingerprints(driver, database, keys)
+    extraction_version = f"{_llm_model()}:v1"
+    changed_df, unchanged_keys, fingerprints = plan_incremental_rows(
+        df,
+        existing,
+        extraction_version=extraction_version,
+    )
+
+    if dry_run:
+        return {
+            "dry_run": True,
+            "run_id": run_id,
+            "source_id": resolved_source_id,
+            "mode": mode,
+            "input_rows": len(df) + duplicate_rows,
+            "unique_jobs": len(df),
+            "duplicate_rows": duplicate_rows,
+            "new_or_changed_jobs": len(changed_df),
+            "unchanged_jobs": len(unchanged_keys),
+            "would_prune_missing": mode == "snapshot",
+        }
+
+    # 5. 可选清空（仅保留旧接口兼容；新调用应使用 source-scoped snapshot）。
     if clear_all:
         clear_all_graph(driver, database)
+        existing = {}
+        changed_df = df
+        unchanged_keys = []
 
-    # 5. 计算 core_templates
+    start_import_run(
+        driver,
+        database,
+        run_id=run_id,
+        source_id=resolved_source_id,
+        mode=mode,
+        input_rows=len(df),
+        changed_jobs=len(changed_df),
+    )
+
+    # 6. 在处理前标记已存在输入，避免某批更新失败后被 snapshot 误删。
+    mark_existing_jobs_seen(
+        driver,
+        database,
+        job_keys=keys,
+        run_id=run_id,
+        source_id=resolved_source_id,
+    )
+
+    # 7. 计算 core_templates
     core_templates = compute_core_templates(df)
 
-    # 6. 分批处理
+    # 8. 只处理发生变化的行
     total = len(df)
+    changed_total = len(changed_df)
     batches_completed = 0
     batches_failed = 0
+    jobs_written = 0
     errors: List[str] = []
 
-    for start in range(0, total, batch_size):
-        end = min(start + batch_size, total)
-        batch_df = df.iloc[start:end].copy()
-        print(f"[INFO] 处理批次 {start}-{end - 1} / {total - 1}")
+    for start in range(0, changed_total, batch_size):
+        end = min(start + batch_size, changed_total)
+        batch_df = changed_df.iloc[start:end].copy()
+        print(f"[INFO] 处理增量批次 {start}-{end - 1} / {changed_total - 1}")
 
         # LLM 提取
         try:
@@ -415,26 +479,62 @@ def import_jobs_from_excel(
 
         # Neo4j 写入
         try:
-            merge_batch_to_neo4j(
+            write_result = merge_batch_to_neo4j(
                 driver=driver,
                 database=database,
                 batch_df=batch_df,
                 ai_records=ai_records,
                 core_templates=core_templates,
+                run_id=run_id,
+                source_id=resolved_source_id,
+                fingerprints=fingerprints,
             )
+            jobs_written += int(write_result.get("written", 0))
             batches_completed += 1
         except Exception as exc:
             errors.append(f"批次 {start}-{end - 1} 写入 Neo4j 失败: {exc}")
             batches_failed += 1
 
-    # 7. 同步 job_titles 表
+    # 9. snapshot 删除严格限定在 source_id，且有批次失败时禁止 prune。
+    pruned_jobs = 0
+    if mode == "snapshot" and batches_failed == 0:
+        pruned_jobs = prune_missing_jobs(
+            driver,
+            database,
+            run_id=run_id,
+            source_id=resolved_source_id,
+        )
+
+    # 10. 从 Neo4j 实际状态重建 JobTitle，再同步 MySQL 统计。
     try:
-        _sync_job_titles(df)
+        from app.domains.graph.sync_service import sync_job_titles
+
+        title_result = sync_job_titles(dry_run=False)
+        _sync_job_titles_from_graph(title_result.get("titles", []))
     except Exception as exc:
-        errors.append(f"同步 job_titles 表失败: {exc}")
+        errors.append(f"同步 JobTitle 统计失败: {exc}")
+
+    finish_import_run(
+        driver,
+        database,
+        run_id=run_id,
+        status="succeeded" if not errors else "partial",
+        jobs_written=jobs_written,
+        unchanged_jobs=len(unchanged_keys),
+        pruned_jobs=pruned_jobs,
+        error_count=len(errors),
+    )
 
     return {
+        "run_id": run_id,
+        "source_id": resolved_source_id,
+        "mode": mode,
         "total_jobs": total,
+        "duplicate_rows": duplicate_rows,
+        "new_or_changed_jobs": changed_total,
+        "unchanged_jobs": len(unchanged_keys),
+        "jobs_written": jobs_written,
+        "pruned_jobs": pruned_jobs,
         "batches_completed": batches_completed,
         "batches_failed": batches_failed,
         "core_templates": sorted(core_templates),
@@ -488,7 +588,7 @@ def get_job_titles() -> List[Dict[str, Any]]:
             """
         )
         rows = cur.fetchall()
-        return [
+    return [
             {
                 "id": r["id"],
                 "title": r["title"],
@@ -498,7 +598,16 @@ def get_job_titles() -> List[Dict[str, Any]]:
                 "updated_at": str(r["updated_at"]) if r.get("updated_at") else "",
             }
             for r in rows
-        ]
+    ]
+
+
+def get_import_runs(limit: int = 20) -> List[Dict[str, Any]]:
+    """Return recent persisted graph import runs for operational diagnosis."""
+    uri, user, password, database = neo4j_settings()
+    if not password:
+        raise GraphServiceError("未配置 NEO4J_PASSWORD", 500)
+    driver = neo4j_driver(uri, user, password)
+    return list_import_runs(driver, database, limit=limit)
 
 
 def generate_qc_report(input_file: str = "", threshold: float = 0.60) -> Dict[str, Any]:

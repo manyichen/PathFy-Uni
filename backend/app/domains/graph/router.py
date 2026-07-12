@@ -10,9 +10,11 @@ from app.domains.graph.services import (
     GraphServiceError,
     clear_graph,
     get_job_titles,
+    get_import_runs,
     get_stats,
     import_jobs_from_excel,
 )
+from app.domains.graph.locking import GraphOperationBusy, graph_write_lock
 
 graph_bp = Blueprint("graph", __name__, url_prefix="/api/graph")
 TRUE_VALUES = {"1", "true", "yes", "on"}
@@ -82,17 +84,26 @@ def import_jobs():
 
         batch_size = int(params.get("batch_size") or 128)
         clear_all = _parse_bool(params.get("clear_all"), False)
+        mode = str(params.get("mode") or "merge").strip().lower()
+        source_id = str(params.get("source_id") or "").strip() or None
+        dry_run = _parse_bool(params.get("dry_run"), False)
 
-        result = import_jobs_from_excel(
-            excel_path=file_path,
-            uploaded_file=uploaded_file,
-            batch_size=batch_size,
-            clear_all=clear_all,
-        )
+        with graph_write_lock():
+            result = import_jobs_from_excel(
+                excel_path=file_path,
+                uploaded_file=uploaded_file,
+                batch_size=batch_size,
+                clear_all=clear_all,
+                mode=mode,
+                source_id=source_id,
+                dry_run=dry_run,
+            )
         return jsonify({"ok": True, "data": result}), 200
 
     except GraphServiceError as exc:
         return jsonify({"ok": False, "message": exc.message}), exc.status
+    except GraphOperationBusy as exc:
+        return jsonify({"ok": False, "message": str(exc)}), 409
     except Exception as exc:
         return (
             jsonify({"ok": False, "message": f"导入岗位失败: {exc}"}),
@@ -158,6 +169,22 @@ def job_titles_list():
         )
 
 
+@graph_bp.get("/import-runs")
+def import_runs_list():
+    """Return recent durable import audit records."""
+    _, err = _require_admin()
+    if err:
+        return err
+    try:
+        limit = max(1, min(int(request.args.get("limit") or 20), 100))
+        runs = get_import_runs(limit)
+        return jsonify({"ok": True, "data": {"items": runs}}), 200
+    except (TypeError, ValueError):
+        return jsonify({"ok": False, "message": "limit 必须是整数"}), 400
+    except GraphServiceError as exc:
+        return jsonify({"ok": False, "message": exc.message}), exc.status
+
+
 @graph_bp.post("/qc-report")
 def qc_report():
     """
@@ -195,8 +222,13 @@ def qc_report():
 def _run_sync(handler, dry_run: bool):
     """统一执行同步/生成，返回 Flask 响应。"""
     try:
-        result = handler(dry_run=dry_run)
+        with graph_write_lock():
+            result = handler(dry_run=dry_run)
         return jsonify({"ok": True, "data": result}), 200
+    except GraphServiceError as exc:
+        return jsonify({"ok": False, "message": exc.message}), exc.status
+    except GraphOperationBusy as exc:
+        return jsonify({"ok": False, "message": str(exc)}), 409
     except Exception as exc:
         return jsonify({"ok": False, "message": str(exc)}), 500
 
@@ -210,7 +242,7 @@ def sync_job_titles():
     from app.domains.graph.sync_service import sync_job_titles as _sync
 
     body = request.get_json(silent=True) or {}
-    return _run_sync(_sync, bool(body.get("dry_run", False)))
+    return _run_sync(_sync, _parse_bool(body.get("dry_run"), False))
 
 
 @graph_bp.post("/generate/promotion-paths")
@@ -222,7 +254,7 @@ def generate_promotion_paths():
     from app.domains.graph.sync_service import generate_promotion_paths as _gen
 
     body = request.get_json(silent=True) or {}
-    return _run_sync(_gen, bool(body.get("dry_run", False)))
+    return _run_sync(_gen, _parse_bool(body.get("dry_run"), False))
 
 
 @graph_bp.post("/generate/lateral-transfers")
@@ -234,7 +266,7 @@ def generate_lateral_transfers():
     from app.domains.graph.sync_service import generate_lateral_transfers as _gen
 
     body = request.get_json(silent=True) or {}
-    return _run_sync(_gen, bool(body.get("dry_run", False)))
+    return _run_sync(_gen, _parse_bool(body.get("dry_run"), False))
 
 
 @graph_bp.post("/generate/learning-resources")
@@ -246,7 +278,7 @@ def generate_learning_resources():
     from app.domains.graph.sync_service import generate_learning_resources as _gen
 
     body = request.get_json(silent=True) or {}
-    return _run_sync(_gen, bool(body.get("dry_run", False)))
+    return _run_sync(_gen, _parse_bool(body.get("dry_run"), False))
 
 
 @graph_bp.post("/generate/competitions")
@@ -258,7 +290,7 @@ def generate_competitions():
     from app.domains.graph.sync_service import generate_competitions as _gen
 
     body = request.get_json(silent=True) or {}
-    return _run_sync(_gen, bool(body.get("dry_run", False)))
+    return _run_sync(_gen, _parse_bool(body.get("dry_run"), False))
 
 
 @graph_bp.post("/clear")
@@ -277,7 +309,8 @@ def clear():
         if not body.get("confirmed"):
             return jsonify({"ok": False, "message": "请二次确认（confirmed: true）"}), 400
 
-        result = clear_graph()
+        with graph_write_lock():
+            result = clear_graph()
         return jsonify(
             {
                 "ok": True,
@@ -288,6 +321,8 @@ def clear():
 
     except GraphServiceError as exc:
         return jsonify({"ok": False, "message": exc.message}), exc.status
+    except GraphOperationBusy as exc:
+        return jsonify({"ok": False, "message": str(exc)}), 409
     except Exception as exc:
         return (
             jsonify({"ok": False, "message": f"清空图谱失败: {exc}"}),
