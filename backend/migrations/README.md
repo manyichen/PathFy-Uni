@@ -6,12 +6,12 @@
 
 ## 首次接入
 
-当前 Alembic 基线 `20260712_0001` 表示数据库已经包含 `schema.sql` 以及历史迁移 002–007。
+初始 revision `20260712_0001` 包含 `schema.sql` 以及历史迁移 002–007 的完整最终结构。
 
-- 新数据库：先导入 `schema.sql`，然后执行 `alembic stamp 20260712_0001`。
+- 新数据库：创建空数据库后直接执行 `alembic upgrade head`，迁移会在 `MYSQL_DATABASE` 指向的库中创建全部表并写入 MBTI 初始题目。
 - 已有数据库：先执行 `python tools/verify_alembic_baseline.py`，确认通过后再执行 `alembic stamp 20260712_0001`。
 
-不要在空数据库上直接 `alembic upgrade head`：基线 revision 不负责重建历史 schema。
+不要对已有业务表的数据库直接运行初始 revision；必须先验证再 `stamp`，避免将不完整的旧结构误标为最新。
 
 ## 后续变更
 

@@ -106,6 +106,7 @@ class Config:
     CAREER_PUBLIC_INFO_CACHE_DAYS = int(os.getenv("CAREER_PUBLIC_INFO_CACHE_DAYS", "14"))
     CAREER_PUBLIC_INFO_MAX_SUMMARY_CHARS = int(os.getenv("CAREER_PUBLIC_INFO_MAX_SUMMARY_CHARS", "300"))
     CAREER_PUBLIC_SEARCH_MAX_CHARS = int(os.getenv("CAREER_PUBLIC_SEARCH_MAX_CHARS", "1200"))
+    SERPER_API_KEY = os.getenv("SERPER_API_KEY", "")
     CAREER_ENABLE_GRAPH_RECOMMENDATIONS = str(
         os.getenv("CAREER_ENABLE_GRAPH_RECOMMENDATIONS", "true")
     ).strip().lower() in ("1", "true", "yes", "on")

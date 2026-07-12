@@ -31,11 +31,10 @@ pip install -r requirements.txt
 新数据库先导入当前完整 schema，再登记 Alembic 基线：
 
 ```bash
-mysql -u ... -p suilli_mizi < schema.sql
-alembic stamp 20260712_0001
+alembic upgrade head
 ```
 
-已有数据库先运行 `python tools/verify_alembic_baseline.py`，通过后执行相同的 `alembic stamp`。此后部署只运行 `alembic upgrade head`。历史 `002_*.sql`–`007_*.sql` 和 `run_migration_00x.py` 仅供审计，不再作为迁移入口；详见 [`migrations/README.md`](migrations/README.md)。
+新数据库只需运行 `alembic upgrade head`。已有数据库先运行 `python tools/verify_alembic_baseline.py`，通过后执行 `alembic stamp 20260712_0001`。此后部署只运行 `alembic upgrade head`。历史 `002_*.sql`–`007_*.sql` 和 `run_migration_00x.py` 仅供审计，不再作为迁移入口；详见 [`migrations/README.md`](migrations/README.md)。
 
 ## 3) 配置环境变量
 
