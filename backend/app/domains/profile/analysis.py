@@ -435,4 +435,3 @@ def generate_overall_evaluation(scores, avg_score):
     evaluation += f"综合平均分为{avg_score:.1f}分，整体处于{'优秀' if avg_score >= 75 else ('良好' if avg_score >= 60 else ('中等' if avg_score >= 50 else '较低'))}水平。"
 
     return evaluation
-
