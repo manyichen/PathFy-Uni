@@ -30,7 +30,7 @@
 
 | 层级 | 技术 | 说明 |
 |------|------|------|
-| 前端 | **Astro 5 + Svelte 5 + Tailwind** | 多页工作台，`/api` 开发期 Vite 代理 |
+| 前端 | **Nuxt 4 + Vue 3 + Nuxt UI** | 静态 SPA 工作台，`/api` 开发期 Vite 代理 |
 | 后端 | **Flask + Gunicorn** | `domains/` 业务域 + `infrastructure/` 跨域能力 |
 | 结构化数据 | **MySQL 8** | 用户、简历画像、匹配快照、生涯报告 |
 | 岗位图谱 | **Neo4j** | 岗位检索、能力维度、晋升关系 |
@@ -85,8 +85,8 @@ utils.py           简历评分、雷达图（待迁入 profile 域）
 ### 前端（`frontend/src/`）
 
 ```
-pages/             Astro 路由（profile、jobs、match、report…）
-components/        Svelte 业务组件
+app/pages/         Nuxt 文件路由（profile、jobs、match、report…）
+app/components/    Vue 业务组件
 lib/
 ├── api/           HTTP 与各域 API（auth、jobs、match、report…）
 ├── features/      非 HTTP 逻辑（如 auth/session）
@@ -109,7 +109,7 @@ suilli_mizi/
 ├── frontend/
 │   └── src/
 │       ├── pages/           # 路由页面
-│       ├── components/      # Svelte 组件
+│       ├── components/      # Vue 组件
 │       └── lib/
 │           ├── api/         # 按域 API 封装
 │           └── features/    # session 等客户端逻辑
@@ -175,7 +175,7 @@ pytest tests/ -q
 
 # 前端静态构建
 cd frontend
-pnpm build
+pnpm typecheck && pnpm test && pnpm generate
 ```
 
 发布或合并前可按 [`docs/smoke-test.md`](./docs/smoke-test.md) 做端到端冒烟。CI 见 [`.github/workflows/ci.yml`](./.github/workflows/ci.yml)（backend pytest + frontend build）。
@@ -186,7 +186,7 @@ pnpm build
 
 见 [`deploy/DEPLOY.md`](./deploy/DEPLOY.md)。典型拓扑：
 
-- Nginx：静态托管 `frontend/dist`，`/api` 反代 Gunicorn
+- Nginx：静态托管 `frontend/.output/public`，SPA 回退到 `200.html`，`/api` 反代 Gunicorn
 - Supervisor：守护 Flask 进程
 - MySQL + Neo4j 同机或内网可达
 - 简历 OCR 临时目录：`RESUME_UPLOAD_DIR`（默认 `backend/private_uploads/resumes`，生产建议 `/var/private/pathfy/resumes`，OCR 后自动删除）

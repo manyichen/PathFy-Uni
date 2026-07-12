@@ -31,7 +31,7 @@
 6. [MySQL 数据库](#6-mysql-数据库)
 7. [Neo4j 图数据库](#7-neo4j-图数据库)
 8. [后端 Flask 服务](#8-后端-flask-服务)
-9. [前端 Astro 构建](#9-前端-astro-构建)
+9. [前端 Nuxt 构建](#9-前端-nuxt-构建)
 10. [Nginx 网站与 HTTPS](#10-nginx-网站与-https)
 11. [Supervisor 进程守护](#11-supervisor-进程守护)
 12. [导入岗位图谱数据](#12-导入岗位图谱数据)
@@ -53,7 +53,7 @@
 | 2 | [§7](#7-neo4j-图数据库) | 确认 Neo4j 可连、岗位数据已存在（无数据见 [§12](#12-导入岗位图谱数据)） |
 | 3 | [§5](#5-上传项目代码) | 上传 / 克隆代码到 `/www/wwwroot/pathfy-uni` |
 | 4 | [§8](#8-后端-flask-服务) | 创建 venv、填写 `.env`（填入**已有** MySQL / Neo4j 账号） |
-| 5 | [§9](#9-前端-astro-构建) | `pnpm build` 生成 `frontend/dist` |
+| 5 | [§9](#9-前端-nuxt-构建) | `pnpm generate` 生成 `frontend/.output/public` |
 | 6 | [§10](#10-nginx-网站与-https) | 宝塔建站、`suilli.top` 证书、合并 Nginx 反代 |
 | 7 | [§11](#11-supervisor-进程守护) | Supervisor 托管 Gunicorn |
 | 8 | [§14](#14-验收测试) | 健康检查与功能验收 |
@@ -86,7 +86,7 @@ FRONTEND_ORIGIN=https://suilli.top
                                       ▼
                     ┌─────────────────────────────────────┐
                     │  Nginx（宝塔网站 suilli.top）        │
-                    │  ├─ /          → frontend/dist      │
+                    │  ├─ /          → frontend/.output/public │
                     │  └─ /api/*     → 127.0.0.1:5000     │
                     └─────────────────┬───────────────────┘
                                       │
@@ -106,7 +106,7 @@ FRONTEND_ORIGIN=https://suilli.top
 | 环境 | 前端 | API 访问方式 |
 |------|------|--------------|
 | 本地开发 | `pnpm dev`（4321 端口） | Vite 代理 `/api` → Flask |
-| 生产 | `pnpm build` 静态文件 | 浏览器同源请求 `/api`（Nginx 反代） |
+| 生产 | `pnpm generate` 静态文件 | 浏览器同源请求 `/api`（Nginx 反代） |
 
 生产环境前端 `PUBLIC_API_BASE` 应**留空**，使用相对路径，避免跨域。
 
@@ -132,7 +132,7 @@ FRONTEND_ORIGIN=https://suilli.top
 ```
 /www/wwwroot/pathfy-uni/
 ├── backend/          # Flask 后端
-├── frontend/         # Astro 前端
+├── frontend/         # Nuxt 4 + Vue 3 前端
 ├── generate_graph/   # Neo4j 岗位数据 ETL
 └── deploy/           # 本部署文档与配置模板
 ```
@@ -377,7 +377,7 @@ curl http://127.0.0.1:5000/api/health
 
 ---
 
-## 9. 前端 Astro 构建
+## 9. 前端 Nuxt 构建
 
 ### 9.1 配置
 
@@ -392,10 +392,12 @@ echo "PUBLIC_API_BASE=" > .env
 
 ```bash
 pnpm install
-pnpm build
+pnpm typecheck
+pnpm test
+pnpm generate
 ```
 
-构建产物位于 `frontend/dist/`。
+构建产物位于 `frontend/.output/public/`。Nuxt 以 `ssr: false` 生成静态 SPA。
 
 也可在本地 Windows 构建后，仅上传 `dist/` 目录到服务器对应路径。
 
@@ -415,7 +417,7 @@ pnpm build
 | 项 | 值 |
 |----|-----|
 | 域名 | `suilli.top`、`www.suilli.top` |
-| 根目录 | `/www/wwwroot/pathfy-uni/frontend/dist` |
+| 根目录 | `/www/wwwroot/pathfy-uni/frontend/.output/public` |
 | PHP | 纯静态（不创建 PHP） |
 
 ### 10.2 申请 SSL 证书
@@ -452,7 +454,7 @@ location /api/ {
 
 # 前端路由回退
 location / {
-    try_files $uri $uri/ /index.html;
+    try_files $uri $uri/ /200.html;
 }
 ```
 
@@ -596,7 +598,7 @@ git pull
 cd backend && source .venv/bin/activate && pip install -r requirements.txt
 
 # 前端有变更时
-cd ../frontend && pnpm install && pnpm build
+cd ../frontend && pnpm install --frozen-lockfile && pnpm generate
 
 # 数据库有新迁移时，按顺序执行 migrations/*.sql
 

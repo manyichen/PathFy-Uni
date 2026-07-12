@@ -1,6 +1,8 @@
 node_modules/
-dist/
-.astro/
+.nuxt/
+.output/
+dist
+coverage/
+playwright-report/
+test-results/
 .env
-.env.local
-*.log

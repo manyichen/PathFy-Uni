@@ -44,11 +44,19 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "22"
           cache: pnpm
           cache-dependency-path: frontend/pnpm-lock.yaml
 
-      - name: Install and build frontend
+      - name: Install, check, test and generate frontend
         run: |
           pnpm install --frozen-lockfile
-          pnpm build
+          pnpm typecheck
+          pnpm test
+          pnpm generate
+
+      - name: Install Playwright Chromium
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Run critical frontend E2E
+        run: pnpm test:e2e

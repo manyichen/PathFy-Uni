@@ -15,11 +15,11 @@ python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 python run.py                         # dev server
 
-# Frontend (Astro + Svelte, port 4321, /api → Flask proxy)
+# Frontend (Nuxt 4 + Vue 3, port 4321, /api → Flask proxy)
 cd frontend
 pnpm install
 pnpm dev                              # dev server
-pnpm build                            # static build → dist/
+pnpm generate                         # static build → .output/public/
 pnpm check                            # type-check (astro check)
 
 # Tests (no external services needed)
@@ -35,7 +35,7 @@ pip install -r requirements.txt
 # See generate_graph/README.md for full pipeline
 ```
 
-Prerequisites: Python 3.11+, Node 18+, pnpm, MySQL 8, Neo4j. Copy `backend/.env.example` → `backend/.env` with real DB creds and API keys.
+Prerequisites: Python 3.11+, Node 22+, pnpm, MySQL 8, Neo4j. Copy `backend/.env.example` → `backend/.env` with real DB creds and API keys.
 
 ## Architecture
 
@@ -63,8 +63,8 @@ utils.py            Resume scoring utilities, radar chart helpers
 ### Frontend (`frontend/src/`)
 
 ```
-pages/              Astro file-based routes (one .astro per page)
-components/         Svelte 5 components, organized by domain (auth/, home/, jobs/, match/, etc.)
+app/pages/          Nuxt file-based routes (one .vue per page)
+app/components/     Vue 3 components, organized by domain
 lib/api/            Per-domain API clients (auth.ts, jobs.ts, match.ts, report.ts, etc.)
 lib/api/http.ts     Shared HTTP helpers with auth header injection
 lib/features/       Non-HTTP client logic (e.g., auth/session.ts for token management)

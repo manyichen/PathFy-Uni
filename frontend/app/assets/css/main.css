@@ -1,0 +1,16 @@
+@import "tailwindcss";
+@import "@nuxt/ui";
+
+:root {
+  --pathfy-hue: 192;
+  --ui-primary: hsl(var(--pathfy-hue) 82% 43%);
+}
+
+html { scroll-behavior: smooth; }
+body { min-height: 100vh; background: var(--ui-bg); }
+.page-stack { display: grid; gap: 1.5rem; }
+.page-heading { display: grid; gap: .35rem; }
+.page-heading h1 { font-size: 1.75rem; line-height: 2.1rem; font-weight: 700; }
+.muted { color: var(--ui-text-muted); }
+.panel-grid { display: grid; gap: 1rem; }
+@media (min-width: 1024px) { .panel-grid.two { grid-template-columns: repeat(2, minmax(0, 1fr)); } }

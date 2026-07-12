@@ -1,21 +1,3 @@
 {
-	"compilerOptions": {
-		"target": "ESNext",
-		"module": "ESNext",
-		"moduleResolution": "bundler",
-		"jsx": "preserve",
-		"baseUrl": ".",
-		"strictNullChecks": true,
-		"allowJs": true,
-		"plugins": [{ "name": "@astrojs/ts-plugin" }],
-		"paths": {
-			"@components/*": ["src/components/*"],
-			"@layouts/*": ["src/layouts/*"],
-			"@utils/*": ["src/utils/*"],
-			"@constants/*": ["src/constants/*"],
-			"@types/*": ["src/types/*"],
-			"@/*": ["src/*"]
-		}
-	},
-	"include": ["src/**/*", ".astro/types.d.ts"]
+  "extends": "./.nuxt/tsconfig.json"
 }
