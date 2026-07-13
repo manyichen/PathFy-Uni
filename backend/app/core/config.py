@@ -130,3 +130,8 @@ class Config:
     GRAPH_LLM_TIMEOUT_SECONDS = int(os.getenv("GRAPH_LLM_TIMEOUT_SECONDS", "120"))
     GRAPH_PROMOTION_MIN_CONFIDENCE = float(os.getenv("GRAPH_PROMOTION_MIN_CONFIDENCE", "0.55"))
     GRAPH_PROMOTION_BACKUP_DIR = os.getenv("GRAPH_PROMOTION_BACKUP_DIR", "")
+    GRAPH_TASK_UPLOAD_DIR = os.path.abspath(
+        os.getenv("GRAPH_TASK_UPLOAD_DIR")
+        or os.path.join(_BACKEND_ROOT, "private_uploads", "graph_tasks")
+    )
+    GRAPH_WORKER_POLL_SECONDS = float(os.getenv("GRAPH_WORKER_POLL_SECONDS", "2"))

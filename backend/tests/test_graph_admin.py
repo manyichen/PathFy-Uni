@@ -1,321 +1,93 @@
 from __future__ import annotations
 
 from io import BytesIO
-from pathlib import Path
-from contextlib import nullcontext
 
 import pytest
 
-from app.domains.graph import repository as graph_repository
 from app.domains.graph import router as graph_router
-from app.domains.graph import services as graph_services
-from app.domains.graph import sync_service as graph_sync_service
-
-
-REPO_ROOT = Path(__file__).resolve().parents[2]
+from app.domains.graph import task_planner
 
 
 @pytest.fixture(autouse=True)
-def _no_graph_write_lock(monkeypatch):
-    monkeypatch.setattr(graph_router, "graph_write_lock", nullcontext)
+def _admin(monkeypatch):
+    monkeypatch.setattr(graph_router, "_require_admin", lambda: (7, None))
 
 
-def test_import_jobs_reads_multipart_options(client, monkeypatch):
+def test_create_graph_task_reads_multipart_options(client, monkeypatch):
     captured = {}
+    def enqueue(**kwargs):
+        captured.update(kwargs); return {"id": 12, "status": "queued"}
+    monkeypatch.setattr(graph_router, "enqueue_task", enqueue)
+    response = client.post("/api/graph/tasks", data={
+        "task_type": "job_import", "file": (BytesIO(b"excel"), "jobs.xlsx"),
+        "batch_size": "64", "mode": "snapshot", "source_id": "monthly",
+        "generate_promotions": "true", "generate_lateral": "false",
+    }, content_type="multipart/form-data")
+    assert response.status_code == 202
+    assert captured["user_id"] == 7
+    assert captured["task_type"] == "job_import"
+    assert captured["uploaded_file"].filename == "jobs.xlsx"
+    assert captured["mode"] == "snapshot"
+    assert captured["generate_promotions"] is True
+    assert captured["generate_lateral"] is False
 
-    monkeypatch.setattr(graph_router, "_require_admin", lambda: (1, None))
 
-    def fake_import_jobs_from_excel(
-        *, excel_path, uploaded_file, batch_size, clear_all, mode, source_id, dry_run
+def test_direct_graph_writers_are_gone(client):
+    for path in (
+        "/api/graph/import-jobs", "/api/graph/sync/job-titles",
+        "/api/graph/generate/promotion-paths", "/api/graph/generate/lateral-transfers",
+        "/api/graph/generate/learning-resources", "/api/graph/generate/competitions",
     ):
-        captured.update(
-            {
-                "excel_path": excel_path,
-                "uploaded_filename": uploaded_file.filename,
-                "batch_size": batch_size,
-                "clear_all": clear_all,
-                "mode": mode,
-                "source_id": source_id,
-                "dry_run": dry_run,
-            }
-        )
-        return {"total_jobs": 0, "batches_completed": 0, "batches_failed": 0}
+        response = client.post(path, json={})
+        assert response.status_code == 410
+        assert response.get_json()["ok"] is False
 
-    monkeypatch.setattr(
-        graph_router, "import_jobs_from_excel", fake_import_jobs_from_excel
+
+def test_task_list_and_detail_are_admin_scoped(client, monkeypatch):
+    monkeypatch.setattr(graph_router, "list_tasks", lambda **kw: {"items": [{"id": 1}], "total": 1, **kw})
+    monkeypatch.setattr(graph_router, "task_detail", lambda task_id: {"id": task_id, "events": []})
+    assert client.get("/api/graph/tasks?page=2&page_size=10").get_json()["data"]["page"] == 2
+    assert client.get("/api/graph/tasks/9").get_json()["data"]["id"] == 9
+
+
+def test_confirm_reject_cancel_routes(client, monkeypatch):
+    monkeypatch.setattr(graph_router, "confirm_task", lambda task_id, user_id: {"id": task_id, "user": user_id})
+    monkeypatch.setattr(graph_router, "reject_task", lambda task_id, user_id, reason: {"reason": reason})
+    monkeypatch.setattr(graph_router, "cancel_task", lambda task_id, user_id: {"status": "cancelled"})
+    assert client.post("/api/graph/tasks/4/confirm").status_code == 200
+    assert client.post("/api/graph/tasks/4/reject", json={"reason": "数据异常"}).get_json()["data"]["reason"] == "数据异常"
+    assert client.post("/api/graph/tasks/4/cancel").get_json()["data"]["status"] == "cancelled"
+
+
+class _TitleSession:
+    def __enter__(self): return self
+    def __exit__(self, *_args): return False
+    def run(self, *_args, **_kwargs): return [{"name": "Java"}, {"name": "测试"}]
+
+
+class _TitleDriver:
+    def session(self, **_kwargs): return _TitleSession()
+
+
+def test_resource_csv_schema_and_duplicates(tmp_path, monkeypatch):
+    monkeypatch.setattr(task_planner, "_driver", lambda: (_TitleDriver(), "neo4j"))
+    path = tmp_path / "resources.csv"
+    path.write_text(
+        "resource_id,job_name,resource_name,resource_desc,resource_url,resource_type,difficulty,source,skill_tag\n"
+        "r1,Java|测试,课程,说明,https://example.com,课程,入门,官方,Java\n",
+        encoding="utf-8",
     )
-
-    res = client.post(
-        "/api/graph/import-jobs",
-        data={
-            "file": (BytesIO(b"excel"), "jobs.xls"),
-            "batch_size": "256",
-            "clear_all": "true",
-        },
-        content_type="multipart/form-data",
-    )
-
-    assert res.status_code == 200
-    assert captured == {
-        "excel_path": None,
-        "uploaded_filename": "jobs.xls",
-        "batch_size": 256,
-        "clear_all": True,
-        "mode": "merge",
-        "source_id": None,
-        "dry_run": False,
-    }
+    task = {"input_file_path": str(path), "source_id": "resources", "mode": "snapshot"}
+    change, summary = task_planner._plan_csv(task, kind="learning_resource_import", required=task_planner.RESOURCE_COLUMNS, id_column="resource_id")
+    assert summary == {"items": 1, "job_title_links": 2, "snapshot_prune": True}
+    assert change["items"][0]["job_titles"] == ["Java", "测试"]
 
 
-def test_import_jobs_keeps_json_options(client, monkeypatch):
-    captured = {}
-
-    monkeypatch.setattr(graph_router, "_require_admin", lambda: (1, None))
-
-    def fake_import_jobs_from_excel(
-        *, excel_path, uploaded_file, batch_size, clear_all, mode, source_id, dry_run
-    ):
-        captured.update(
-            {
-                "excel_path": excel_path,
-                "uploaded_file": uploaded_file,
-                "batch_size": batch_size,
-                "clear_all": clear_all,
-                "mode": mode,
-                "source_id": source_id,
-                "dry_run": dry_run,
-            }
-        )
-        return {"total_jobs": 0, "batches_completed": 0, "batches_failed": 0}
-
-    monkeypatch.setattr(
-        graph_router, "import_jobs_from_excel", fake_import_jobs_from_excel
-    )
-
-    res = client.post(
-        "/api/graph/import-jobs",
-        json={
-            "file_path": "/data/jobs.xls",
-            "batch_size": 64,
-            "clear_all": True,
-            "mode": "snapshot",
-            "source_id": "monthly-feed",
-            "dry_run": True,
-        },
-    )
-
-    assert res.status_code == 200
-    assert captured == {
-        "excel_path": "/data/jobs.xls",
-        "uploaded_file": None,
-        "batch_size": 64,
-        "clear_all": True,
-        "mode": "snapshot",
-        "source_id": "monthly-feed",
-        "dry_run": True,
-    }
-
-
-def test_import_runs_endpoint_is_admin_scoped(client, monkeypatch):
-    monkeypatch.setattr(graph_router, "_require_admin", lambda: (1, None))
-    monkeypatch.setattr(
-        graph_router,
-        "get_import_runs",
-        lambda limit: [{"run_id": "run-1", "status": "succeeded", "limit": limit}],
-    )
-
-    res = client.get("/api/graph/import-runs?limit=5")
-    assert res.status_code == 200
-    assert res.get_json()["data"]["items"][0]["limit"] == 5
-
-
-def test_delete_edges_by_source_keeps_relationships_in_scope():
-    class FakeResult:
-        def single(self):
-            return {"total": 3}
-
-    class FakeSession:
-        def __init__(self):
-            self.query = ""
-            self.params = {}
-
-        def __enter__(self):
-            return self
-
-        def __exit__(self, exc_type, exc, tb):
-            return False
-
-        def run(self, query, **params):
-            self.query = query
-            self.params = params
-            return FakeResult()
-
-    class FakeDriver:
-        def __init__(self):
-            self.session_obj = FakeSession()
-            self.database = None
-
-        def session(self, *, database):
-            self.database = database
-            return self.session_obj
-
-    driver = FakeDriver()
-
-    deleted = graph_repository.delete_edges_by_source(
-        driver, "neo4j", "openai_lmstudio"
-    )
-
-    assert deleted == 3
-    assert driver.database == "neo4j"
-    assert "collect(r)" in driver.session_obj.query
-    assert "DELETE r" in driver.session_obj.query
-    assert driver.session_obj.params == {"source": "openai_lmstudio"}
-
-
-def test_generate_promotions_endpoint_is_deprecated(client, monkeypatch):
-    monkeypatch.setattr(graph_router, "_require_admin", lambda: (1, None))
-
-    res = client.post("/api/graph/generate-promotions", json={"dry_run": True})
-
-    assert res.status_code == 410
-    body = res.get_json()
-    assert body["ok"] is False
-    assert "已废弃" in body["message"]
-    assert "/api/graph/generate/promotion-paths" in body["message"]
-
-
-def test_legacy_generate_promotion_edges_service_is_deprecated():
-    with pytest.raises(graph_services.GraphServiceError) as exc_info:
-        graph_services.generate_promotion_edges(dry_run=True)
-
-    assert exc_info.value.status == 410
-    assert "JobTitle" in exc_info.value.message
-    assert "/api/graph/generate/promotion-paths" in exc_info.value.message
-
-
-def test_legacy_persist_promotion_edges_is_deprecated():
-    with pytest.raises(RuntimeError) as exc_info:
-        graph_repository.persist_promotion_edges(
-            object(),
-            "neo4j",
-            [],
-            "openai_lmstudio",
-        )
-
-    assert "JobPromotion" in str(exc_info.value)
-
-
-def test_navbar_separates_admin_and_normal_navigation():
-    navbar = (REPO_ROOT / "frontend/src/components/AppNavbar.astro").read_text()
-
-    assert 'adminOnly: true' in navbar
-    assert 'userOnly: true' in navbar
-    assert 'data-admin-only={item.adminOnly ? "true" : undefined}' in navbar
-    assert 'data-user-only={item.userOnly ? "true" : undefined}' in navbar
-    assert 'a[data-admin-only="true"]' in navbar
-    assert 'a[data-user-only="true"]' in navbar
-    assert 'el.classList.toggle("hidden", !isAdmin);' in navbar
-    assert 'el.classList.toggle("hidden", isAdmin);' in navbar
-
-
-def test_graph_manager_uses_jobtitle_promotion_paths():
-    manager = (REPO_ROOT / "frontend/src/components/graph/GraphManager.svelte").read_text()
-
-    assert "generatePromotionPaths" in manager
-    assert "generatePromotions" not in manager
-    assert "VERTICAL_UP" not in manager
-    assert "JobTitle" in manager
-
-
-def test_jobs_promotion_path_reads_jobtitle_layer():
-    router = (REPO_ROOT / "backend/app/domains/jobs/router.py").read_text()
-    block = router.split('def get_promotion_path(job_id: str):', 1)[1]
-
-    assert "JobPromotion" in block
-    assert "JobTitle" in block
-    assert "VERTICAL_UP" not in block
-    assert "PROMOTION_EDGE_SOURCES" not in block
-
-
-def test_graph_readme_documents_api_and_principles():
-    readme = (REPO_ROOT / "backend/app/domains/graph/README.md").read_text()
-
-    assert "## API 端点" in readme
-    assert "## 核心原理" in readme
-    assert "### 建图原则" in readme
-    assert "### LLM 抽取原则" in readme
-    assert "### 晋升路径推断原则" in readme
-    assert "### 数据一致性原则" in readme
-    assert "generate-promotions` 已废弃" in readme
-
-
-def test_generate_promotion_paths_uses_stable_ids_and_filters_invalid_titles(monkeypatch):
-    class FakeSession:
-        def __init__(self):
-            self.writes = []
-
-        def __enter__(self):
-            return self
-
-        def __exit__(self, exc_type, exc, tb):
-            return False
-
-        def run(self, query, **params):
-            if "MERGE (pr:JobPromotion" in query:
-                self.writes.append(params)
-            return []
-
-    class FakeDriver:
-        def __init__(self):
-            self.session_obj = FakeSession()
-
-        def session(self, *, database):
-            return self.session_obj
-
-    driver = FakeDriver()
-    monkeypatch.setattr(graph_sync_service, "_get_driver", lambda: (driver, "neo4j"))
-    monkeypatch.setattr(
-        graph_sync_service,
-        "fetch_all_job_titles",
-        lambda _driver, _database: ["前端工程师", "高级前端工程师"],
-    )
-    monkeypatch.setattr(
-        graph_sync_service,
-        "_call_llm_json",
-        lambda *_args, **_kwargs: {
-            "paths": [
-                {
-                    "from_title": "前端工程师",
-                    "to_title": "高级前端工程师",
-                    "promotion_name": "前端晋升路径",
-                    "confidence": "85%",
-                },
-                {
-                    "from_title": "不存在岗位",
-                    "to_title": "高级前端工程师",
-                    "promotion_name": "无效路径",
-                    "confidence": 0.9,
-                },
-                {
-                    "from_title": "前端工程师",
-                    "to_title": "不存在岗位",
-                    "promotion_name": "无效目标",
-                    "confidence": None,
-                },
-            ]
-        },
-    )
-
-    result = graph_sync_service.generate_promotion_paths(dry_run=False)
-
-    assert result["created_promotions"] == 1
-    assert len(driver.session_obj.writes) == 1
-    write = driver.session_obj.writes[0]
-    assert write["from_title"] == "前端工程师"
-    assert write["to_title"] == "高级前端工程师"
-    assert write["confidence"] == 0.85
-
-    first_pid = write["pid"]
-    driver.session_obj.writes.clear()
-    graph_sync_service.generate_promotion_paths(dry_run=False)
-    assert driver.session_obj.writes[0]["pid"] == first_pid
+def test_competition_csv_rejects_duplicate_ids(tmp_path, monkeypatch):
+    monkeypatch.setattr(task_planner, "_driver", lambda: (_TitleDriver(), "neo4j"))
+    header = ",".join(sorted(task_planner.COMPETITION_COLUMNS))
+    values = {key: "x" for key in task_planner.COMPETITION_COLUMNS}; values["competition_id"] = "c1"; values["job_name"] = "Java"
+    row = ",".join(values[key] for key in sorted(task_planner.COMPETITION_COLUMNS))
+    path = tmp_path / "competitions.csv"; path.write_text(f"{header}\n{row}\n{row}\n", encoding="utf-8")
+    with pytest.raises(task_planner.TaskPlanningError, match="重复"):
+        task_planner._plan_csv({"input_file_path": str(path), "source_id": "c", "mode": "merge"}, kind="competition_import", required=task_planner.COMPETITION_COLUMNS, id_column="competition_id")

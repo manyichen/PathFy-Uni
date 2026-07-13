@@ -52,6 +52,9 @@ alembic upgrade head
 
 ```bash
 python run.py
+
+# 另开终端启动图谱更新队列
+python -m app.domains.graph.worker
 ```
 
 默认地址：`http://127.0.0.1:5000`
@@ -71,7 +74,7 @@ pytest tests/ -q
 PYTHONPATH=. python tools/list_routes.py
 ```
 
-生产环境见 [`deploy/DEPLOY.md`](../deploy/DEPLOY.md)（Gunicorn + Supervisor）。
+生产环境见 [`deploy/DEPLOY.md`](../deploy/DEPLOY.md)（Gunicorn + 独立 graph worker + Supervisor）。图谱管理员在 `/graph-admin` 创建更新任务，必须审查确认后才写入 Neo4j。
 
 ## 5) 常用 API
 

@@ -14,12 +14,18 @@ class GraphOperationBusy(RuntimeError):
 
 
 @contextmanager
-def graph_write_lock():
+def graph_write_lock(*, allowed_task_id: int | None = None):
     """Use a MySQL named lock so multiple Gunicorn workers cannot reconcile concurrently."""
     connection = get_connection()
     acquired = False
     try:
         with connection.cursor() as cursor:
+            cursor.execute("SELECT locked_task_id FROM graph_write_guard WHERE id = 1")
+            guard = cursor.fetchone() or {}
+            if guard.get("locked_task_id") and int(guard["locked_task_id"]) != int(allowed_task_id or 0):
+                raise GraphOperationBusy(
+                    f"图谱被待确认任务 #{guard['locked_task_id']} 锁定"
+                )
             cursor.execute("SELECT GET_LOCK(%s, 0) AS acquired", (LOCK_NAME,))
             row = cursor.fetchone() or {}
             acquired = int(row.get("acquired") or 0) == 1

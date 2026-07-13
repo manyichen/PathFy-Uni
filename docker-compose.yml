@@ -20,8 +20,6 @@ services:
       - "${MYSQL_PORT:-3306}:3306"
     volumes:
       - mysql_data:/var/lib/mysql
-      - ./backend/schema.sql:/docker-entrypoint-initdb.d/01_schema.sql:ro
-      - ./backend/migrations:/docker-entrypoint-initdb.d/migrations:ro
     healthcheck:
       test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_ROOT_PASSWORD:?set MYSQL_ROOT_PASSWORD}"]
       interval: 10s
@@ -51,6 +49,22 @@ services:
       interval: 15s
       timeout: 10s
       retries: 5
+
+  migrate:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    command: ["alembic", "upgrade", "head"]
+    restart: "no"
+    environment:
+      MYSQL_HOST: mysql
+      MYSQL_PORT: "3306"
+      MYSQL_USER: ${MYSQL_USER:-suilli_mizi}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:?set MYSQL_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-suilli_mizi}
+    depends_on:
+      mysql:
+        condition: service_healthy
 
   # ============================================================
   # Flask 后端
@@ -106,6 +120,7 @@ services:
 
       MAX_UPLOAD_MB: "10"
       RESUME_UPLOAD_DIR: /var/private/pathfy/resumes
+      GRAPH_TASK_UPLOAD_DIR: /var/private/pathfy/graph_tasks
 
       MATCH_PREVIEW_MAX_SCAN: "2000"
       MATCH_TOP_K_RETURN: "30"
@@ -115,8 +130,11 @@ services:
 
     volumes:
       - resume_uploads:/var/private/pathfy/resumes
+      - graph_task_uploads:/var/private/pathfy/graph_tasks
       - promotion_backups:/app/promotion_backups
     depends_on:
+      migrate:
+        condition: service_completed_successfully
       mysql:
         condition: service_healthy
       neo4j:
@@ -126,6 +144,40 @@ services:
       interval: 15s
       timeout: 5s
       retries: 3
+
+  graph-worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: pathfy-graph-worker
+    restart: unless-stopped
+    command: ["python", "-m", "app.domains.graph.worker"]
+    environment:
+      MYSQL_HOST: mysql
+      MYSQL_PORT: "3306"
+      MYSQL_USER: ${MYSQL_USER:-suilli_mizi}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:?set MYSQL_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-suilli_mizi}
+      NEO4J_URI: bolt://neo4j:7687
+      NEO4J_USER: ${NEO4J_USER:-neo4j}
+      NEO4J_PASSWORD: ${NEO4J_PASSWORD:?set NEO4J_PASSWORD}
+      NEO4J_DATABASE: neo4j
+      GRAPH_LLM_BASE_URL: ${GRAPH_LLM_BASE_URL:-}
+      GRAPH_LLM_API_KEY: ${GRAPH_LLM_API_KEY:-}
+      GRAPH_LLM_MODEL: ${GRAPH_LLM_MODEL:-doubao-seed-2-0-mini-260215}
+      ARK_API_KEY: ${ARK_API_KEY:-}
+      ARK_BASE_URL: ${ARK_BASE_URL:-https://ark.cn-beijing.volces.com/api/v3}
+      GRAPH_TASK_UPLOAD_DIR: /var/private/pathfy/graph_tasks
+      GRAPH_WORKER_POLL_SECONDS: "2"
+    volumes:
+      - graph_task_uploads:/var/private/pathfy/graph_tasks
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      mysql:
+        condition: service_healthy
+      neo4j:
+        condition: service_healthy
 
   # ============================================================
   # Nginx — 前端静态文件 + /api 反代
@@ -146,4 +198,5 @@ volumes:
   neo4j_data:
   neo4j_logs:
   resume_uploads:
+  graph_task_uploads:
   promotion_backups:

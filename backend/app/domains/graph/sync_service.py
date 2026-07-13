@@ -224,8 +224,9 @@ def _generated_id(prefix: str, title: str, name: str) -> str:
 # 1. 岗位名称实体同步
 # ============================================================
 
-def sync_job_titles(*, dry_run: bool = False) -> Dict[str, Any]:
+def sync_job_titles() -> Dict[str, Any]:
     """从 :Job.title 聚合创建 :JobTitle 节点和 HAS_TITLE 关系。"""
+    raise RuntimeError("直接图谱写入已停用，请通过 graph worker 生成变更集")
     driver, database = _get_driver()
 
     # 聚合
@@ -251,9 +252,6 @@ def sync_job_titles(*, dry_run: bool = False) -> Dict[str, Any]:
             }
             for r in result
         ]
-
-    if dry_run:
-        return {"dry_run": True, "title_count": len(titles), "sample": titles[:10]}
 
     # 写入
     created_jt = 0
@@ -304,7 +302,6 @@ def sync_job_titles(*, dry_run: bool = False) -> Dict[str, Any]:
         created_rel = int(result.single()["cnt"])
 
     return {
-        "dry_run": False,
         "title_count": len(titles),
         "created_jobtitle_nodes": created_jt,
         "has_title_relationships": created_rel,
@@ -316,13 +313,14 @@ def sync_job_titles(*, dry_run: bool = False) -> Dict[str, Any]:
 # 2. 晋升路径生成
 # ============================================================
 
-def generate_promotion_paths(*, dry_run: bool = False) -> Dict[str, Any]:
+def generate_promotion_paths() -> Dict[str, Any]:
     """LLM 推断 JobTitle 间的晋升路径。"""
+    raise RuntimeError("独立派生写入已停用，请通过岗位更新任务执行")
     driver, database = _get_driver()
     titles = fetch_all_job_titles(driver, database)
     valid_titles = {str(t).strip() for t in titles if str(t).strip()}
     if len(titles) < 2:
-        return {"error": "JobTitle 数量不足（需要至少 2 个）", "dry_run": dry_run}
+        return {"error": "JobTitle 数量不足（需要至少 2 个）"}
 
     # 分批发送给 LLM（每批 30 个标题）
     batch_size = 30
@@ -339,14 +337,6 @@ def generate_promotion_paths(*, dry_run: bool = False) -> Dict[str, Any]:
         paths = result.get("paths", [])
         if isinstance(paths, list):
             all_paths.extend([p for p in paths if isinstance(p, dict)])
-
-    if dry_run:
-        return {
-            "dry_run": True,
-            "titles_scanned": len(titles),
-            "candidate_paths": len(all_paths),
-            "preview": all_paths[:20],
-        }
 
     run_id = uuid4().hex
     generation_source = "graph_admin_llm"
@@ -421,7 +411,6 @@ def generate_promotion_paths(*, dry_run: bool = False) -> Dict[str, Any]:
         )
 
     return {
-        "dry_run": False,
         "titles_scanned": len(titles),
         "candidate_paths": len(all_paths),
         "created_promotions": created,
@@ -433,12 +422,13 @@ def generate_promotion_paths(*, dry_run: bool = False) -> Dict[str, Any]:
 # 3. 换岗关系生成
 # ============================================================
 
-def generate_lateral_transfers(*, dry_run: bool = False) -> Dict[str, Any]:
+def generate_lateral_transfers() -> Dict[str, Any]:
     """LLM 推断 JobTitle 间的横向转岗关系。"""
+    raise RuntimeError("独立派生写入已停用，请通过岗位更新任务执行")
     driver, database = _get_driver()
     titles = fetch_all_job_titles(driver, database)
     if len(titles) < 2:
-        return {"error": "JobTitle 数量不足", "dry_run": dry_run}
+        return {"error": "JobTitle 数量不足"}
 
     # 取 top 50 高频岗位做配对
     top_titles = titles[:50]
@@ -484,14 +474,6 @@ def generate_lateral_transfers(*, dry_run: bool = False) -> Dict[str, Any]:
         item["score"] = score
         item["cap_similarity"] = _parse_confidence(p.get("cap_similarity"))
         validated_pairs.append(item)
-
-    if dry_run:
-        return {
-            "dry_run": True,
-            "titles_considered": len(top_titles),
-            "candidate_pairs": len(validated_pairs),
-            "preview": validated_pairs[:20],
-        }
 
     # 写入 Neo4j。旧实现删除所有 SIMILAR_FOR_LATERAL，可能破坏 CSV/人工边；
     # 现在仅清理本生成器拥有且本次未重新产生的关系。
@@ -543,7 +525,6 @@ def generate_lateral_transfers(*, dry_run: bool = False) -> Dict[str, Any]:
         )
 
     return {
-        "dry_run": False,
         "titles_considered": len(top_titles),
         "candidate_pairs": len(validated_pairs),
         "created_relationships": created,
@@ -555,8 +536,9 @@ def generate_lateral_transfers(*, dry_run: bool = False) -> Dict[str, Any]:
 # 4. 学习资源生成
 # ============================================================
 
-def generate_learning_resources(*, dry_run: bool = False) -> Dict[str, Any]:
+def generate_learning_resources() -> Dict[str, Any]:
     """LLM 为 JobTitle 推荐学习资源。"""
+    raise RuntimeError("LLM 资源写入已停用，请创建 learning_resource_import 任务")
     driver, database = _get_driver()
     titles_with_counts = fetch_all_job_titles_with_counts(driver, database)
 
@@ -580,14 +562,6 @@ def generate_learning_resources(*, dry_run: bool = False) -> Dict[str, Any]:
                 if isinstance(r, dict):
                     r["_for_title"] = t["name"]
             all_resources.extend([r for r in resources if isinstance(r, dict)])
-
-    if dry_run:
-        return {
-            "dry_run": True,
-            "titles_processed": len(eligible),
-            "candidate_resources": len(all_resources),
-            "preview": [{"title": r["_for_title"], "name": r.get("resource_name", "")} for r in all_resources[:20]],
-        }
 
     run_id = uuid4().hex
     generation_source = "graph_admin_llm"
@@ -645,7 +619,6 @@ def generate_learning_resources(*, dry_run: bool = False) -> Dict[str, Any]:
         )
 
     return {
-        "dry_run": False,
         "titles_processed": len(eligible),
         "candidate_resources": len(all_resources),
         "created_resources": created,
@@ -657,8 +630,9 @@ def generate_learning_resources(*, dry_run: bool = False) -> Dict[str, Any]:
 # 5. 竞赛生成
 # ============================================================
 
-def generate_competitions(*, dry_run: bool = False) -> Dict[str, Any]:
+def generate_competitions() -> Dict[str, Any]:
     """LLM 为 JobTitle 推荐竞赛。"""
+    raise RuntimeError("LLM 竞赛写入已停用，请创建 competition_import 任务")
     driver, database = _get_driver()
     titles_with_counts = fetch_all_job_titles_with_counts(driver, database)
     eligible = [t for t in titles_with_counts if t["count"] >= 2][:30]
@@ -680,14 +654,6 @@ def generate_competitions(*, dry_run: bool = False) -> Dict[str, Any]:
                 if isinstance(c, dict):
                     c["_for_title"] = t["name"]
             all_competitions.extend([c for c in comps if isinstance(c, dict)])
-
-    if dry_run:
-        return {
-            "dry_run": True,
-            "titles_processed": len(eligible),
-            "candidate_competitions": len(all_competitions),
-            "preview": [{"title": c["_for_title"], "name": c.get("competition_name", "")} for c in all_competitions[:20]],
-        }
 
     run_id = uuid4().hex
     generation_source = "graph_admin_llm"
@@ -755,7 +721,6 @@ def generate_competitions(*, dry_run: bool = False) -> Dict[str, Any]:
         )
 
     return {
-        "dry_run": False,
         "titles_processed": len(eligible),
         "candidate_competitions": len(all_competitions),
         "created_competitions": created,

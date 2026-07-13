@@ -250,16 +250,14 @@ mysql -h 127.0.0.1 -P 3306 -u 你的用户 -p suilli_mizi -e "SHOW TABLES;"
 
 连接信息写入 `backend/.env` 的 `MYSQL_HOST`、`MYSQL_PORT`、`MYSQL_USER`、`MYSQL_PASSWORD`、`MYSQL_DATABASE`。
 
-### 6.2 导入表结构（若尚未执行）
+### 6.2 初始化/升级表结构
 
-全新数据库导入完整 schema 后登记 Alembic 基线：
+全新数据库直接由 Alembic 创建完整结构：
 
 ```bash
-cd /www/wwwroot/pathfy-uni
-
-mysql -u root -p suilli_mizi < backend/schema.sql
-cd backend
-alembic stamp 20260712_0001
+cd /www/wwwroot/pathfy-uni/backend
+source .venv/bin/activate
+alembic upgrade head
 ```
 
 已有数据库先校验历史结构，再 stamp；之后每次部署只执行 upgrade：
@@ -478,7 +476,7 @@ location / {
 
 | 字段 | 值 |
 |------|-----|
-| 名称 | `pathfy-backend` |
+| 名称 | `pathfy-backend`（另建 `pathfy-graph-worker`） |
 | 运行目录 | `/www/wwwroot/pathfy-uni/backend` |
 | 启动命令 | 见下方 |
 | 运行用户 | `www` |
@@ -489,7 +487,13 @@ location / {
 /www/wwwroot/pathfy-uni/backend/.venv/bin/gunicorn -w 2 -b 127.0.0.1:5000 "app:create_app()" --timeout 120 --access-logfile /www/wwwlogs/pathfy-backend-access.log --error-logfile /www/wwwlogs/pathfy-backend-error.log
 ```
 
-3. 开启 **开机启动**
+graph worker 启动命令：
+
+```bash
+/www/wwwroot/pathfy-uni/backend/.venv/bin/python -m app.domains.graph.worker
+```
+
+3. 两个进程都开启 **开机启动**
 
 ### 方式 B：SSH 复制配置文件
 
@@ -520,20 +524,9 @@ supervisorctl status pathfy-backend
 
 Neo4j 已部署但尚无 Job 节点时，需导入岗位数据才能使用岗位浏览与人岗匹配。
 
-详细步骤见 [`generate_graph/README.md`](../generate_graph/README.md)。
+以管理员身份打开 `/graph-admin/update`，上传岗位 Excel 创建任务。graph worker 会生成岗位、JobTitle、晋升和换岗变更集；在任务详情页审查并确认后才会写入 Neo4j。
 
-概要流程：
-
-```bash
-cd /www/wwwroot/pathfy-uni/generate_graph
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-# 配置 .env（NEO4J_URI、LLM 相关 Key、EXCEL_PATH 等）
-python script.py
-# 可选：导入晋升关系
-python openai_lmstudio_promotion_update.py
-```
+学习资源和竞赛分别上传 `datasets/master/learning_resources.csv` 和 `datasets/master/competitions.csv`。旧 `generate_graph/` 和 `tools/neo4j/sync_*` 入口仅供数据整理与历史排查，不应再直接写生产图谱。
 
 导入完成后，在前端 `/jobs` 页面应能看到岗位列表。
 
@@ -599,6 +592,10 @@ cd backend && source .venv/bin/activate && pip install -r requirements.txt
 
 # 前端有变更时
 cd ../frontend && pnpm install --frozen-lockfile && pnpm generate
+
+# 数据库迁移后启动/重启图谱任务 worker
+cd ../backend && alembic upgrade head
+supervisorctl restart pathfy-graph-worker
 
 # 数据库有新迁移时，按顺序执行 migrations/*.sql
 

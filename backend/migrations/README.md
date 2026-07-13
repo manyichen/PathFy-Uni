@@ -27,3 +27,5 @@ alembic history
 ```
 
 上线前应先在结构副本执行 upgrade/downgrade 测试。生产环境通常只执行 `alembic upgrade head`，禁止运行旧的 `run_migration_00x.py`。
+
+`20260713_0002` 新增图谱更新任务、事件历史和写入 guard。部署 graph worker 前必须先升级到该 revision。

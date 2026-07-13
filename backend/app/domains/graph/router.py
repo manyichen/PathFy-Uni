@@ -10,11 +10,13 @@ from app.domains.graph.services import (
     GraphServiceError,
     clear_graph,
     get_job_titles,
-    get_import_runs,
     get_stats,
-    import_jobs_from_excel,
 )
 from app.domains.graph.locking import GraphOperationBusy, graph_write_lock
+from app.domains.graph.task_service import (
+    GraphTaskError, cancel_task, confirm_task, enqueue_task, guard_status,
+    list_tasks, reject_task, task_detail,
+)
 
 graph_bp = Blueprint("graph", __name__, url_prefix="/api/graph")
 TRUE_VALUES = {"1", "true", "yes", "on"}
@@ -58,57 +60,11 @@ def _parse_bool(value, default: bool = False) -> bool:
 
 @graph_bp.post("/import-jobs")
 def import_jobs():
-    """
-    从 Excel 导入岗位到 Neo4j。
-
-    JSON Body（file_path 模式）:
-        { "file_path": "/path/to/data.xls", "batch_size": 128, "clear_all": false }
-
-    multipart/form-data（上传模式）:
-        file: Excel 文件
-        batch_size: 128（可选）
-        clear_all: false（可选）
-    """
+    """Deprecated direct writer; graph updates must use the durable queue."""
     _, err = _require_admin()
     if err:
         return err
-
-    try:
-        uploaded_file = request.files.get("file")
-        if uploaded_file:
-            params = request.form
-            file_path = None
-        else:
-            params = request.get_json(silent=True) or {}
-            file_path = params.get("file_path")
-
-        batch_size = int(params.get("batch_size") or 128)
-        clear_all = _parse_bool(params.get("clear_all"), False)
-        mode = str(params.get("mode") or "merge").strip().lower()
-        source_id = str(params.get("source_id") or "").strip() or None
-        dry_run = _parse_bool(params.get("dry_run"), False)
-
-        with graph_write_lock():
-            result = import_jobs_from_excel(
-                excel_path=file_path,
-                uploaded_file=uploaded_file,
-                batch_size=batch_size,
-                clear_all=clear_all,
-                mode=mode,
-                source_id=source_id,
-                dry_run=dry_run,
-            )
-        return jsonify({"ok": True, "data": result}), 200
-
-    except GraphServiceError as exc:
-        return jsonify({"ok": False, "message": exc.message}), exc.status
-    except GraphOperationBusy as exc:
-        return jsonify({"ok": False, "message": str(exc)}), 409
-    except Exception as exc:
-        return (
-            jsonify({"ok": False, "message": f"导入岗位失败: {exc}"}),
-            500,
-        )
+    return jsonify({"ok": False, "message": "直接导入已停用，请使用 POST /api/graph/tasks"}), 410
 
 
 @graph_bp.post("/generate-promotions")
@@ -171,18 +127,11 @@ def job_titles_list():
 
 @graph_bp.get("/import-runs")
 def import_runs_list():
-    """Return recent durable import audit records."""
+    """Deprecated Neo4j-local audit endpoint."""
     _, err = _require_admin()
     if err:
         return err
-    try:
-        limit = max(1, min(int(request.args.get("limit") or 20), 100))
-        runs = get_import_runs(limit)
-        return jsonify({"ok": True, "data": {"items": runs}}), 200
-    except (TypeError, ValueError):
-        return jsonify({"ok": False, "message": "limit 必须是整数"}), 400
-    except GraphServiceError as exc:
-        return jsonify({"ok": False, "message": exc.message}), exc.status
+    return jsonify({"ok": False, "message": "旧运行记录接口已停用，请使用 GET /api/graph/tasks"}), 410
 
 
 @graph_bp.post("/qc-report")
@@ -219,18 +168,8 @@ def qc_report():
 # 图谱智能生成（LLM 自动推断）
 # ============================================================
 
-def _run_sync(handler, dry_run: bool):
-    """统一执行同步/生成，返回 Flask 响应。"""
-    try:
-        with graph_write_lock():
-            result = handler(dry_run=dry_run)
-        return jsonify({"ok": True, "data": result}), 200
-    except GraphServiceError as exc:
-        return jsonify({"ok": False, "message": exc.message}), exc.status
-    except GraphOperationBusy as exc:
-        return jsonify({"ok": False, "message": str(exc)}), 409
-    except Exception as exc:
-        return jsonify({"ok": False, "message": str(exc)}), 500
+def _deprecated_update():
+    return jsonify({"ok": False, "message": "独立派生更新已停用，请创建图谱更新任务"}), 410
 
 
 @graph_bp.post("/sync/job-titles")
@@ -239,10 +178,7 @@ def sync_job_titles():
     _, err = _require_admin()
     if err:
         return err
-    from app.domains.graph.sync_service import sync_job_titles as _sync
-
-    body = request.get_json(silent=True) or {}
-    return _run_sync(_sync, _parse_bool(body.get("dry_run"), False))
+    return _deprecated_update()
 
 
 @graph_bp.post("/generate/promotion-paths")
@@ -251,10 +187,7 @@ def generate_promotion_paths():
     _, err = _require_admin()
     if err:
         return err
-    from app.domains.graph.sync_service import generate_promotion_paths as _gen
-
-    body = request.get_json(silent=True) or {}
-    return _run_sync(_gen, _parse_bool(body.get("dry_run"), False))
+    return _deprecated_update()
 
 
 @graph_bp.post("/generate/lateral-transfers")
@@ -263,10 +196,7 @@ def generate_lateral_transfers():
     _, err = _require_admin()
     if err:
         return err
-    from app.domains.graph.sync_service import generate_lateral_transfers as _gen
-
-    body = request.get_json(silent=True) or {}
-    return _run_sync(_gen, _parse_bool(body.get("dry_run"), False))
+    return _deprecated_update()
 
 
 @graph_bp.post("/generate/learning-resources")
@@ -275,10 +205,7 @@ def generate_learning_resources():
     _, err = _require_admin()
     if err:
         return err
-    from app.domains.graph.sync_service import generate_learning_resources as _gen
-
-    body = request.get_json(silent=True) or {}
-    return _run_sync(_gen, _parse_bool(body.get("dry_run"), False))
+    return _deprecated_update()
 
 
 @graph_bp.post("/generate/competitions")
@@ -287,10 +214,75 @@ def generate_competitions():
     _, err = _require_admin()
     if err:
         return err
-    from app.domains.graph.sync_service import generate_competitions as _gen
+    return _deprecated_update()
 
-    body = request.get_json(silent=True) or {}
-    return _run_sync(_gen, _parse_bool(body.get("dry_run"), False))
+
+@graph_bp.post("/tasks")
+def create_graph_task():
+    user_id, err = _require_admin()
+    if err: return err
+    try:
+        form = request.form
+        task = enqueue_task(
+            user_id=user_id, task_type=str(form.get("task_type") or ""),
+            uploaded_file=request.files.get("file"), source_id=form.get("source_id"),
+            mode=str(form.get("mode") or "merge"), batch_size=int(form.get("batch_size") or 128),
+            generate_promotions=_parse_bool(form.get("generate_promotions"), True),
+            generate_lateral=_parse_bool(form.get("generate_lateral"), True),
+        )
+        return jsonify({"ok": True, "data": task}), 202
+    except GraphTaskError as exc: return jsonify({"ok": False, "message": exc.message}), exc.status
+    except (TypeError, ValueError): return jsonify({"ok": False, "message": "任务参数格式错误"}), 400
+
+
+@graph_bp.get("/tasks")
+def graph_tasks_list():
+    _, err = _require_admin()
+    if err: return err
+    try:
+        page = max(1, int(request.args.get("page") or 1)); size = max(1, min(int(request.args.get("page_size") or 20), 100))
+        data = list_tasks(page=page, page_size=size, status=request.args.get("status") or None, task_type=request.args.get("task_type") or None)
+        return jsonify({"ok": True, "data": data})
+    except ValueError: return jsonify({"ok": False, "message": "分页参数格式错误"}), 400
+
+
+@graph_bp.get("/tasks/<int:task_id>")
+def graph_task_detail(task_id: int):
+    _, err = _require_admin()
+    if err: return err
+    try: return jsonify({"ok": True, "data": task_detail(task_id)})
+    except GraphTaskError as exc: return jsonify({"ok": False, "message": exc.message}), exc.status
+
+
+@graph_bp.post("/tasks/<int:task_id>/confirm")
+def graph_task_confirm(task_id: int):
+    user_id, err = _require_admin()
+    if err: return err
+    try: return jsonify({"ok": True, "data": confirm_task(task_id, user_id)})
+    except GraphTaskError as exc: return jsonify({"ok": False, "message": exc.message}), exc.status
+
+
+@graph_bp.post("/tasks/<int:task_id>/reject")
+def graph_task_reject(task_id: int):
+    user_id, err = _require_admin()
+    if err: return err
+    try: return jsonify({"ok": True, "data": reject_task(task_id, user_id, str((request.get_json(silent=True) or {}).get("reason") or ""))})
+    except GraphTaskError as exc: return jsonify({"ok": False, "message": exc.message}), exc.status
+
+
+@graph_bp.post("/tasks/<int:task_id>/cancel")
+def graph_task_cancel(task_id: int):
+    user_id, err = _require_admin()
+    if err: return err
+    try: return jsonify({"ok": True, "data": cancel_task(task_id, user_id)})
+    except GraphTaskError as exc: return jsonify({"ok": False, "message": exc.message}), exc.status
+
+
+@graph_bp.get("/guard")
+def graph_guard():
+    _, err = _require_admin()
+    if err: return err
+    return jsonify({"ok": True, "data": guard_status()})
 
 
 @graph_bp.post("/clear")
@@ -300,7 +292,7 @@ def clear():
 
     JSON Body: { "confirmed": true }
     """
-    _, err = _require_admin()
+    user_id, err = _require_admin()
     if err:
         return err
 
@@ -309,8 +301,29 @@ def clear():
         if not body.get("confirmed"):
             return jsonify({"ok": False, "message": "请二次确认（confirmed: true）"}), 400
 
+        guard = guard_status()
+        if guard["locked"]:
+            return jsonify({"ok": False, "message": "图谱被待确认任务锁定，不能执行紧急清空"}), 409
         with graph_write_lock():
             result = clear_graph()
+            with db_cursor() as (_, cur):
+                import json
+                from uuid import uuid4
+                cur.execute(
+                    """INSERT INTO graph_update_tasks
+                      (task_uuid,task_type,status,requested_by,handled_by,input_file_name,
+                       input_file_size,input_sha256,mode,options_json,change_summary_json,
+                       created_at,handled_at,finished_at)
+                      VALUES (%s,'emergency_clear','succeeded',%s,%s,'-',0,%s,'snapshot',%s,%s,NOW(),NOW(),NOW())""",
+                    (uuid4().hex, user_id, user_id, "0" * 64,
+                     json.dumps({"confirmed": True}), json.dumps(result)),
+                )
+                audit_id = cur.lastrowid
+                cur.execute(
+                    "INSERT INTO graph_update_task_events (task_id,event_type,stage,message,detail_json) VALUES (%s,'succeeded','emergency','管理员紧急清空图谱',%s)",
+                    (audit_id, json.dumps(result)),
+                )
+                cur.execute("UPDATE graph_write_guard SET graph_revision=graph_revision+1 WHERE id=1")
         return jsonify(
             {
                 "ok": True,

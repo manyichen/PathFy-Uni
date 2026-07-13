@@ -39,7 +39,7 @@
 | 岗位助手 | **豆包 / Ark** + Cypher 兜底 | 自然语言筛岗（`domains/jobs/assistant.py`） |
 | 生涯报告 | **DeepSeek / 通义 / 豆包** 多模型编排 | 计划生成、复盘指标、可选自动重规划（`domains/report/`） |
 
-**未在本仓库主链路中落地**：Vue 前端、TransR/Hetero-GNN/IKGCN 训练与推理、校内资源知识图谱、导师端独立后台。上述内容若出现在早期立项或论文中，请以本表为准区分「已实现 / 规划中」。
+**未在本仓库主链路中落地**：TransR/Hetero-GNN/IKGCN 训练与推理、校内资源知识图谱、导师端独立后台。上述内容若出现在早期立项或论文中，请以本表为准区分「已实现 / 规划中」。
 
 ---
 
@@ -82,23 +82,17 @@ utils.py           简历评分、雷达图（待迁入 profile 域）
 
 各业务域以 Flask Blueprint 注册路由；域间通过 services 或 infrastructure 协作，避免 router 互相引用。详见 [`docs/REFACTOR_ROADMAP.md`](./docs/REFACTOR_ROADMAP.md)。
 
-### 前端（`frontend/src/`）
+### 前端（`frontend/app/`）
 
 ```
 app/pages/         Nuxt 文件路由（profile、jobs、match、report…）
 app/components/    Vue 业务组件
-lib/
-├── api/           HTTP 与各域 API（auth、jobs、match、report…）
-├── features/      非 HTTP 逻辑（如 auth/session）
-├── radar-geometry.ts、profile-portrait-ui.ts 等 UI 辅助
-└── personality-test-cache.ts 等页面级缓存
+app/composables/   Nuxt HTTP、认证和领域状态
+app/middleware/    用户与管理员路由保护
+app/types/         API 和页面类型
 ```
 
-组件 import 约定：
-
-- API 调用 → `@/lib/api/<domain>`（如 `@/lib/api/jobs`）
-- 登录态 → `@/lib/features/auth/session`（`getToken`、`saveAuth` 等）
-- 登录 API → `@/lib/api/auth`（`login`、`register`、`fetchMe`）
+旧 Astro/Svelte 实现只读归档在 `frontend.old/`，不参与构建和部署。
 
 ---
 
@@ -187,7 +181,7 @@ pnpm typecheck && pnpm test && pnpm generate
 见 [`deploy/DEPLOY.md`](./deploy/DEPLOY.md)。典型拓扑：
 
 - Nginx：静态托管 `frontend/.output/public`，SPA 回退到 `200.html`，`/api` 反代 Gunicorn
-- Supervisor：守护 Flask 进程
+- Supervisor：分别守护 Flask 和 `pathfy-graph-worker`
 - MySQL + Neo4j 同机或内网可达
 - 简历 OCR 临时目录：`RESUME_UPLOAD_DIR`（默认 `backend/private_uploads/resumes`，生产建议 `/var/private/pathfy/resumes`，OCR 后自动删除）
 
@@ -196,7 +190,8 @@ pnpm typecheck && pnpm test && pnpm generate
 ## 数据与隐私
 
 - **勿提交**：MySQL 全库 dump（含用户/简历）、`.env`、SSH 私钥 — 见 [`.gitignore`](./.gitignore) 与 [`datasets/README.md`](./datasets/README.md)
-- **初始化库表**：新库使用 `backend/schema.sql` 并 stamp Alembic 基线；后续只运行 `alembic upgrade head`，不要使用含真实用户的 Navicat 导出灌库
+- **初始化库表**：新库直接运行 `alembic upgrade head`；后续部署也只运行该命令
+- **图谱更新**：管理端创建 MySQL 队列任务，graph worker 生成变更集，管理员确认后才写 Neo4j
 - **简历文件**：上传至 Web 不可访问的私有目录，OCR 入库后删除原文件
 
 ---

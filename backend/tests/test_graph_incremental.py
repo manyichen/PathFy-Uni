@@ -117,7 +117,7 @@ def test_graph_write_lock_is_released(monkeypatch):
         def __exit__(self, *_args):
             return False
 
-        def execute(self, query, params):
+        def execute(self, query, params=None):
             self.calls.append((query, params))
 
         def fetchone(self):
@@ -140,7 +140,7 @@ def test_graph_write_lock_is_released(monkeypatch):
     with locking.graph_write_lock():
         pass
 
-    assert "GET_LOCK" in connection.value.calls[0][0]
+    assert any("GET_LOCK" in query for query, _ in connection.value.calls)
     assert "RELEASE_LOCK" in connection.value.calls[-1][0]
     assert connection.closed is True
 
@@ -164,42 +164,10 @@ def _excel_frame() -> pd.DataFrame:
     return pd.DataFrame([values])
 
 
-def test_import_dry_run_skips_unchanged_job_without_llm(monkeypatch):
-    frame = _excel_frame()
-    normalized = frame.rename(columns=COLUMN_ALIASES)
-    row = normalized.iloc[0]
-    fingerprint = fingerprint_for_row(row, extraction_version="model:v1")
-
-    monkeypatch.setattr(services.pd, "read_excel", lambda _path: frame)
-    monkeypatch.setattr(services, "neo4j_settings", lambda: ("bolt://test", "neo4j", "pw", "neo4j"))
-    monkeypatch.setattr(services, "neo4j_driver", lambda *_args: object())
-    monkeypatch.setattr(services, "_llm_model", lambda: "model")
-    monkeypatch.setattr(
-        services,
-        "fetch_job_import_fingerprints",
-        lambda _driver, _database, keys: {keys[0]: fingerprint},
-    )
-    monkeypatch.setattr(
-        services,
-        "_call_llm_batch_extract",
-        lambda _payload: (_ for _ in ()).throw(AssertionError("LLM must not run")),
-    )
-
-    result = services.import_jobs_from_excel(
-        excel_path="jobs.xls",
-        mode="merge",
-        dry_run=True,
-    )
-
-    assert result["new_or_changed_jobs"] == 0
-    assert result["unchanged_jobs"] == 1
-    assert result["source_id"] == "jobs.xls"
-
-
-def test_snapshot_requires_explicit_stable_source_id():
+def test_direct_import_service_is_disabled():
     try:
-        services.import_jobs_from_excel(excel_path="jobs.xls", mode="snapshot")
+        services.import_jobs_from_excel(excel_path="jobs.xls", mode="merge")
     except services.GraphServiceError as exc:
-        assert "source_id" in exc.message
+        assert exc.status == 410
     else:
-        raise AssertionError("snapshot without source_id must fail")
+        raise AssertionError("direct graph writes must be disabled")

@@ -343,7 +343,6 @@ def import_jobs_from_excel(
     clear_all: bool = False,
     mode: str = "merge",
     source_id: str | None = None,
-    dry_run: bool = False,
 ) -> Dict[str, Any]:
     """
     从 Excel 导入岗位到 Neo4j。
@@ -355,8 +354,8 @@ def import_jobs_from_excel(
         clear_all: 兼容旧接口；是否先清空图谱再导入
         mode: merge 仅新增/更新，snapshot 还会删除同 source_id 中未出现的岗位
         source_id: 数据源稳定标识；snapshot 模式必须显式提供
-        dry_run: 只计算增量计划，不调用 LLM、不写数据库
     """
+    raise GraphServiceError("直接图谱写入已停用，请创建 graph_update_task", 410)
     if batch_size <= 0 or batch_size > 1000:
         raise GraphServiceError("batch_size 必须在 1 到 1000 之间")
     mode = str(mode or "merge").strip().lower()
@@ -397,10 +396,8 @@ def import_jobs_from_excel(
     if not password:
         raise GraphServiceError("未配置 NEO4J_PASSWORD", 500)
     driver = neo4j_driver(uri, user, password)
-    if not dry_run:
-        from app.domains.graph.repository import ensure_graph_schema
-
-        ensure_graph_schema(driver, database)
+    from app.domains.graph.repository import ensure_graph_schema
+    ensure_graph_schema(driver, database)
 
     # 4. 规划真正的增量：只有新增或内容指纹变化的岗位进入 LLM。
     keys = import_keys(df)
@@ -411,20 +408,6 @@ def import_jobs_from_excel(
         existing,
         extraction_version=extraction_version,
     )
-
-    if dry_run:
-        return {
-            "dry_run": True,
-            "run_id": run_id,
-            "source_id": resolved_source_id,
-            "mode": mode,
-            "input_rows": len(df) + duplicate_rows,
-            "unique_jobs": len(df),
-            "duplicate_rows": duplicate_rows,
-            "new_or_changed_jobs": len(changed_df),
-            "unchanged_jobs": len(unchanged_keys),
-            "would_prune_missing": mode == "snapshot",
-        }
 
     # 5. 可选清空（仅保留旧接口兼容；新调用应使用 source-scoped snapshot）。
     if clear_all:
@@ -509,7 +492,7 @@ def import_jobs_from_excel(
     try:
         from app.domains.graph.sync_service import sync_job_titles
 
-        title_result = sync_job_titles(dry_run=False)
+        title_result = sync_job_titles()
         _sync_job_titles_from_graph(title_result.get("titles", []))
     except Exception as exc:
         errors.append(f"同步 JobTitle 统计失败: {exc}")
@@ -547,7 +530,6 @@ def generate_promotion_edges(
     min_confidence: float = 0.55,
     min_company_jobs: int = 2,
     clear_existing: bool = False,
-    dry_run: bool = False,
 ) -> Dict[str, Any]:
     """旧 Job 层晋升边生成逻辑已废弃。"""
     raise GraphServiceError(
