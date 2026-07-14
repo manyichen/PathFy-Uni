@@ -4,6 +4,7 @@ from __future__ import annotations
 from typing import Any, Dict, List
 
 from flask import current_app
+from app.domains.settings.service import setting
 
 from app.infrastructure.neo4j import serialize_job_row
 from app.domains.match.services import (
@@ -16,11 +17,11 @@ def _build_match_ranked(profile: Dict[str, Any], q: str, location_q: str, match_
     rows = _fetch_jobs_for_match(
         q=q,
         location_q=location_q,
-        cap=max(120, int(current_app.config.get("MATCH_LLM_POOL_K", 40)) * 4),
+        cap=max(120, int(setting("MATCH_LLM_POOL_K", 40)) * 4),
     )
-    shape_w = float(current_app.config.get("MATCH_COARSE_SHAPE_WEIGHT", 0.42))
-    margin_fit = float(current_app.config.get("MATCH_GAP_SOFT_MARGIN_FIT", 6.0))
-    margin_stretch = float(current_app.config.get("MATCH_GAP_SOFT_MARGIN_STRETCH", 10.0))
+    shape_w = float(setting("MATCH_COARSE_SHAPE_WEIGHT", 0.42))
+    margin_fit = float(setting("MATCH_GAP_SOFT_MARGIN_FIT", 6.0))
+    margin_stretch = float(setting("MATCH_GAP_SOFT_MARGIN_STRETCH", 10.0))
     soft_margin = margin_stretch if match_goal == "stretch" else margin_fit
     ranked: List[Dict[str, Any]] = []
     for row in rows:
@@ -46,4 +47,3 @@ def _build_match_ranked(profile: Dict[str, Any], q: str, location_q: str, match_
         )
     _sort_ranked_for_goal(ranked, match_goal)
     return ranked
-

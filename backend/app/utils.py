@@ -38,11 +38,13 @@ def _clamp_conf(v) -> float:
 
 
 # ===================== 千问大模型评分（八维分数 + 八维置信度，与人岗匹配口径一致）=====================
-def score_resume(resume_text: str) -> Tuple[Dict[str, int], Dict[str, float]]:
+def score_resume(resume_text: str, *, allow_external_llm: bool = True) -> Tuple[Dict[str, int], Dict[str, float]]:
     """
     返回 (scores, confidences)。
     scores 键为 cap_req_*(0~100):confidences 键为 cap_conf_*(0~1)，表示该维打分的证据强度。
     """
+    if not allow_external_llm:
+        return _default_scores(), _default_confidences()
     api_key = Config.DASHSCOPE_API_KEY
     url = "https://dashscope.aliyuncs.com/api/v1/services/aigc/text-generation/generation"
 

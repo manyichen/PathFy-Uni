@@ -17,6 +17,7 @@ from app.domains.graph.incremental import normalize_source_id
 from app.domains.graph.locking import graph_write_lock
 from app.infrastructure.neo4j import neo4j_driver, neo4j_settings
 from app.domains.graph.task_registry import TASK_TYPES, normalize_options, task_spec
+from app.domains.settings.service import active_system_settings
 
 
 class GraphTaskError(ValueError):
@@ -53,11 +54,11 @@ def _save_upload(root: Path, task_uuid: str, role: str, upload: FileStorage, all
 def enqueue_task(*, user_id: int, task_type: str, uploaded_file: FileStorage | None = None,
                  uploaded_files: dict[str, FileStorage] | None = None,
                  source_id: str | None = None, mode: str | None = None,
-                 batch_size: int = 128, generate_promotions: bool = True,
+                 batch_size: int | None = None, generate_promotions: bool = True,
                  generate_lateral: bool = True, options: dict | None = None):
     if task_type not in TASK_TYPES: raise GraphTaskError("不支持的任务类型")
     if task_type == "emergency_clear": raise GraphTaskError("紧急清空只能使用 /api/graph/clear 并二次确认")
-    spec = task_spec(task_type)
+    spec = task_spec(task_type); system = active_system_settings(); runtime = system["settings"]
     mode = str(mode or spec.default_mode).lower()
     if mode not in {"merge", "snapshot"}: raise GraphTaskError("mode 仅支持 merge 或 snapshot")
     if mode == "snapshot" and spec.supports_source and not str(source_id or "").strip(): raise GraphTaskError("snapshot 模式必须填写 source_id")
@@ -77,7 +78,8 @@ def enqueue_task(*, user_id: int, task_type: str, uploaded_file: FileStorage | N
             if upload and upload.filename:
                 saved.append(_save_upload(root, task_uuid, file_spec.role, upload, file_spec.extensions, file_spec.max_bytes))
         values = dict(options or {})
-        values.update(batch_size=batch_size, generate_promotions=generate_promotions, generate_lateral=generate_lateral)
+        values.update(batch_size=batch_size or int(runtime["GRAPH_BATCH_SIZE"]), generate_promotions=generate_promotions, generate_lateral=generate_lateral)
+        values.setdefault("capability_batch_size", int(runtime["GRAPH_CAPABILITY_BATCH_SIZE"]))
         try:
             normalized_options = normalize_options(task_type, values)
         except ValueError as exc:
@@ -85,7 +87,8 @@ def enqueue_task(*, user_id: int, task_type: str, uploaded_file: FileStorage | N
         primary_name = saved[0]["original_name"] if saved else task_type
         resolved_source = str(source_id or "").strip() or (normalize_source_id(primary_name) if spec.supports_source else None)
         return repo.create_task(task_uuid=task_uuid, task_type=task_type, requested_by=user_id,
-            files=saved, source_id=resolved_source, mode=mode, options=normalized_options)
+            files=saved, source_id=resolved_source, mode=mode, options=normalized_options,
+            settings_revision=system.get("revision"), config_snapshot=runtime)
     except Exception:
         for item in saved: _remove(item.get("private_path"))
         raise

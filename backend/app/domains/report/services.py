@@ -8,6 +8,7 @@ from datetime import datetime
 from typing import Any, Dict, List, Tuple
 
 from flask import current_app
+from app.domains.settings.service import setting
 
 from app.domains.match.services import (
     _fetch_jobs_for_match,
@@ -327,7 +328,7 @@ def generate_career_report(user_id: int, body: Dict[str, Any]) -> Dict[str, Any]
         t = time.perf_counter()
         per_target_narrative_meta = augment_plans_narrative_with_doubao(plans_by_target)
         timing_ms["narrative_per_target"] = _elapsed_ms(t)
-        if truthy(current_app.config.get("CAREER_ENABLE_COPYWRITER", True)):
+        if truthy(setting("CAREER_ENABLE_COPYWRITER", True)):
             t = time.perf_counter()
             llm_summary = _build_llm_summary(
                 profile=profile,
@@ -411,6 +412,8 @@ def generate_career_report(user_id: int, body: Dict[str, Any]) -> Dict[str, Any]
         report_obj=report_obj,
         meta_json=meta_json,
         target_insights=target_insights,
+        settings_revision=body.get("_settings_revision"),
+        config_snapshot=body.get("_config_snapshot") or {},
     )
 
     return {
@@ -489,13 +492,13 @@ def enrich_career_report(user_id: int, report_id: int) -> Dict[str, Any]:
 
     per_target_narrative_meta = {"ok": False, "reason": "disabled"}
     llm_summary: Dict[str, Any] = report_obj.get("narrative") or {"provider": "", "text": ""}
-    if truthy(current_app.config.get("CAREER_ENABLE_PER_TARGET_COPYWRITER", True)) and truthy(
-        current_app.config.get("CAREER_ENABLE_COPYWRITER", True)
+    if truthy(setting("CAREER_ENABLE_PER_TARGET_COPYWRITER", True)) and truthy(
+        setting("CAREER_ENABLE_COPYWRITER", True)
     ):
         t = time.perf_counter()
         per_target_narrative_meta = augment_plans_narrative_with_doubao(plans_by_target)
         timing_ms["narrative_per_target"] = _elapsed_ms(t)
-    if truthy(current_app.config.get("CAREER_ENABLE_COPYWRITER", True)):
+    if truthy(setting("CAREER_ENABLE_COPYWRITER", True)):
         t = time.perf_counter()
         llm_summary = _build_llm_summary(
             profile=profile,
@@ -578,6 +581,7 @@ def get_career_report_detail(user_id: int, report_id: int) -> Dict[str, Any]:
         "report": report_obj or {},
         "created_at": str(row.get("created_at") or ""),
         "updated_at": str(row.get("updated_at") or ""),
+        "configuration": {"settings_revision": row.get("settings_revision"), "source": "revision" if row.get("settings_revision") is not None else "legacy_env_config"},
     }
 
 

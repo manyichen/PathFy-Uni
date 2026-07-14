@@ -12,6 +12,7 @@ from uuid import uuid4
 
 from app.domains.graph.services import _build_graph_llm_client, _llm_model
 from app.infrastructure.neo4j import neo4j_driver, neo4j_settings
+from app.domains.settings.service import setting
 
 
 # ============================================================
@@ -135,8 +136,8 @@ def _call_llm_json(system_prompt: str, user_content: str, *, label: str = "") ->
     client = _build_graph_llm_client()
     model = _llm_model()
 
-    retry_count = max(1, int(os.getenv("GRAPH_MAX_RETRIES", "5")))
-    timeout = float(os.getenv("GRAPH_LLM_TIMEOUT_SECONDS", "120"))
+    retry_count = max(1, int(setting("GRAPH_MAX_RETRIES", 5)))
+    timeout = float(setting("GRAPH_LLM_TIMEOUT_SECONDS", 120))
     for attempt in range(1, retry_count + 1):
         try:
             resp = client.chat.completions.create(

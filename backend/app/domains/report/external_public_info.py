@@ -11,6 +11,7 @@ from urllib.parse import quote
 
 import requests
 from flask import current_app
+from app.domains.settings.service import setting
 
 from app.domains.report.llm import _call_openai_compatible
 from app.domains.report.utils import truthy
@@ -28,21 +29,21 @@ def _cache_path(job_title: str) -> Path:
 
 def _cache_ttl_days() -> int:
     try:
-        return int(current_app.config.get("CAREER_PUBLIC_INFO_CACHE_DAYS", 14))
+        return int(setting("CAREER_PUBLIC_INFO_CACHE_DAYS", 14))
     except RuntimeError:
         return 14
 
 
 def _max_summary_chars() -> int:
     try:
-        return int(current_app.config.get("CAREER_PUBLIC_INFO_MAX_SUMMARY_CHARS", 300))
+        return int(setting("CAREER_PUBLIC_INFO_MAX_SUMMARY_CHARS", 300))
     except RuntimeError:
         return 300
 
 
 def _max_search_input_chars() -> int:
     try:
-        return int(current_app.config.get("CAREER_PUBLIC_SEARCH_MAX_CHARS", 1200))
+        return int(setting("CAREER_PUBLIC_SEARCH_MAX_CHARS", 1200))
     except RuntimeError:
         return 1200
 
@@ -133,8 +134,8 @@ def _summarize_with_deepseek(job_title: str, snippets: str) -> Dict[str, Any]:
             "sources": [],
         }
     max_chars = _max_summary_chars()
-    model = str(current_app.config.get("CAREER_DEEPSEEK_MODEL") or "deepseek-chat")
-    timeout = float(current_app.config.get("CAREER_LLM_TIMEOUT_SECONDS") or 120.0)
+    model = str(setting("CAREER_DEEPSEEK_MODEL", "deepseek-v4-pro"))
+    timeout = float(setting("CAREER_LLM_TIMEOUT_SECONDS", 120.0))
     user_prompt = (
         f"岗位类别：{job_title}\n"
         f"检索摘录（已截断）：\n{snippets or '（无检索结果）'}\n\n"
@@ -192,7 +193,7 @@ def fetch_public_info_for_job_title(job_title: str, *, force_refresh: bool = Fal
     if not title:
         return {"ok": False, "message": "job_title 不能为空"}
 
-    if not truthy(current_app.config.get("CAREER_ENABLE_PUBLIC_INFO", True)):
+    if not truthy(setting("CAREER_ENABLE_PUBLIC_INFO", True)):
         return {"ok": False, "message": "外部公开信息功能已关闭"}
 
     if not force_refresh:
@@ -210,7 +211,7 @@ def fetch_public_info_for_job_title(job_title: str, *, force_refresh: bool = Fal
                 "联网检索未成功（已尝试免费通道，可能受网络影响）。"
                 "摘要仍由 DeepSeek 生成，但需先拿到网页检索结果；"
                 "可在 backend/.env 配置 SERPER_API_KEY 提高成功率，或稍后重试。"
-                "说明：DeepSeek API（含 deepseek-chat / deepseek-v4-flash）本身不提供联网搜索，"
+                "说明：DeepSeek API（含 deepseek-v4-flash / deepseek-v4-pro）本身不提供联网搜索，"
                 "换模型 ID 不能替代检索服务。"
             )
         else:

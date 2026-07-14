@@ -43,7 +43,7 @@ def test_route_contract_inventory(app):
         if rule.endpoint != "static"
         for method in rule.methods - {"HEAD", "OPTIONS"}
     }
-    assert len(routes) == 60
+    assert len(routes) == 66
     assert ("/api/profile/upload", "POST") in routes
     assert ("/api/jobs/<path:job_id>/promotion-path", "GET") in routes
     assert ("/api/match/preview", "POST") in routes
@@ -59,3 +59,9 @@ def test_route_contract_inventory(app):
     assert ("/api/graph/tasks/<int:task_id>/reject", "POST") in routes
     assert ("/api/graph/tasks/<int:task_id>/cancel", "POST") in routes
     assert ("/api/graph/guard", "GET") in routes
+    assert ("/api/admin/settings", "GET") in routes
+    assert ("/api/admin/settings/publish", "POST") in routes
+    assert ("/api/admin/settings/history", "GET") in routes
+    assert ("/api/admin/settings/revisions/<int:revision>", "GET") in routes
+    assert ("/api/account/preferences", "GET") in routes
+    assert ("/api/account/preferences", "PATCH") in routes

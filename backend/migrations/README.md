@@ -29,3 +29,7 @@ alembic history
 上线前应先在结构副本执行 upgrade/downgrade 测试。生产环境通常只执行 `alembic upgrade head`，禁止运行旧的 `run_migration_00x.py`。
 
 `20260713_0002` 新增图谱更新任务、事件历史和写入 guard。部署 graph worker 前必须先升级到该 revision。
+
+`20260715_0004` 新增系统设置 revision、用户偏好及图谱/匹配/报告配置快照。
+
+`20260715_0005` 自动写入系统设置 revision 1；若数据库已有设置，则以新 revision 替换已经停用的 DeepSeek 模型名。无需额外初始化。若升级部署仍需沿用旧环境变量中的非敏感业务参数，可选执行 `python -m app.domains.settings.cli import-env`，它会将差异发布为一个新的 revision。

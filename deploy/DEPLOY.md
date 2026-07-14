@@ -260,6 +260,8 @@ source .venv/bin/activate
 alembic upgrade head
 ```
 
+迁移会自动写入系统设置 revision 1。只有需要把旧 `.env` 中已废弃的非敏感业务参数覆盖到数据库时，才额外执行 `python -m app.domains.settings.cli import-env`。
+
 已有数据库先校验历史结构，再 stamp；之后每次部署只执行 upgrade：
 
 ```bash

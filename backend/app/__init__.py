@@ -10,6 +10,7 @@ from app.domains.profile.router import portrait_bp
 from app.core.errors import register_error_handlers
 from app.domains.graph.router import graph_bp
 from app.domains.report.router import career_report_bp
+from app.domains.settings.router import settings_bp
 from app.core.config import Config
 
 
@@ -80,4 +81,5 @@ def create_app() -> Flask:
     app.register_blueprint(match_bp)
     app.register_blueprint(career_report_bp)
     app.register_blueprint(graph_bp)
+    app.register_blueprint(settings_bp)
     return app

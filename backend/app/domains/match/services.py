@@ -20,6 +20,7 @@ _SALARY_RAW = cypher_job_salary_raw()
 from app.domains.match.capability_profile import serialize_capability_profile
 from app.domains.match.llm_refine import refine_top5_deepseek
 from app.domains.match.snapshots import persist_match_snapshot
+from app.domains.settings.service import setting, settings_view
 
 _DIM_TO_CONF: Dict[str, str] = {d: c for d, c in zip(DIM_KEYS, CONF_KEYS)}
 
@@ -260,9 +261,9 @@ def _sort_ranked_for_goal(ranked: List[Dict[str, Any]], match_goal: str) -> None
         ranked.sort(key=lambda x: float(x["match_preview"]["match_score"]), reverse=True)
         return
 
-    floor = float(current_app.config.get("MATCH_STRETCH_MATCH_SCORE_FLOOR", 38))
-    w_ms = float(current_app.config.get("MATCH_STRETCH_SORT_W_MATCH", 0.32))
-    w_jq = float(current_app.config.get("MATCH_STRETCH_SORT_W_JOB_AVG", 0.68))
+    floor = float(setting("MATCH_STRETCH_MATCH_SCORE_FLOOR", 38))
+    w_ms = float(setting("MATCH_STRETCH_SORT_W_MATCH", 0.32))
+    w_jq = float(setting("MATCH_STRETCH_SORT_W_JOB_AVG", 0.68))
 
     def sort_key(card: Dict[str, Any]) -> Tuple[int, float, float]:
         ms = float((card.get("match_preview") or {}).get("match_score") or 0.0)
@@ -284,14 +285,14 @@ def run_match_preview(body: Dict[str, Any], jwt_user_id: int | None) -> Tuple[Di
     if err or not profile:
         return None, err or "画像解析失败", 400
 
-    top_k = _clamp_int(int(current_app.config.get("MATCH_TOP_K_RETURN", 30)), 1, 100)
-    llm_pool_k_cfg = _clamp_int(int(current_app.config.get("MATCH_LLM_POOL_K", 40)), 5, 100)
+    top_k = _clamp_int(int(setting("MATCH_TOP_K_RETURN", 30)), 1, 100)
+    llm_pool_k_cfg = _clamp_int(int(setting("MATCH_LLM_POOL_K", 40)), 5, 100)
     llm_pool_k = max(llm_pool_k_cfg, top_k)
 
     scan_cap = max(
         llm_pool_k,
         min(
-            int(current_app.config.get("MATCH_PREVIEW_MAX_SCAN", 2000)),
+            int(setting("MATCH_PREVIEW_MAX_SCAN", 2000)),
             int(current_app.config.get("MATCH_PREVIEW_MAX_SCAN_HARD", 8000)),
         ),
     )
@@ -308,7 +309,7 @@ def run_match_preview(body: Dict[str, Any], jwt_user_id: int | None) -> Tuple[Di
     student_scores = profile["scores"]
     student_conf = profile["confidences"]
 
-    cfg = current_app.config
+    cfg = settings_view()
     shape_w = float(cfg.get("MATCH_COARSE_SHAPE_WEIGHT", 0.42))
     margin_fit = float(cfg.get("MATCH_GAP_SOFT_MARGIN_FIT", 6.0))
     margin_stretch = float(cfg.get("MATCH_GAP_SOFT_MARGIN_STRETCH", 10.0))
@@ -383,15 +384,15 @@ def run_match_preview(body: Dict[str, Any], jwt_user_id: int | None) -> Tuple[Di
 
     refine_with_llm = _truthy_refine_llm(body)
     if refine_with_llm:
-        api_key = str(current_app.config.get("DEEPSEEK_API_KEY") or "").strip()
+        api_key = str(setting("DEEPSEEK_API_KEY", "") or "").strip()
         if not api_key:
             data_out["llm"] = {
                 "ok": False,
                 "error": "未配置 DEEPSEEK_API_KEY，无法精排。请在 backend/.env 中配置。",
             }
         else:
-            model = str(current_app.config.get("MATCH_DEEPSEEK_MODEL") or "deepseek-chat")
-            timeout = float(current_app.config.get("MATCH_LLM_TIMEOUT_SECONDS") or 120.0)
+            model = str(setting("MATCH_DEEPSEEK_MODEL", "deepseek-v4-flash"))
+            timeout = float(setting("MATCH_LLM_TIMEOUT_SECONDS", 120.0))
             llm_payload, llm_err = refine_top5_deepseek(
                 profile,
                 llm_pool,
@@ -421,6 +422,8 @@ def run_match_preview(body: Dict[str, Any], jwt_user_id: int | None) -> Tuple[Di
             resume_id=_safe_int_or_none(body.get("resume_id")),
             data_out=data_out,
             refine_with_llm=refine_with_llm,
+            settings_revision=body.get("_settings_revision"),
+            config_snapshot=body.get("_config_snapshot") or {},
         )
     except Exception as exc:  # noqa: BLE001
         # 不影响主流程返回，错误仅透出到 llm block 旁注

@@ -5,6 +5,7 @@ import json
 from typing import Any, Dict, List, Optional, Set, Tuple
 
 from flask import current_app
+from app.domains.settings.service import setting, settings_view
 
 from app.domains.report.constants import DIM_LABELS
 from app.domains.report.graph_repository import (
@@ -33,7 +34,7 @@ _DIM_HINTS: Dict[str, List[str]] = {
 
 def _cfg_int(key: str, default: int) -> int:
     try:
-        return int(current_app.config.get(key, default))
+        return int(setting(key, default))
     except (TypeError, ValueError):
         return default
 
@@ -257,7 +258,7 @@ def _curate_batch_with_llm(
     """
     一次 DeepSeek 请求为全部目标策展。返回 job_id -> {lr, cp, meta}。
     """
-    cfg = current_app.config
+    cfg = settings_view(base=current_app.config)
     if not jobs:
         return {}, {"ok": False, "reason": "empty_jobs", "mode": "batch"}
     if not truthy(cfg.get("CAREER_ENABLE_RECOMMENDATION_LLM", True)):
@@ -307,7 +308,7 @@ def _curate_batch_with_llm(
             ]
         },
     }
-    model = str(cfg.get("CAREER_DEEPSEEK_MODEL") or "deepseek-chat")
+    model = str(cfg.get("CAREER_DEEPSEEK_MODEL") or "deepseek-v4-pro")
     timeout = float(cfg.get("CAREER_LLM_TIMEOUT_SECONDS") or 120.0)
     try:
         text = _call_openai_compatible(
@@ -372,7 +373,7 @@ def _curate_with_llm(
     lr_final: int,
     comp_final: int,
 ) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]], Dict[str, Any]]:
-    cfg = current_app.config
+    cfg = settings_view(base=current_app.config)
     meta: Dict[str, Any] = {"ok": False, "reason": "disabled"}
     if not truthy(cfg.get("CAREER_ENABLE_RECOMMENDATION_LLM", True)):
         lr, cp = _rule_pick(lr_candidates, comp_candidates, lr_final=lr_final, comp_final=comp_final)
@@ -407,7 +408,7 @@ def _curate_with_llm(
             "competitions": [{"competition_id": "str", "phase": "mid_term", "rationale": "str"}],
         },
     }
-    model = str(cfg.get("CAREER_DEEPSEEK_MODEL") or "deepseek-chat")
+    model = str(cfg.get("CAREER_DEEPSEEK_MODEL") or "deepseek-v4-pro")
     timeout = float(cfg.get("CAREER_LLM_TIMEOUT_SECONDS") or 120.0)
     try:
         text = _call_openai_compatible(
@@ -442,7 +443,7 @@ def build_graph_recommendations(
     use_llm_curator: bool = True,
 ) -> Dict[str, Any]:
     """构建完整 recommendations 块（含 by_target / shared / meta）。规则先出，可选 batch LLM 覆盖。"""
-    if not truthy(current_app.config.get("CAREER_ENABLE_GRAPH_RECOMMENDATIONS", True)):
+    if not truthy(setting("CAREER_ENABLE_GRAPH_RECOMMENDATIONS", True)):
         return {"schema_version": 1, "enabled": False, "by_target": [], "shared": {}, "meta": {}}
 
     job_ids = [str(t.get("id") or "").strip() for t in target_insights if str(t.get("id") or "").strip()]

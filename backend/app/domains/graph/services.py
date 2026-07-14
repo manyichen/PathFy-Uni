@@ -11,7 +11,7 @@ from typing import Any, Dict, List
 from uuid import uuid4
 
 import pandas as pd
-from flask import current_app, has_app_context
+from flask import current_app
 from openai import OpenAI
 
 from app.domains.graph.constants import (
@@ -44,6 +44,7 @@ from app.domains.graph.incremental import (
     normalize_source_id,
     plan_incremental_rows,
 )
+from app.domains.settings.service import setting
 from app.infrastructure.neo4j import neo4j_driver, neo4j_settings
 from app.infrastructure.privacy import privacy_mode_enabled, redact_payload
 
@@ -71,12 +72,12 @@ def _build_graph_llm_client() -> OpenAI:
     if not api_key:
         raise GraphServiceError("未配置 GRAPH_LLM_API_KEY，无法调用大模型", 500)
     base_url = str(current_app.config.get("GRAPH_LLM_BASE_URL") or "").strip()
-    timeout = int(current_app.config.get("GRAPH_LLM_TIMEOUT_SECONDS", 120))
+    timeout = int(setting("GRAPH_LLM_TIMEOUT_SECONDS", 120))
     return OpenAI(api_key=api_key, base_url=base_url, timeout=timeout)
 
 
 def _llm_model() -> str:
-    return str(current_app.config.get("GRAPH_LLM_MODEL", "doubao-seed-2-0-mini-260215"))
+    return str(setting("GRAPH_LLM_MODEL", "doubao-seed-2-0-mini-260215"))
 
 
 # ============================================================
@@ -131,8 +132,8 @@ def _call_llm_batch_extract(payload: List[Dict[str, Any]]) -> List[Dict[str, Any
         safe_payload = redact_payload(payload)
         user_content = json.dumps(safe_payload, ensure_ascii=False)
 
-    retry_count = max(1, int(current_app.config.get("GRAPH_MAX_RETRIES", MAX_RETRIES) if has_app_context() else os.getenv("GRAPH_MAX_RETRIES", str(MAX_RETRIES))))
-    timeout = float(current_app.config.get("GRAPH_LLM_TIMEOUT_SECONDS", 120) if has_app_context() else os.getenv("GRAPH_LLM_TIMEOUT_SECONDS", "120"))
+    retry_count = max(1, int(setting("GRAPH_MAX_RETRIES", MAX_RETRIES)))
+    timeout = float(setting("GRAPH_LLM_TIMEOUT_SECONDS", 120))
     for attempt in range(1, retry_count + 1):
         try:
             resp = client.chat.completions.create(
@@ -178,7 +179,9 @@ def _call_llm_for_promotions(
 
     prompt = build_company_prompt(company, jobs)
 
-    for attempt in range(1, MAX_RETRIES + 1):
+    max_retries = max(1, int(setting("GRAPH_MAX_RETRIES", MAX_RETRIES)))
+    timeout = float(setting("GRAPH_LLM_TIMEOUT_SECONDS", 120))
+    for attempt in range(1, max_retries + 1):
         try:
             resp = client.chat.completions.create(
                 model=model,
@@ -187,7 +190,7 @@ def _call_llm_for_promotions(
                     {"role": "system", "content": PROMOTION_SYSTEM_PROMPT},
                     {"role": "user", "content": prompt},
                 ],
-                timeout=60.0,
+                timeout=timeout,
             )
             content = normalize_text(resp.choices[0].message.content)
             obj = _parse_json_object(content)
@@ -196,7 +199,7 @@ def _call_llm_for_promotions(
                 return [x for x in edges if isinstance(x, dict)]
             return []
         except Exception as exc:
-            if attempt == MAX_RETRIES:
+            if attempt == max_retries:
                 print(f"[WARN] 公司 {company} 晋升推断失败: {exc}")
                 return []
             print(f"[WARN] 公司 {company} 晋升推断失败，第 {attempt} 次重试: {exc}")
@@ -577,7 +580,7 @@ def get_stats() -> Dict[str, Any]:
                curated_lateral,auto_lateral,
                sum(CASE WHEN p.generation_source='curated' THEN 1 ELSE 0 END) AS curated_promotions,
                sum(CASE WHEN p.generation_source<>'curated' OR p.generation_source IS NULL THEN 1 ELSE 0 END) AS auto_promotions
-        """, cap_version=os.getenv("GRAPH_CAP_VERSION", "job-cap-v2"), salary_version="v1").single()
+        """, cap_version=str(setting("GRAPH_CAP_VERSION", "job-cap-v2")), salary_version="v1").single()
         if row:
             stats.update({key: int(value or 0) for key, value in dict(row).items()})
     return stats

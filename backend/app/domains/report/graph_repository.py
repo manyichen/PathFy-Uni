@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
 
+from app.core.config import Config
 from app.infrastructure.neo4j import neo4j_driver, neo4j_settings
 
 
@@ -64,13 +65,11 @@ def _neo4j_settings_safe() -> tuple[str, str, str, str]:
     try:
         return neo4j_settings()
     except RuntimeError:
-        import os
-
         return (
-            os.environ.get("NEO4J_URI", "bolt://127.0.0.1:7687"),
-            os.environ.get("NEO4J_USER", "neo4j"),
-            os.environ.get("NEO4J_PASSWORD", ""),
-            os.environ.get("NEO4J_DATABASE", "neo4j"),
+            Config.NEO4J_URI,
+            Config.NEO4J_USER,
+            Config.NEO4J_PASSWORD,
+            Config.NEO4J_DATABASE,
         )
 
 

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 const auth = useAuth()
+const settingsApi = useSettingsApi()
 const colorMode = useColorMode()
 const route = useRoute()
 const mobileOpen = ref(false)
@@ -20,7 +21,10 @@ const userNav = [
   { label: '生涯报告', to: '/report', icon: 'i-lucide-file-text' }
 ]
 const nav = computed(() => auth.isAdmin.value
-  ? [{ label: '图谱管理', to: '/graph-admin', icon: 'i-lucide-database' }]
+  ? [
+      { label: '图谱管理', to: '/graph-admin', icon: 'i-lucide-database' },
+      { label: '系统设置', to: '/graph-admin/settings', icon: 'i-lucide-settings' }
+    ]
   : userNav)
 
 async function logout() {
@@ -41,12 +45,22 @@ function applyHue(value: string | undefined) {
   document.documentElement.style.setProperty('--pathfy-hue', value)
 }
 
-onMounted(() => {
+onMounted(async () => {
   auth.hydrate()
   const theme = localStorage.getItem('theme')
   if (theme === 'dark' || theme === 'light') colorMode.preference = theme
   hue.value = localStorage.getItem('hue') || '192'
   applyHue(hue.value)
+  if (auth.isAuthenticated.value) {
+    try {
+      const data = await settingsApi.preferences()
+      if (data.stored) {
+        colorMode.preference = data.preferences.theme
+        hue.value = data.preferences.hue
+        applyHue(hue.value)
+      }
+    } catch { /* account page will surface settings errors */ }
+  }
 })
 </script>
 

@@ -26,6 +26,8 @@ def _ensure_report_tables() -> None:
               target_job_ids_json JSON NOT NULL,
               report_json LONGTEXT NOT NULL,
               meta_json JSON NULL,
+              settings_revision INT UNSIGNED NULL,
+              config_snapshot_json JSON NULL,
               created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
               updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
               PRIMARY KEY (id),
@@ -196,7 +198,7 @@ def fetch_report_row(user_id: int, report_id: int) -> Optional[Dict[str, Any]]:
         cur.execute(
             """
             SELECT id, user_id, resume_id, title, primary_job_id, target_job_ids_json,
-                   report_json, created_at, updated_at
+                   report_json, settings_revision, created_at, updated_at
             FROM career_reports
             WHERE id = %s AND user_id = %s
             LIMIT 1
@@ -346,14 +348,17 @@ def insert_report(
     report_obj: Dict[str, Any],
     meta_json: Dict[str, Any],
     target_insights: List[Dict[str, Any]],
+    settings_revision: int | None = None,
+    config_snapshot: Dict[str, Any] | None = None,
 ) -> int:
     _ensure_report_tables()
     with db_cursor() as (_, cur):
         cur.execute(
             """
             INSERT INTO career_reports (
-              user_id, resume_id, title, primary_job_id, target_job_ids_json, report_json, meta_json
-            ) VALUES (%s, %s, %s, %s, %s, %s, %s)
+              user_id, resume_id, title, primary_job_id, target_job_ids_json, report_json, meta_json,
+              settings_revision,config_snapshot_json
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
             """,
             (
                 user_id,
@@ -363,6 +368,8 @@ def insert_report(
                 json_dumps(target_job_ids),
                 json_dumps(report_obj),
                 json_dumps(meta_json),
+                settings_revision,
+                json_dumps(config_snapshot or {}),
             ),
         )
         report_id = int(cur.lastrowid)
@@ -393,6 +400,15 @@ def insert_report(
                 ),
             )
         return report_id
+
+
+def get_report_config_snapshot(user_id: int, report_id: int) -> Dict[str, Any] | None:
+    with db_cursor() as (_, cur):
+        cur.execute("SELECT settings_revision,config_snapshot_json FROM career_reports WHERE id=%s AND user_id=%s", (report_id, user_id))
+        row = cur.fetchone()
+    if not row: return None
+    raw = row.get("config_snapshot_json")
+    return {"revision": row.get("settings_revision"), "settings": json.loads(raw) if isinstance(raw, str) else (raw or {})}
 
 
 def insert_review(

@@ -7,6 +7,7 @@ import re
 from typing import Any
 
 from flask import current_app
+from app.domains.settings.service import setting
 from openai import OpenAI
 
 from app.infrastructure.privacy import llm_privacy_notice, privacy_mode_enabled, redact_payload
@@ -30,7 +31,7 @@ def build_ark_openai_client(*, required: bool = False) -> OpenAI | None:
         if required:
             raise RuntimeError("未配置 ARK_API_KEY")
         return None
-    timeout = int(current_app.config.get("AI_LLM_TIMEOUT_SECONDS", 90))
+    timeout = int(setting("AI_LLM_TIMEOUT_SECONDS", 90))
     base_url = str(current_app.config.get("ARK_BASE_URL", "")).strip()
     return OpenAI(api_key=api_key, base_url=base_url, timeout=timeout)
 

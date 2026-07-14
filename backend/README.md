@@ -34,7 +34,7 @@ pip install -r requirements.txt
 alembic upgrade head
 ```
 
-新数据库只需运行 `alembic upgrade head`。已有数据库先运行 `python tools/verify_alembic_baseline.py`，通过后执行 `alembic stamp 20260712_0001`。此后部署只运行 `alembic upgrade head`。历史 `002_*.sql`–`007_*.sql` 和 `run_migration_00x.py` 仅供审计，不再作为迁移入口；详见 [`migrations/README.md`](migrations/README.md)。
+新数据库只需运行 `alembic upgrade head`，迁移会自动发布系统设置 revision 1。已有数据库先运行 `python tools/verify_alembic_baseline.py`，通过后执行 `alembic stamp 20260712_0001`。此后部署只运行 `alembic upgrade head`。历史 `002_*.sql`–`007_*.sql` 和 `run_migration_00x.py` 仅供审计，不再作为迁移入口；详见 [`migrations/README.md`](migrations/README.md)。
 
 ## 3) 配置环境变量
 
@@ -55,6 +55,9 @@ python run.py
 
 # 另开终端启动图谱更新队列
 python -m app.domains.graph.worker
+
+# 查看当前生效的非敏感配置及 revision
+python -m app.domains.settings.cli show-effective
 ```
 
 默认地址：`http://127.0.0.1:5000`

@@ -4,6 +4,7 @@ from __future__ import annotations
 from typing import Any, Dict, List
 
 from flask import current_app
+from app.domains.settings.service import setting, settings_view
 
 from app.domains.match.services import _coarse_morphology_match
 from app.infrastructure.neo4j import DIM_KEYS
@@ -17,7 +18,7 @@ def parse_match_goal(value: Any) -> str:
 def resolve_soft_margin(match_goal: str) -> float:
     fit, stretch = 6.0, 10.0
     try:
-        cfg = current_app.config
+        cfg = settings_view()
         fit = float(cfg.get("MATCH_GAP_SOFT_MARGIN_FIT", 6.0))
         stretch = float(cfg.get("MATCH_GAP_SOFT_MARGIN_STRETCH", 10.0))
     except RuntimeError:
@@ -27,7 +28,7 @@ def resolve_soft_margin(match_goal: str) -> float:
 
 def _shape_weight() -> float:
     try:
-        return float(current_app.config.get("MATCH_COARSE_SHAPE_WEIGHT", 0.42))
+        return float(setting("MATCH_COARSE_SHAPE_WEIGHT", 0.42))
     except RuntimeError:
         return 0.42
 

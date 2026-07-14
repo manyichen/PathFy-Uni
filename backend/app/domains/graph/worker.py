@@ -12,6 +12,7 @@ from app.domains.graph import task_repository as repo
 from app.domains.graph.task_planner import build_change_set
 from app.domains.graph.task_apply import is_task_applied
 from app.domains.graph.locking import GraphOperationBusy, graph_write_lock
+from app.domains.settings.service import use_settings
 
 
 def process_one() -> bool:
@@ -20,7 +21,8 @@ def process_one() -> bool:
     try:
         repo.add_event(task["id"], "planning", "正在解析输入并生成变更集", stage="planning")
         emit = lambda stage, message, detail=None: repo.add_event(task["id"], "progress", message, stage=stage, detail=detail)
-        change_set, summary = build_change_set(task, emit)
+        with use_settings(task.get("config_snapshot") or {}):
+            change_set, summary = build_change_set(task, emit)
         encoded = json.dumps(change_set, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
         digest = hashlib.sha256(encoded.encode("utf-8")).hexdigest()
         try:

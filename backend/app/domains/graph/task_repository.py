@@ -18,7 +18,7 @@ def _decode(row: dict[str, Any] | None, *, include_change_set: bool = False):
     if not row:
         return None
     item = dict(row)
-    for key in ("options_json", "change_summary_json"):
+    for key in ("options_json", "change_summary_json", "config_snapshot_json"):
         raw = item.pop(key, None)
         item[key.removesuffix("_json")] = json.loads(raw) if isinstance(raw, str) else raw
     raw_change = item.pop("change_set_json", None)
@@ -33,7 +33,8 @@ def create_task(*, task_uuid: str, task_type: str, requested_by: int,
                 files: list[dict[str, Any]] | None = None,
                 source_id: str | None, mode: str, options: dict[str, Any],
                 file_name: str | None = None, file_path: str | None = None,
-                file_size: int | None = None, sha256: str | None = None) -> dict[str, Any]:
+                file_size: int | None = None, sha256: str | None = None,
+                settings_revision: int | None = None, config_snapshot: dict[str, Any] | None = None) -> dict[str, Any]:
     files = list(files or [])
     if not files and file_name:
         files.append({"role": "file", "original_name": file_name, "private_path": file_path,
@@ -44,13 +45,13 @@ def create_task(*, task_uuid: str, task_type: str, requested_by: int,
             """
             INSERT INTO graph_update_tasks
               (task_uuid, task_type, requested_by, input_file_name, input_file_path,
-               input_file_size, input_sha256, source_id, mode, options_json)
-            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+               input_file_size, input_sha256, source_id, mode, options_json,settings_revision,config_snapshot_json)
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
             """,
             (task_uuid, task_type, requested_by,
              primary and primary["original_name"], primary and primary["private_path"],
              primary and primary["size"], primary and primary["sha256"],
-             source_id, mode, _json(options)),
+             source_id, mode, _json(options), settings_revision, _json(config_snapshot or {})),
         )
         task_id = cur.lastrowid
         if files:
@@ -223,7 +224,7 @@ def list_tasks(*, page: int, page_size: int, status: str | None = None,
         cur.execute("SELECT COUNT(*) AS total FROM graph_update_tasks" + where, params)
         total = int(cur.fetchone()["total"])
         cur.execute(
-            "SELECT * FROM graph_update_tasks" + where + " ORDER BY created_at DESC,id DESC LIMIT %s OFFSET %s",
+            "SELECT id,task_uuid,task_type,status,requested_by,handled_by,input_file_name,input_file_size,input_sha256,source_id,mode,options_json,settings_revision,base_graph_revision,change_summary_json,change_set_sha256,error_message,rejection_reason,created_at,started_at,prepared_at,handled_at,finished_at FROM graph_update_tasks" + where + " ORDER BY created_at DESC,id DESC LIMIT %s OFFSET %s",
             (*params, page_size, (page - 1) * page_size),
         )
         items = [_decode(r) for r in cur.fetchall()]
@@ -234,7 +235,7 @@ def list_tasks(*, page: int, page_size: int, status: str | None = None,
 
 def get_task(task_id: int, *, include_change_set: bool = False) -> dict[str, Any] | None:
     with db_cursor() as (_, cur):
-        columns = "*" if include_change_set else "id,task_uuid,task_type,status,requested_by,handled_by,input_file_name,input_file_size,input_sha256,source_id,mode,options_json,base_graph_revision,change_summary_json,change_set_sha256,error_message,rejection_reason,created_at,started_at,prepared_at,handled_at,finished_at"
+        columns = "*" if include_change_set else "id,task_uuid,task_type,status,requested_by,handled_by,input_file_name,input_file_size,input_sha256,source_id,mode,options_json,settings_revision,config_snapshot_json,base_graph_revision,change_summary_json,change_set_sha256,error_message,rejection_reason,created_at,started_at,prepared_at,handled_at,finished_at"
         cur.execute(f"SELECT {columns} FROM graph_update_tasks WHERE id=%s", (task_id,))
         task = _decode(cur.fetchone(), include_change_set=include_change_set)
         if not task:

@@ -8,6 +8,7 @@ from datetime import datetime
 from typing import Any, Dict, List, Tuple
 
 from flask import current_app
+from app.domains.settings.service import setting, settings_view
 from openai import OpenAI
 
 from app.infrastructure.llm import strip_json_fence
@@ -142,7 +143,7 @@ def _llm_extract_metrics_from_text(
     review_text: str,
     review_cycle: str,
 ) -> Dict[str, Any]:
-    cfg = current_app.config
+    cfg = settings_view(base=current_app.config)
     api_key = str(cfg.get("DEEPSEEK_API_KEY") or "").strip()
     if not api_key:
         return {
@@ -198,7 +199,7 @@ def _llm_extract_metrics_from_text(
         "仅输出 JSON 对象，禁止 markdown。\n"
         f"{json.dumps(redact_payload(prompt_obj), ensure_ascii=False)}"
     )
-    model = str(cfg.get("CAREER_DEEPSEEK_MODEL") or "deepseek-chat")
+    model = str(cfg.get("CAREER_DEEPSEEK_MODEL") or "deepseek-v4-pro")
     timeout = float(cfg.get("CAREER_LLM_TIMEOUT_SECONDS") or 120.0)
     extract_temp = float(cfg.get("CAREER_REVIEW_EXTRACT_TEMPERATURE") or 0.55)
     try:
@@ -270,7 +271,7 @@ def _build_auto_adjustment(
     labels = [DIM_LABELS.get(x, x) for x in top_dims]
     llm_by_job: List[Dict[str, Any]] = []
     llm_meta: Dict[str, Any] = {
-        "enabled": bool(current_app.config.get("CAREER_ENABLE_REPLAN_LLM", True)),
+        "enabled": bool(setting("CAREER_ENABLE_REPLAN_LLM", True)),
         "used": False,
         "error": None,
     }
@@ -342,12 +343,12 @@ def _llm_auto_replan_payload(
     *,
     replan_mode: str = "light",
 ) -> Dict[str, Any]:
-    if not bool(current_app.config.get("CAREER_ENABLE_REPLAN_LLM", True)):
+    if not bool(setting("CAREER_ENABLE_REPLAN_LLM", True)):
         return {"ok": False, "error": "CAREER_ENABLE_REPLAN_LLM disabled"}
 
-    cfg = current_app.config
+    cfg = settings_view(base=current_app.config)
     timeout = float(cfg.get("CAREER_LLM_TIMEOUT_SECONDS") or 120.0)
-    model = str(cfg.get("CAREER_DEEPSEEK_MODEL") or "deepseek-chat")
+    model = str(cfg.get("CAREER_DEEPSEEK_MODEL") or "deepseek-v4-pro")
 
     eval_block = (report_obj.get("evaluation") or {})
     metric_defs = eval_block.get("metrics") if isinstance(eval_block, dict) else []
@@ -618,5 +619,3 @@ def _apply_auto_adjustment_to_report(
                 "adjusted_at": stamp,
             }
         )
-
-

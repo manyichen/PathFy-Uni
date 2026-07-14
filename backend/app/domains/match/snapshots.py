@@ -18,7 +18,9 @@ CREATE TABLE IF NOT EXISTS match_runs (
   refine_with_llm TINYINT(1) NOT NULL DEFAULT 0,
   student_json LONGTEXT NULL,
   stats_json JSON NULL,
-  llm_json LONGTEXT NULL,
+              llm_json LONGTEXT NULL,
+              settings_revision INT UNSIGNED NULL,
+              config_snapshot_json JSON NULL,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (id),
   KEY idx_match_runs_user_resume_created (user_id, resume_id, created_at DESC),
@@ -63,6 +65,8 @@ def persist_match_snapshot(
     resume_id: int | None,
     data_out: dict[str, Any],
     refine_with_llm: bool,
+    settings_revision: int | None = None,
+    config_snapshot: dict[str, Any] | None = None,
 ) -> None:
     if jwt_user_id is None or resume_id is None:
         return
@@ -84,8 +88,9 @@ def persist_match_snapshot(
         cur.execute(
             """
             INSERT INTO match_runs (
-              user_id, resume_id, match_goal, q, location_q, refine_with_llm, student_json, stats_json, llm_json
-            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+              user_id, resume_id, match_goal, q, location_q, refine_with_llm, student_json, stats_json, llm_json,
+              settings_revision,config_snapshot_json
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             """,
             (
                 jwt_user_id,
@@ -97,6 +102,8 @@ def persist_match_snapshot(
                 _json_dumps(data_out.get("student") or {}),
                 _json_dumps(stats if isinstance(stats, dict) else {}),
                 _json_dumps(llm if isinstance(llm, dict) else {}),
+                settings_revision,
+                _json_dumps(config_snapshot or {}),
             ),
         )
         run_id = int(cur.lastrowid)
@@ -165,7 +172,7 @@ def list_user_match_history(*, user_id: int, limit: int = 30) -> list[dict[str, 
         cur.execute(
             """
             SELECT id, resume_id, match_goal, q, location_q, refine_with_llm,
-                   student_json, stats_json, llm_json, created_at
+                   student_json, stats_json, llm_json, settings_revision, created_at
             FROM match_runs
             WHERE user_id = %s
             ORDER BY id DESC
@@ -198,6 +205,7 @@ def list_user_match_history(*, user_id: int, limit: int = 30) -> list[dict[str, 
                 "student_name": str(student.get("display_name") or "未命名"),
                 "returned": _safe_int(stats.get("returned")),
                 "llm_ok": bool(llm.get("ok")),
+                "settings_revision": row.get("settings_revision"),
             }
         )
     return items
@@ -210,7 +218,7 @@ def fetch_match_run_detail(*, user_id: int, run_id: int) -> dict[str, Any] | Non
         cur.execute(
             """
             SELECT id, resume_id, match_goal, q, location_q, refine_with_llm,
-                   student_json, stats_json, llm_json, created_at
+                   student_json, stats_json, llm_json, settings_revision, config_snapshot_json, created_at
             FROM match_runs
             WHERE id = %s AND user_id = %s
             LIMIT 1
@@ -259,6 +267,7 @@ def fetch_match_run_detail(*, user_id: int, run_id: int) -> dict[str, Any] | Non
         "filters": {"q": q, "location_q": location_q, "match_goal": match_goal},
         "stats": stats,
         "jobs": jobs,
+        "configuration": {"settings_revision": row.get("settings_revision"), "source": "revision" if row.get("settings_revision") is not None else "legacy_env_config"},
     }
     if llm:
         data["llm"] = llm

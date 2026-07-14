@@ -44,7 +44,7 @@ def test_curate_batch_parses_items():
         def get(self, key, default=None):
             return {
                 "DEEPSEEK_API_KEY": "test-key",
-                "CAREER_DEEPSEEK_MODEL": "deepseek-chat",
+                "CAREER_DEEPSEEK_MODEL": "deepseek-v4-pro",
                 "CAREER_LLM_TIMEOUT_SECONDS": 30,
                 "CAREER_ENABLE_RECOMMENDATION_LLM": True,
             }.get(key, default)

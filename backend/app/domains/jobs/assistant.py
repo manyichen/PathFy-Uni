@@ -16,6 +16,7 @@ from app.infrastructure.salary import (
     parse_salary_range,
     salary_matches_target,
 )
+from app.domains.settings.service import effective_preferences, setting
 
 _SALARY_DISP = cypher_job_salary_display()
 _SALARY_RAW = cypher_job_salary_raw()
@@ -144,7 +145,7 @@ def _normalize_filters(raw_filters: Dict[str, Any]) -> Dict[str, Any]:
         filters.pop("experience_max", None)
 
     limit = _safe_int(filters.get("limit"), 20)
-    cfg_max = int(current_app.config.get("AI_MAX_RETURN_JOBS", 40))
+    cfg_max = int(setting("AI_MAX_RETURN_JOBS", 40))
     filters["limit"] = max(1, min(limit, max(1, cfg_max)))
     return filters
 
@@ -580,7 +581,7 @@ def _query_jobs_by_ids(job_ids: List[str]) -> List[Dict[str, Any]]:
 
 
 def _build_context_messages(session_id: int) -> List[Dict[str, Any]]:
-    window = max(1, int(current_app.config.get("AI_CONTEXT_WINDOW", 6)))
+    window = max(1, int(setting("AI_CONTEXT_WINDOW", 6)))
     with db_cursor() as (_, cursor):
         cursor.execute(
             """
@@ -733,6 +734,8 @@ def chat():
     user_id = get_bearer_user_id()
     if user_id is None:
         return jsonify({"ok": False, "message": "未提供有效令牌"}), 401
+    if not effective_preferences(user_id)["effective"]["allow_external_llm"]:
+        return jsonify({"ok": False, "message": "你已在偏好设置中关闭外部 AI 服务，岗位助手当前不可用"}), 403
 
     payload = request.get_json(silent=True) or {}
     message = str(payload.get("message") or "").strip()

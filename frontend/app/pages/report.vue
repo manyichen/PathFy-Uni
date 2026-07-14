@@ -61,7 +61,7 @@ async function generate() {
   if (!resumeId.value || !targets.value.length) { toast.add({ title: '请选择画像和目标岗位', color: 'warning' }); return }
   loading.value = 'generate'
   try {
-    const data = await api.ok<any>('/api/report/generate', { method: 'POST', body: { resume_id: resumeId.value, target_job_ids: targets.value.map(x => x.job_id), primary_job_id: targets.value[0].job_id, match_goal: goal.value, skip_llm_enrich: true } })
+    const data = await api.ok<any>('/api/report/generate', { method: 'POST', body: { resume_id: resumeId.value, target_job_ids: targets.value.map(x => x.job_id), primary_job_id: targets.value[0].job_id, match_goal: goal.value } })
     reportId.value = data.report_id
     report.value = data.report
     persist()

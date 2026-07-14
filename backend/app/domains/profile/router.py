@@ -17,6 +17,7 @@ from app.infrastructure.privacy import redact_text, storage_safe_text
 from app.infrastructure.ocr import extract_pdf_text, ocr_image, pdf_to_images
 from app.utils import create_radar_chart, score_resume
 from app.domains.profile.analysis import generate_detailed_analysis
+from app.domains.settings.service import effective_preferences
 
 portrait_bp = Blueprint("profile", __name__, url_prefix="/api/profile")
 
@@ -492,7 +493,8 @@ def upload_resume():
                 400,
             )
 
-        scores, confidences = score_resume(resume_text)
+        prefs = effective_preferences(uid)["effective"]
+        scores, confidences = score_resume(resume_text, allow_external_llm=bool(prefs["allow_external_llm"]))
         radar_html = create_radar_chart(scores)
 
         detailed_analysis = generate_detailed_analysis(scores, resume_text)

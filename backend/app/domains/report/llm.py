@@ -5,6 +5,7 @@ import json
 from typing import Any, Dict, List
 
 from flask import current_app
+from app.domains.settings.service import settings_view
 from openai import OpenAI
 
 from app.domains.report.constants import DIM_LABELS
@@ -48,7 +49,7 @@ def _build_llm_summary(
     mid_term: List[Dict[str, Any]],
     recommendations: Dict[str, Any] | None = None,
 ) -> Dict[str, Any]:
-    cfg = current_app.config
+    cfg = settings_view(base=current_app.config)
     timeout = float(cfg.get("CAREER_LLM_TIMEOUT_SECONDS") or 120.0)
 
     brief_targets = [
@@ -131,7 +132,7 @@ def augment_plans_narrative_with_doubao(plans_by_target: List[Dict[str, Any]]) -
     """为每个目标岗位生成独立叙事（豆包），写入 plans_by_target[].narrative。"""
     if not plans_by_target:
         return {"ok": False, "reason": "empty_plans"}
-    cfg = current_app.config
+    cfg = settings_view(base=current_app.config)
     if not truthy(cfg.get("CAREER_ENABLE_PER_TARGET_COPYWRITER", True)):
         return {"ok": False, "reason": "CAREER_ENABLE_PER_TARGET_COPYWRITER disabled"}
     if not truthy(cfg.get("CAREER_ENABLE_COPYWRITER", True)):

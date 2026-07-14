@@ -1,7 +1,9 @@
-"""Keep backend/.env.example synchronized with Config environment reads."""
+"""Keep backend/.env.example synchronized with deployment-only Config reads."""
 
 import re
 from pathlib import Path
+
+from app.domains.settings.registry import FIELD_MAP
 
 
 BACKEND_ROOT = Path(__file__).parents[1]
@@ -14,6 +16,7 @@ def test_backend_env_example_covers_every_config_variable():
     used = set(
         re.findall(r'(?:os\.getenv|_env_bool)\("([A-Z][A-Z0-9_]*)"', config_source)
     )
+    used -= set(FIELD_MAP)  # Business compatibility fallbacks live in MySQL settings.
     documented = set(re.findall(r"^#?\s*([A-Z][A-Z0-9_]*)=", example_source, re.MULTILINE))
 
     assert used <= documented, f"Missing from backend/.env.example: {sorted(used - documented)}"

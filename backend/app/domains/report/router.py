@@ -22,6 +22,8 @@ from app.domains.report.services import (
     set_plan_action_done,
 )
 from app.domains.report.utils import clamp_int
+from app.domains.report.repository import get_report_config_snapshot
+from app.domains.settings.service import active_system_settings, effective_preferences, use_settings
 
 career_report_bp = Blueprint("career_report", __name__, url_prefix="/api/report")
 
@@ -74,8 +76,11 @@ def track_public_info_route():
     if err:
         return err
     body = request.get_json(silent=True) or {}
+    resolved = effective_preferences(uid)
+    if not resolved["effective"]["report_public_info"]:
+        return jsonify({"ok": False, "message": "公开信息增强已被平台或用户偏好关闭"}), 403
     try:
-        data = get_track_public_info(body)
+        with use_settings(resolved["settings"]): data = get_track_public_info(body)
     except ReportServiceError as exc:
         return jsonify({"ok": False, "message": exc.message}), exc.status
     return jsonify({"ok": True, "data": data})
@@ -87,8 +92,22 @@ def generate_report():
     if err:
         return err
     body = request.get_json(silent=True) or {}
+    system = active_system_settings(); resolved = effective_preferences(uid, system_snapshot=system)
+    effective = resolved["effective"]; snapshot = dict(system["settings"])
+    snapshot.update({
+        "CAREER_ENABLE_COPYWRITER": effective["report_copywriter"],
+        "CAREER_ENABLE_PER_TARGET_COPYWRITER": effective["report_copywriter"],
+        "CAREER_ENABLE_REPLAN_LLM": effective["report_auto_replan"],
+        "CAREER_ENABLE_PUBLIC_INFO": effective["report_public_info"],
+        "CAREER_ENABLE_GRAPH_RECOMMENDATIONS": effective["report_graph_recommendations"],
+        "CAREER_ENABLE_RECOMMENDATION_LLM": effective["report_recommendation_llm"],
+        "CAREER_LR_PER_TARGET": effective["learning_resource_count"],
+        "CAREER_COMP_PER_TARGET": effective["competition_count"],
+    })
+    if not effective["allow_external_llm"]: body["skip_llm_enrich"] = True
+    body["_settings_revision"] = system.get("revision"); body["_config_snapshot"] = snapshot
     try:
-        data = generate_career_report(uid, body)
+        with use_settings(snapshot): data = generate_career_report(uid, body)
     except ReportServiceError as exc:
         return jsonify({"ok": False, "message": exc.message}), exc.status
     return jsonify({"ok": True, "data": data})
@@ -100,7 +119,9 @@ def enrich_report_route(report_id: int):
     if err:
         return err
     try:
-        data = enrich_career_report(uid, report_id)
+        stored = get_report_config_snapshot(uid, report_id)
+        with use_settings((stored or {}).get("settings") or active_system_settings()["settings"]):
+            data = enrich_career_report(uid, report_id)
     except ReportServiceError as exc:
         return jsonify({"ok": False, "message": exc.message}), exc.status
     return jsonify({"ok": True, "data": data})
@@ -169,7 +190,9 @@ def submit_review_cycle():
         return err
     body = request.get_json(silent=True) or {}
     try:
-        data = submit_career_review_cycle(uid, body)
+        stored = get_report_config_snapshot(uid, int(body.get("report_id") or 0))
+        with use_settings((stored or {}).get("settings") or active_system_settings()["settings"]):
+            data = submit_career_review_cycle(uid, body)
     except ReportServiceError as exc:
         return jsonify({"ok": False, "message": exc.message}), exc.status
     return jsonify({"ok": True, "data": data})

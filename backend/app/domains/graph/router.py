@@ -229,7 +229,7 @@ def create_graph_task():
             uploaded_file=request.files.get("file"),
             uploaded_files={key: value for key, value in request.files.items()},
             source_id=form.get("source_id"),
-            mode=form.get("mode"), batch_size=int(form.get("batch_size") or 128),
+            mode=form.get("mode"), batch_size=int(form["batch_size"]) if form.get("batch_size") else None,
             generate_promotions=_parse_bool(form.get("generate_promotions"), True),
             generate_lateral=_parse_bool(form.get("generate_lateral"), True),
             options=form,

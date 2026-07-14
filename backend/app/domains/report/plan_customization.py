@@ -5,6 +5,7 @@ import json
 from typing import Any, Dict, List, Tuple
 
 from flask import current_app
+from app.domains.settings.service import settings_view
 
 from app.domains.report.constants import DIM_LABELS, sanitize_plan_item_user_text, sanitize_user_facing_text
 from app.domains.report.llm import _call_openai_compatible
@@ -178,7 +179,7 @@ def build_custom_plan_actions_batch(
         meta["reason"] = "use_llm_false"
         return meta
 
-    cfg = current_app.config
+    cfg = settings_view(base=current_app.config)
     if not truthy(cfg.get("CAREER_ENABLE_PLAN_CUSTOMIZATION", True)):
         meta["reason"] = "CAREER_ENABLE_PLAN_CUSTOMIZATION disabled"
         return meta
@@ -236,7 +237,7 @@ def build_custom_plan_actions_batch(
             ]
         },
     }
-    model = str(cfg.get("CAREER_DEEPSEEK_MODEL") or "deepseek-chat")
+    model = str(cfg.get("CAREER_DEEPSEEK_MODEL") or "deepseek-v4-pro")
     timeout = float(cfg.get("CAREER_LLM_TIMEOUT_SECONDS") or 120.0)
     try:
         text = _call_openai_compatible(
