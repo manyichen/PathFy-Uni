@@ -11,7 +11,7 @@ const features = [
   <div class="page-stack">
     <section class="py-14 text-center sm:py-20">
       <UBadge label="大学生职业规划智能体" variant="soft" />
-      <h1 class="mx-auto mt-5 max-w-4xl text-4xl font-bold tracking-tight sm:text-6xl">从能力画像到职业行动计划</h1>
+      <h1 class="mx-auto mt-5 flex max-w-4xl items-center justify-center gap-3 text-4xl font-bold tracking-tight sm:text-6xl"><UIcon name="i-lucide-house" class="shrink-0 text-primary"/>从能力画像到职业行动计划</h1>
       <p class="mx-auto mt-5 max-w-2xl text-lg muted">用结构化数据、岗位知识图谱和 AI 分析，帮助你探索方向、衡量差距并持续复盘。</p>
       <div class="mt-8 flex justify-center gap-3"><UButton to="/profile" size="xl">开始画像</UButton><UButton to="/jobs" size="xl" color="neutral" variant="outline">探索岗位</UButton></div>
     </section>

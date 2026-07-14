@@ -17,9 +17,13 @@ export function useGraphTasksApi() {
     if (params.group) query.set('group', params.group)
     return api.ok<any>(`/api/graph/tasks/${id}/changes?${query}`)
   }
+  const downloadFile = (id: number | string, role: string) => api.request<Blob>(
+    `/api/graph/tasks/${id}/files/${encodeURIComponent(role)}/download`,
+    { responseType: 'blob' }
+  )
   const create = (body: FormData | Record<string, unknown>) => api.ok<any>('/api/graph/tasks', { method: 'POST', body })
   const confirm = (id: number) => api.ok<any>(`/api/graph/tasks/${id}/confirm`, { method: 'POST', body: {} })
   const reject = (id: number, reason: string) => api.ok<any>(`/api/graph/tasks/${id}/reject`, { method: 'POST', body: { reason } })
   const cancel = (id: number) => api.ok<any>(`/api/graph/tasks/${id}/cancel`, { method: 'POST', body: {} })
-  return { guard, stats, tasks, task, changes, create, confirm, reject, cancel }
+  return { guard, stats, tasks, task, changes, downloadFile, create, confirm, reject, cancel }
 }

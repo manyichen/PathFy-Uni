@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
 import time
 from typing import Any, Dict, List
@@ -134,7 +135,9 @@ def _call_llm_json(system_prompt: str, user_content: str, *, label: str = "") ->
     client = _build_graph_llm_client()
     model = _llm_model()
 
-    for attempt in range(1, 6):
+    retry_count = max(1, int(os.getenv("GRAPH_MAX_RETRIES", "5")))
+    timeout = float(os.getenv("GRAPH_LLM_TIMEOUT_SECONDS", "120"))
+    for attempt in range(1, retry_count + 1):
         try:
             resp = client.chat.completions.create(
                 model=model,
@@ -144,14 +147,14 @@ def _call_llm_json(system_prompt: str, user_content: str, *, label: str = "") ->
                     {"role": "user", "content": user_content},
                 ],
                 response_format={"type": "json_object"},
-                timeout=60.0,
+                timeout=timeout,
             )
             content = _strip_json_fence((resp.choices[0].message.content or "").strip())
             return json.loads(content)
         except Exception as exc:
-            if attempt == 5:
-                raise RuntimeError(f"{label} LLM 调用失败，已停止写入: {exc}") from exc
-            wait = attempt * 2
+            if attempt == retry_count:
+                raise RuntimeError(f"{label} LLM 调用失败，已重试 {attempt} 次: {exc}") from exc
+            wait = min(2 ** (attempt - 1), 8)
             print(f"[WARN] {label} LLM 重试 {attempt}: {exc}")
             time.sleep(wait)
     return {}

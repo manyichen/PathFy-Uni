@@ -65,6 +65,18 @@ def test_task_change_preview_is_paginated(client, monkeypatch):
     assert data == {"id": 8, "group": "jobs", "page": 2, "page_size": 10}
 
 
+def test_task_file_download_is_attachment(client, monkeypatch, tmp_path):
+    dataset = tmp_path / "stored.csv"
+    dataset.write_bytes(b"job_key,title\n1,Engineer\n")
+    monkeypatch.setattr(graph_router, "downloadable_task_file", lambda task_id, role: {
+        "path": str(dataset), "original_name": "jobs.csv", "task_id": task_id, "role": role,
+    })
+    response = client.get("/api/graph/tasks/8/files/file/download")
+    assert response.status_code == 200
+    assert response.data.startswith(b"job_key,title")
+    assert "jobs.csv" in response.headers["Content-Disposition"]
+
+
 def test_confirm_reject_cancel_routes(client, monkeypatch):
     monkeypatch.setattr(graph_router, "confirm_task", lambda task_id, user_id: {"id": task_id, "user": user_id})
     monkeypatch.setattr(graph_router, "reject_task", lambda task_id, user_id, reason: {"reason": reason})

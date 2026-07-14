@@ -67,12 +67,12 @@ def create_task(*, task_uuid: str, task_type: str, requested_by: int,
         )
         cur.execute("SELECT * FROM graph_update_tasks WHERE id=%s", (task_id,))
         task = _decode(cur.fetchone())
-        task["files"] = [{k: v for k, v in item.items() if k != "private_path"} for item in files]
+        task["files"] = [{**{k: v for k, v in item.items() if k != "private_path"}, "available": bool(item.get("private_path"))} for item in files]
         return task
 
 
 def _load_files(cur, task_id: int, *, include_paths: bool = False) -> list[dict[str, Any]]:
-    columns = "id,role,original_name,size,sha256,media_type,created_at"
+    columns = "id,role,original_name,size,sha256,media_type,created_at,(private_path IS NOT NULL) AS available"
     if include_paths:
         columns += ",private_path"
     cur.execute(f"SELECT {columns} FROM graph_update_task_files WHERE task_id=%s ORDER BY id", (task_id,))
@@ -247,6 +247,18 @@ def get_task(task_id: int, *, include_change_set: bool = False) -> dict[str, Any
             event["detail"] = json.loads(raw) if isinstance(raw, str) else raw; events.append(event)
         task["events"] = events
         return task
+
+
+def get_task_file(task_id: int, role: str) -> dict[str, Any] | None:
+    """Return private file metadata for an authenticated download request."""
+    with db_cursor() as (_, cur):
+        cur.execute(
+            """SELECT id,task_id,role,original_name,private_path,size,sha256,media_type,created_at
+               FROM graph_update_task_files WHERE task_id=%s AND role=%s""",
+            (task_id, role),
+        )
+        row = cur.fetchone()
+        return dict(row) if row else None
 
 
 def task_changes(task_id: int, *, group: str | None, page: int, page_size: int) -> dict[str, Any] | None:

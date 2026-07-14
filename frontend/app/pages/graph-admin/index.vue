@@ -27,7 +27,7 @@ onMounted(load)
   <div class="page-stack">
     <GraphAdminNav />
     <GraphGuardBanner :guard="guard" />
-    <div class="page-heading"><h1>图谱 Dashboard</h1><p class="muted">图谱状态、版本和任务概览</p></div>
+    <div class="page-heading"><h1 class="flex items-center gap-2"><UIcon name="i-lucide-layout-dashboard" class="text-primary"/>图谱 Dashboard</h1><p class="muted">图谱状态、版本和任务概览</p></div>
     <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
       <UCard><p class="text-sm muted">图谱版本</p><p class="mt-2 text-3xl font-bold">{{ guard?.graph_revision ?? '-' }}</p></UCard>
       <UCard v-for="(value,key) in counts" :key="key"><p class="text-sm muted">{{ countLabels[key] || key }}</p><p class="mt-2 text-3xl font-bold">{{ value }}</p></UCard>

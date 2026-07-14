@@ -11,7 +11,7 @@ from typing import Any, Dict, List
 from uuid import uuid4
 
 import pandas as pd
-from flask import current_app
+from flask import current_app, has_app_context
 from openai import OpenAI
 
 from app.domains.graph.constants import (
@@ -131,7 +131,9 @@ def _call_llm_batch_extract(payload: List[Dict[str, Any]]) -> List[Dict[str, Any
         safe_payload = redact_payload(payload)
         user_content = json.dumps(safe_payload, ensure_ascii=False)
 
-    for attempt in range(1, MAX_RETRIES + 1):
+    retry_count = max(1, int(current_app.config.get("GRAPH_MAX_RETRIES", MAX_RETRIES) if has_app_context() else os.getenv("GRAPH_MAX_RETRIES", str(MAX_RETRIES))))
+    timeout = float(current_app.config.get("GRAPH_LLM_TIMEOUT_SECONDS", 120) if has_app_context() else os.getenv("GRAPH_LLM_TIMEOUT_SECONDS", "120"))
+    for attempt in range(1, retry_count + 1):
         try:
             resp = client.chat.completions.create(
                 model=model,
@@ -142,7 +144,7 @@ def _call_llm_batch_extract(payload: List[Dict[str, Any]]) -> List[Dict[str, Any
                 temperature=0.1,
                 stream=False,
                 response_format={"type": "json_object"},
-                timeout=60.0,
+                timeout=timeout,
             )
             content = _strip_json_fence((resp.choices[0].message.content or "").strip())
             parsed = json.loads(content)
@@ -152,12 +154,12 @@ def _call_llm_batch_extract(payload: List[Dict[str, Any]]) -> List[Dict[str, Any
                 raise ValueError("LLM 返回 records 不是数组")
             return parsed["records"]
         except Exception as exc:
-            if attempt == MAX_RETRIES:
+            if attempt == retry_count:
                 raise GraphServiceError(
                     f"批量提取 LLM 调用失败（已重试 {attempt} 次）: {exc}",
                     502,
                 ) from exc
-            wait_seconds = attempt * 2
+            wait_seconds = min(2 ** (attempt - 1), 8)
             print(f"[WARN] 批量提取 LLM 调用失败，第 {attempt} 次重试: {exc}")
             time.sleep(wait_seconds)
     return []

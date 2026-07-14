@@ -73,7 +73,7 @@ onMounted(() => { load(); loadSessions() })
 <template>
   <div class="page-stack">
     <div class="page-heading">
-      <h1>岗位探索</h1>
+      <h1 class="flex items-center gap-2"><UIcon name="i-lucide-briefcase-business" class="text-primary"/>岗位探索</h1>
       <p class="muted">浏览岗位能力要求，右侧助手可直接帮你筛选和解释</p>
     </div>
 

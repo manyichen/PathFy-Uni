@@ -36,6 +36,7 @@ def _save_upload(root: Path, task_uuid: str, role: str, upload: FileStorage, all
         raise GraphTaskError(f"{role} 文件格式必须是 {', '.join(sorted(allowed))}")
     target = root / f"{task_uuid}-{role}{suffix}"
     upload.save(target)
+    target.chmod(0o600)
     size = target.stat().st_size
     if size > max_bytes:
         target.unlink(missing_ok=True)
@@ -66,7 +67,8 @@ def enqueue_task(*, user_id: int, task_type: str, uploaded_file: FileStorage | N
     for file_spec in spec.files:
         if file_spec.required and (file_spec.role not in uploads or not uploads[file_spec.role].filename):
             raise GraphTaskError(f"请选择 {file_spec.role} 文件")
-    root = Path(current_app.config["GRAPH_TASK_UPLOAD_DIR"]); root.mkdir(parents=True, exist_ok=True)
+    root = Path(current_app.config["GRAPH_TASK_UPLOAD_DIR"]); root.mkdir(parents=True, exist_ok=True, mode=0o700)
+    root.chmod(0o700)
     task_uuid = uuid4().hex
     saved: list[dict] = []
     try:
@@ -98,6 +100,19 @@ def task_detail(task_id: int):
     return task
 
 
+def downloadable_task_file(task_id: int, role: str) -> dict:
+    item = repo.get_task_file(task_id, role)
+    if not item:
+        raise GraphTaskError("任务文件不存在", 404)
+    if not item.get("private_path"):
+        raise GraphTaskError("该历史任务的原始文件已按旧保留策略删除", 410)
+    root = Path(current_app.config["GRAPH_TASK_UPLOAD_DIR"]).resolve()
+    path = Path(str(item["private_path"])).resolve()
+    if path.parent != root or not path.is_file():
+        raise GraphTaskError("任务文件已丢失或路径无效", 404)
+    return {**item, "path": str(path)}
+
+
 def task_changes(task_id: int, *, group: str | None, page: int, page_size: int):
     result = repo.task_changes(task_id, group=group, page=page, page_size=page_size)
     if result is None: raise GraphTaskError("任务不存在", 404)
@@ -126,20 +141,6 @@ def _sync_mysql_titles() -> None:
     _sync_job_titles_from_graph(data)
 
 
-def _task_paths(task: dict) -> list[str]:
-    paths = [str(item.get("private_path")) for item in task.get("files", []) if item.get("private_path")]
-    if task.get("input_file_path") and task["input_file_path"] not in paths:
-        paths.append(task["input_file_path"])
-    return paths
-
-
-def _purge_task_files(task: dict) -> None:
-    paths = _task_paths(task)
-    for path in paths: _remove(path)
-    if task.get("files") or paths:
-        repo.clear_task_file_paths(int(task["id"]))
-
-
 def confirm_task(task_id: int, user_id: int):
     task = repo.set_applying(task_id, user_id)
     if not task: raise GraphTaskError("任务不在待确认状态或未持有写锁", 409)
@@ -152,17 +153,14 @@ def confirm_task(task_id: int, user_id: int):
                 try: _sync_mysql_titles()
                 except Exception as exc: sync_error = f"Neo4j 已提交，但 MySQL job_titles 同步失败: {exc}"
             repo.finish_apply(task_id, success=True, error=sync_error, partial=bool(sync_error))
-        _purge_task_files(task)
         return {**result, "warning": sync_error}
     except Exception as exc:
         try: applied = is_task_applied(task["task_uuid"])
         except Exception: applied = False
         if applied:
             repo.finish_apply(task_id, success=True, partial=True, error=f"Neo4j 已提交，任务元数据或 MySQL 同步异常: {exc}"[:65000])
-            _purge_task_files(task)
             raise GraphTaskError(f"Neo4j 已提交，但后续同步异常: {exc}", 500) from exc
         repo.finish_apply(task_id, success=False, error=str(exc)[:65000])
-        _purge_task_files(task)
         raise GraphTaskError(f"应用变更失败，Neo4j 事务已回滚: {exc}", 500) from exc
 
 
@@ -171,11 +169,11 @@ def reject_task(task_id: int, user_id: int, reason: str):
     if not task: raise GraphTaskError("任务不存在", 404)
     if not reason.strip(): raise GraphTaskError("请填写拒绝原因")
     if not repo.reject_task(task_id, user_id, reason.strip()): raise GraphTaskError("任务不在待确认状态", 409)
-    _purge_task_files(task); return {"task_id": task_id, "status": "rejected"}
+    return {"task_id": task_id, "status": "rejected"}
 
 
 def cancel_task(task_id: int, user_id: int):
     task = repo.get_task(task_id, include_change_set=True)
     if not task: raise GraphTaskError("任务不存在", 404)
     if not repo.cancel_task(task_id, user_id): raise GraphTaskError("只能取消 queued 任务", 409)
-    _purge_task_files(task); return {"task_id": task_id, "status": "cancelled"}
+    return {"task_id": task_id, "status": "cancelled"}

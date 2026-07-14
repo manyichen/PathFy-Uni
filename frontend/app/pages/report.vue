@@ -168,7 +168,7 @@ watch([resumeId, targets, goal], persist, { deep: true })
 
 <template>
   <div class="page-stack">
-    <div class="flex flex-wrap items-end justify-between gap-3"><div class="page-heading"><h1>职业生涯发展报告</h1><p class="muted">从匹配结果导入目标，在一页中查看差距、发展线、行动计划和复盘</p></div><div class="flex gap-2"><UButton icon="i-lucide-history" color="neutral" variant="soft" @click="openHistory">历史报告</UButton><UButton v-if="reportId" :loading="loading === 'pdf'" icon="i-lucide-download" variant="soft" @click="exportPdf">导出 PDF</UButton></div></div>
+    <div class="flex flex-wrap items-end justify-between gap-3"><div class="page-heading"><h1 class="flex items-center gap-2"><UIcon name="i-lucide-file-text" class="text-primary"/>职业生涯发展报告</h1><p class="muted">从匹配结果导入目标，在一页中查看差距、发展线、行动计划和复盘</p></div><div class="flex gap-2"><UButton icon="i-lucide-history" color="neutral" variant="soft" @click="openHistory">历史报告</UButton><UButton v-if="reportId" :loading="loading === 'pdf'" icon="i-lucide-download" variant="soft" @click="exportPdf">导出 PDF</UButton></div></div>
 
     <UCard>
       <div class="report-config">

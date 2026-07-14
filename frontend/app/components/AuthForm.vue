@@ -37,7 +37,7 @@ async function submit() {
   <UCard class="mx-auto max-w-md">
     <template #header>
       <div class="page-heading">
-        <h1>{{ mode === 'login' ? '登录' : '注册' }}</h1>
+        <h1 class="flex items-center gap-2"><UIcon :name="mode === 'login' ? 'i-lucide-log-in' : 'i-lucide-user-plus'" class="text-primary"/>{{ mode === 'login' ? '登录' : '注册' }}</h1>
         <p class="muted">{{ mode === 'login' ? '继续你的职业规划旅程' : '创建 PathFy 账户' }}</p>
       </div>
     </template>

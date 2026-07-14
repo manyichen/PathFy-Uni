@@ -23,7 +23,8 @@ MAX_RETRIES = max(1, int(os.getenv("GRAPH_CAP_MAX_RETRIES", "3")))
 
 SYSTEM = """你是招聘岗位八维能力要求评估器。根据岗位名称、岗位描述、技能、证书、经验和图谱上下文评估：
 theory 理论、cross 交叉、practice 实践、digital 数字、innovation 创新、teamwork 协作、social 社会连接、growth 成长。
-严格返回 JSON：{\"scores\":{八个维度:0到100},\"confidence\":{八个维度:0到1},\"evidence\":[简短证据],\"risk_flags\":[风险]}。
+批量输入时严格返回 {\"records\":[{\"job_key\":输入岗位标识,\"scores\":{八个维度:0到100},\"confidence\":{八个维度:0到1},\"evidence\":[简短证据],\"risk_flags\":[风险]}]}。
+单个输入也可以返回同样的 records 格式。
 证据不足必须降低置信度，不得编造输入中不存在的信息。"""
 
 
@@ -101,16 +102,43 @@ def _call_provider(provider: str, payload: dict[str, Any], *, label: str) -> dic
     raise RuntimeError(f"{label}失败: {last_error}") from last_error
 
 
+def _records_by_key(raw: dict[str, Any], payloads: list[dict[str, Any]], *, label: str) -> dict[str, dict[str, Any]]:
+    records = raw.get("records")
+    if not isinstance(records, list):
+        records = [raw] if len(payloads) == 1 else []
+    expected = [str(payload.get("job_key") or "") for payload in payloads]
+    output: dict[str, dict[str, Any]] = {}
+    for index, record in enumerate(records):
+        if not isinstance(record, dict): continue
+        key = str(record.get("job_key") or record.get("job_id") or (expected[index] if index < len(expected) else ""))
+        if key in expected and key not in output: output[key] = record
+    missing = [key for key in expected if key not in output]
+    if missing: raise ValueError(f"{label}缺少岗位结果: {missing[:5]}")
+    return output
+
+
+def evaluate_jobs(payloads: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    if not payloads: return []
+    primary_raw = _call_provider(PRIMARY_PROVIDER, {"jobs": payloads, "task": "逐个返回完整八维评分与置信度"}, label="岗位八维能力批量初评")
+    primary_records = _records_by_key(primary_raw, payloads, label="批量初评")
+    normalized = {key: _normalize(value) for key, value in primary_records.items()}
+    review_payloads = [{"job": payload, "primary_assessment": normalized[str(payload.get("job_key"))]} for payload in payloads if needs_review(normalized[str(payload.get("job_key"))])]
+    reviews: dict[str, dict[str, Any]] = {}
+    if review_payloads:
+        review_raw = _call_provider(REVIEW_PROVIDER, {"records": review_payloads, "task": "复核低置信度结果并逐个返回完整八维结果"}, label="岗位八维能力批量复核")
+        review_jobs = [item["job"] for item in review_payloads]
+        reviews = {key: _normalize(value) for key, value in _records_by_key(review_raw, review_jobs, label="批量复核").items()}
+    output = []
+    for payload in payloads:
+        key = str(payload.get("job_key")); result = normalized[key]
+        if key in reviews: result = merge_results(result, reviews[key])
+        else: result["cap_fusion"] = "primary_only"
+        result["cap_input_fingerprint"] = capability_fingerprint(payload); output.append(result)
+    return output
+
+
 def evaluate_job(payload: dict[str, Any]) -> dict[str, Any]:
-    primary = _normalize(_call_provider(PRIMARY_PROVIDER, payload, label="岗位八维能力初评"))
-    if needs_review(primary):
-        review_input = {"job": payload, "primary_result": primary, "task": "复核低置信度维度并返回完整八维结果"}
-        review = _normalize(_call_provider(REVIEW_PROVIDER, review_input, label="岗位八维能力复核"))
-        primary = merge_results(primary, review)
-    else:
-        primary["cap_fusion"] = "primary_only"
-    primary["cap_input_fingerprint"] = capability_fingerprint(payload)
-    return primary
+    return evaluate_jobs([payload])[0]
 
 
 def normalize_imported_result(raw: dict[str, Any]) -> dict[str, Any]:

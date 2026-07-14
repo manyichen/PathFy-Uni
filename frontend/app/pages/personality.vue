@@ -98,7 +98,7 @@ watch([answers, current, started], persist, { deep: true })
 <template>
   <div class="page-stack mx-auto w-full max-w-4xl">
     <div class="page-heading">
-      <h1>职业性格测试</h1>
+      <h1 class="flex items-center gap-2"><UIcon name="i-lucide-brain" class="text-primary"/>职业性格测试</h1>
       <p class="muted">用一组二选一问题了解职业偏好，约 5 分钟完成</p>
     </div>
 

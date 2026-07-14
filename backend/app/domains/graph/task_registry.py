@@ -27,8 +27,8 @@ class TaskSpec:
 
 CSV = frozenset({".csv"})
 TASK_SPECS: dict[str, TaskSpec] = {
-    "job_import": TaskSpec("岗位 Excel 导入", "jobs", (FileSpec("file", frozenset({".xls", ".xlsx"})),), "merge", True, True, defaults={"batch_size": 128, "generate_promotions": True, "generate_lateral": True}),
-    "job_capability_evaluation": TaskSpec("存量岗位八维评估", "jobs", uses_llm=True, defaults={"scope": "missing"}),
+    "job_import": TaskSpec("岗位 Excel 导入", "jobs", (FileSpec("file", frozenset({".xls", ".xlsx"})),), "merge", True, True, defaults={"batch_size": 128, "capability_batch_size": 8, "generate_promotions": True, "generate_lateral": True}),
+    "job_capability_evaluation": TaskSpec("存量岗位八维评估", "jobs", uses_llm=True, defaults={"scope": "missing", "capability_batch_size": 8}),
     "job_capability_result_import": TaskSpec("历史能力结果导入", "jobs", (FileSpec("file", frozenset({".jsonl"})),)),
     "learning_resource_import": TaskSpec("学习资源导入", "curated", (FileSpec("file", CSV),), "snapshot", True),
     "competition_import": TaskSpec("竞赛导入", "curated", (FileSpec("file", CSV),), "snapshot", True),
@@ -67,12 +67,12 @@ def normalize_options(task_type: str, values: dict) -> dict:
     spec = task_spec(task_type)
     options = dict(spec.defaults)
     if task_type == "job_import":
-        options.update(batch_size=max(1, min(int(values.get("batch_size") or 128), 1000)), generate_promotions=_bool(values.get("generate_promotions"), True), generate_lateral=_bool(values.get("generate_lateral"), True))
+        options.update(batch_size=max(1, min(int(values.get("batch_size") or 128), 1000)), capability_batch_size=max(1, min(int(values.get("capability_batch_size") or 8), 50)), generate_promotions=_bool(values.get("generate_promotions"), True), generate_lateral=_bool(values.get("generate_lateral"), True))
     elif task_type == "job_capability_evaluation":
         scope = str(values.get("scope") or "missing").lower()
         if scope not in {"missing", "stale", "all"}:
             raise ValueError("scope 仅支持 missing、stale 或 all")
-        options.update(scope=scope, source_id=str(values.get("source_id") or "").strip() or None)
+        options.update(scope=scope, source_id=str(values.get("source_id") or "").strip() or None, capability_batch_size=max(1, min(int(values.get("capability_batch_size") or 8), 50)))
     elif task_type == "salary_normalization":
         options["force"] = _bool(values.get("force"), False)
     return options

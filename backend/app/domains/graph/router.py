@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, jsonify, request, send_file
 
 from app.core.security import get_bearer_user_id
 from app.db import db_cursor
@@ -15,7 +15,7 @@ from app.domains.graph.services import (
 from app.domains.graph.locking import GraphOperationBusy, graph_write_lock
 from app.domains.graph import task_repository
 from app.domains.graph.task_service import (
-    GraphTaskError, cancel_task, confirm_task, enqueue_task, guard_status,
+    GraphTaskError, cancel_task, confirm_task, downloadable_task_file, enqueue_task, guard_status,
     list_tasks, reject_task, task_changes, task_detail,
 )
 
@@ -272,6 +272,23 @@ def graph_task_changes(task_id: int):
         return jsonify({"ok": True, "data": task_changes(task_id, group=request.args.get("group") or None, page=page, page_size=size)})
     except ValueError: return jsonify({"ok": False, "message": "分页参数格式错误"}), 400
     except GraphTaskError as exc: return jsonify({"ok": False, "message": exc.message}), exc.status
+
+
+@graph_bp.get("/tasks/<int:task_id>/files/<string:role>/download")
+def graph_task_file_download(task_id: int, role: str):
+    _, err = _require_admin()
+    if err: return err
+    try:
+        item = downloadable_task_file(task_id, role)
+        return send_file(
+            item["path"],
+            mimetype="application/octet-stream",
+            as_attachment=True,
+            download_name=item["original_name"],
+            conditional=True,
+        )
+    except GraphTaskError as exc:
+        return jsonify({"ok": False, "message": exc.message}), exc.status
 
 
 @graph_bp.post("/tasks/<int:task_id>/confirm")

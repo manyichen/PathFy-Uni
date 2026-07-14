@@ -12,7 +12,7 @@ import pandas as pd
 from app.domains.graph.constants import COLUMN_ALIASES, REQUIRED_CN_COLUMNS, build_ai_payload, normalize_text, normalize_title
 from app.domains.graph.incremental import deduplicate_jobs, import_keys, job_key_for_row, plan_incremental_rows
 from app.domains.graph.repository import fetch_job_import_fingerprints
-from app.domains.graph.capability_service import CAP_VERSION, CONF_FIELDS, REQ_FIELDS, capability_fingerprint, evaluate_job, normalize_imported_result
+from app.domains.graph.capability_service import CAP_VERSION, CONF_FIELDS, REQ_FIELDS, capability_fingerprint, evaluate_jobs, normalize_imported_result
 from app.domains.graph.task_registry import TASK_HANDLERS
 from app.domains.graph.services import _call_llm_batch_extract, _llm_model
 from app.domains.graph.sync_service import LATERAL_SYSTEM, PROMOTION_PATH_SYSTEM, _call_llm_json, _parse_confidence
@@ -114,10 +114,12 @@ def plan_job_import(task: dict[str, Any], emit=lambda *_args, **_kwargs: None) -
             key = job_key_for_row(row)
             jobs.append({"job_key": key, "row": raw, "ai": by_index.get(index, {}), "fingerprint": fingerprints[key]})
 
-    for index, job in enumerate(jobs, 1):
-        if index == 1 or index == len(jobs) or index % 10 == 0:
-            emit("capability", f"正在评估岗位八维能力 {index}/{len(jobs)}", {"job_key": job["job_key"]})
-        job["capability"] = evaluate_job(_cap_payload(job))
+    capability_batch_size = max(1, min(int(task["options"].get("capability_batch_size", 8)), 50))
+    for start in range(0, len(jobs), capability_batch_size):
+        group = jobs[start:start + capability_batch_size]
+        emit("capability", f"正在评估岗位八维能力批次 {start // capability_batch_size + 1}", {"start": start + 1, "rows": len(group), "total": len(jobs)})
+        results = evaluate_jobs([_cap_payload(job) for job in group])
+        for job, result in zip(group, results, strict=True): job["capability"] = result
 
     with driver.session(database=database) as session:
         rows = session.run("MATCH (j:Job) RETURN j.job_key AS job_key,j.title AS title,j.import_source_id AS source_id")
@@ -203,12 +205,13 @@ def plan_capability_evaluation(task: dict[str, Any], emit=lambda *_args, **_kwar
         stale = row.get("cap_version") != CAP_VERSION or row.get("cap_input_fingerprint") != capability_fingerprint(payload)
         if scope == "all" or (scope == "missing" and missing) or (scope == "stale" and stale):
             selected.append(row)
-    changes = []
-    for index, row in enumerate(selected, 1):
-        if index == 1 or index == len(selected) or index % 10 == 0:
-            emit("capability", f"正在评估存量岗位 {index}/{len(selected)}", {"job_key": row["job_key"]})
-        payload = {key: row.get(key) for key in ("job_key", "title", "company", "industry", "demand", "company_detail", "experience", "hard_skills", "certificates")}
-        changes.append({"job_key": row["job_key"], "old": {field: row.get(field) for field in (*REQ_FIELDS, *CONF_FIELDS, "cap_version")}, "capability": evaluate_job(payload)})
+    changes = []; batch_size = max(1, min(int(task.get("options", {}).get("capability_batch_size", 8)), 50))
+    for start in range(0, len(selected), batch_size):
+        group = selected[start:start + batch_size]
+        emit("capability", f"正在评估存量岗位批次 {start // batch_size + 1}", {"start": start + 1, "rows": len(group), "total": len(selected)})
+        payloads = [{key: row.get(key) for key in ("job_key", "title", "company", "industry", "demand", "company_detail", "experience", "hard_skills", "certificates")} for row in group]
+        results = evaluate_jobs(payloads)
+        for row, result in zip(group, results, strict=True): changes.append({"job_key": row["job_key"], "old": {field: row.get(field) for field in (*REQ_FIELDS, *CONF_FIELDS, "cap_version")}, "capability": result})
     low = sum(1 for x in changes if min(float(x["capability"][f]) for f in CONF_FIELDS) < 0.6)
     return ({"version": 2, "kind": "job_capability_evaluation", "jobs": changes},
             {"scope": scope, "source_id": source_id, "candidate_jobs": len(rows), "evaluated_jobs": len(changes), "low_confidence_jobs": low, "preview": changes[:10]})

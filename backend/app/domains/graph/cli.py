@@ -26,6 +26,7 @@ def main() -> None:
     enqueue.add_argument("--scope", choices=("missing", "stale", "all"), default="missing")
     enqueue.add_argument("--force", action="store_true")
     enqueue.add_argument("--batch-size", type=int, default=128)
+    enqueue.add_argument("--capability-batch-size", type=int, default=8)
     enqueue.add_argument("--no-promotions", action="store_true")
     enqueue.add_argument("--no-lateral", action="store_true")
     args = parser.parse_args()
@@ -43,7 +44,7 @@ def main() -> None:
                                 batch_size=args.batch_size,
                                 generate_promotions=not args.no_promotions,
                                 generate_lateral=not args.no_lateral,
-                                options={"scope": args.scope, "force": args.force})
+                                options={"scope": args.scope, "force": args.force, "capability_batch_size": args.capability_batch_size})
         print(f"queued graph task #{task['id']} ({task['task_type']})")
     finally:
         for stream in streams: stream.close()

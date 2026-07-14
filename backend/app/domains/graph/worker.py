@@ -6,23 +6,12 @@ import argparse
 import hashlib
 import json
 import time
-from pathlib import Path
 
 from app import create_app
 from app.domains.graph import task_repository as repo
 from app.domains.graph.task_planner import build_change_set
 from app.domains.graph.task_apply import is_task_applied
 from app.domains.graph.locking import GraphOperationBusy, graph_write_lock
-
-
-def _purge_files(task: dict) -> None:
-    paths = [item.get("private_path") for item in task.get("files", [])]
-    if task.get("input_file_path"): paths.append(task["input_file_path"])
-    for path in {str(value) for value in paths if value}:
-        try: Path(path).unlink(missing_ok=True)
-        except OSError: pass
-    if task.get("files") or paths:
-        repo.clear_task_file_paths(task["id"])
 
 
 def process_one() -> bool:
@@ -41,7 +30,6 @@ def process_one() -> bool:
             repo.requeue_task(task["id"], "其他图谱写操作正在提交，任务已重新排队")
     except Exception as exc:
         repo.fail_task(task["id"], str(exc))
-        _purge_files(task)
         return True
     return True
 
@@ -55,7 +43,6 @@ def main() -> None:
         for task in repo.get_applying_tasks():
             if is_task_applied(task["task_uuid"]):
                 repo.finish_apply(task["id"], success=True, error="Worker 重启后根据 Neo4j 提交标记完成恢复")
-                _purge_files(task)
             else:
                 repo.reset_applying_task(task["id"])
         while True:

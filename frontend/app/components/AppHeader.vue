@@ -15,9 +15,9 @@ const userNav = [
   { label: '岗位探索', to: '/jobs', icon: 'i-lucide-briefcase-business' },
   { label: '能力画像', to: '/profile', icon: 'i-lucide-radar' },
   { label: '性格测试', to: '/personality', icon: 'i-lucide-brain' },
-  { label: '人岗匹配', to: '/match', icon: 'i-lucide-git-compare' },
+  { label: '人岗匹配', to: '/match', icon: 'i-lucide-target' },
   { label: '职业图谱', to: '/graph', icon: 'i-lucide-network' },
-  { label: '生涯报告', to: '/report', icon: 'i-lucide-file-chart-column' }
+  { label: '生涯报告', to: '/report', icon: 'i-lucide-file-text' }
 ]
 const nav = computed(() => auth.isAdmin.value
   ? [{ label: '图谱管理', to: '/graph-admin', icon: 'i-lucide-database' }]

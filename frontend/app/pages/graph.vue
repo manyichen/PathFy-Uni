@@ -35,7 +35,7 @@ async function analyze() {
 
 <template>
   <div class="page-stack">
-    <div class="page-heading"><h1>职业关联图谱</h1><p class="muted">把晋升、换岗和目标差距放在同一页直接比较</p></div>
+    <div class="page-heading"><h1 class="flex items-center gap-2"><UIcon name="i-lucide-network" class="text-primary"/>职业关联图谱</h1><p class="muted">把晋升、换岗和目标差距放在同一页直接比较</p></div>
     <UCard><div class="grid gap-4 md:grid-cols-[1fr_1fr_auto]"><UFormField label="当前岗位"><button type="button" class="job-trigger" @click="picker = 'from'"><div v-if="fromJob" class="min-w-0 text-left"><p class="truncate font-medium">{{ fromJob.title }}</p><p class="truncate text-xs muted">{{ fromJob.company }} · {{ fromJob.location }}</p></div><span v-else class="muted">选择当前岗位</span><UIcon name="i-lucide-search" class="shrink-0" /></button></UFormField><UFormField label="目标岗位（可选）"><button type="button" class="job-trigger" @click="picker = 'to'"><div v-if="toJob" class="min-w-0 text-left"><p class="truncate font-medium">{{ toJob.title }}</p><p class="truncate text-xs muted">{{ toJob.company }} · {{ toJob.location }}</p></div><span v-else class="muted">选择目标岗位</span><UIcon name="i-lucide-search" class="shrink-0" /></button></UFormField><div class="flex items-end"><UButton :loading="loading" icon="i-lucide-route" @click="analyze">分析路径</UButton></div></div></UCard>
     <UEmpty v-if="!promotion && !lateral" title="请选择岗位开始分析" icon="i-lucide-network" />
     <template v-else>
