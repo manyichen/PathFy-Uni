@@ -3,6 +3,7 @@ const auth = useAuth()
 const colorMode = useColorMode()
 const route = useRoute()
 const mobileOpen = ref(false)
+const logoutOpen = ref(false)
 const hue = ref('192')
 const hueOptions = [
   { label: '青', value: '192' }, { label: '蓝', value: '220' },
@@ -22,9 +23,10 @@ const nav = computed(() => auth.isAdmin.value
   ? [{ label: '图谱管理', to: '/graph-admin', icon: 'i-lucide-database' }]
   : userNav)
 
-function logout() {
+async function logout() {
+  logoutOpen.value = false
   auth.clear()
-  navigateTo('/')
+  await navigateTo('/')
 }
 
 function toggleTheme() {
@@ -65,7 +67,7 @@ onMounted(() => {
       <UButton v-if="auth.isAuthenticated.value" to="/account" color="neutral" variant="ghost">
         {{ auth.user.value?.username || '个人中心' }}
       </UButton>
-      <UButton v-if="auth.isAuthenticated.value" color="neutral" variant="soft" @click="logout">退出</UButton>
+      <UButton v-if="auth.isAuthenticated.value" color="neutral" variant="soft" icon="i-lucide-log-out" @click="() => { logoutOpen = true }">退出</UButton>
       <UButton v-else to="/login">登录</UButton>
       <UButton class="lg:hidden" icon="i-lucide-menu" color="neutral" variant="ghost" @click="() => { mobileOpen = true }" />
     </template>
@@ -87,4 +89,16 @@ onMounted(() => {
       </div>
     </template>
   </USlideover>
+
+  <UModal v-model:open="logoutOpen" title="确认退出登录">
+    <template #body>
+      <p class="muted">退出后将清除本机保存的登录状态和当前用户缓存，确定继续吗？</p>
+    </template>
+    <template #footer>
+      <div class="flex w-full justify-end gap-2">
+        <UButton color="neutral" variant="ghost" @click="() => { logoutOpen = false }">取消</UButton>
+        <UButton color="error" icon="i-lucide-log-out" @click="logout">确认退出</UButton>
+      </div>
+    </template>
+  </UModal>
 </template>
