@@ -191,7 +191,7 @@ pnpm typecheck && pnpm test && pnpm generate
 
 - **勿提交**：MySQL 全库 dump（含用户/简历）、`.env`、SSH 私钥 — 见 [`.gitignore`](./.gitignore) 与 [`datasets/README.md`](./datasets/README.md)
 - **初始化库表**：新库直接运行 `alembic upgrade head`；后续部署也只运行该命令
-- **图谱更新**：管理端创建 MySQL 队列任务，graph worker 生成变更集，管理员确认后才写 Neo4j
+- **图谱更新**：岗位及八维评估、学习资源、竞赛、晋升、换岗、晋升推荐、薪资回填和清理均由管理端创建 MySQL 队列任务；graph worker 生成变更集，管理员确认后才写 Neo4j
 - **简历文件**：上传至 Web 不可访问的私有目录，OCR 入库后删除原文件
 
 ---

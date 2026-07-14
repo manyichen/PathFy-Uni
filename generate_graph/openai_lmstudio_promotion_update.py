@@ -302,52 +302,6 @@ def build_edges_with_validation(
     return edges
 
 
-def delete_existing_source_edges(graph: Graph) -> int:
-    total_rows = graph.run(
-        """
-        MATCH ()-[r:VERTICAL_UP {source:$source}]->()
-        RETURN count(r) AS total
-        """,
-        source=SOURCE_TAG,
-    ).data()
-    total = int((total_rows[0].get("total") if total_rows else 0) or 0)
-    if total <= 0:
-        return 0
-
-    graph.run(
-        """
-        MATCH ()-[r:VERTICAL_UP {source:$source}]->()
-        DELETE r
-        """,
-        source=SOURCE_TAG,
-    )
-    return total
-
-
-def persist_edges(graph: Graph, edges: List[PromotionEdge]) -> int:
-    tx = graph.begin()
-    for e in edges:
-        tx.run(
-            """
-            MATCH (a:Job) WHERE elementId(a) = $from_id
-            MATCH (b:Job) WHERE elementId(b) = $to_id
-            MERGE (a)-[r:VERTICAL_UP {source:$source}]->(b)
-            SET r.reason = $reason,
-                r.company = $company,
-                r.confidence = $confidence,
-                r.updated_at = datetime()
-            """,
-            from_id=e.from_id,
-            to_id=e.to_id,
-            source=SOURCE_TAG,
-            reason=e.reason,
-            company=e.company,
-            confidence=e.confidence,
-        )
-    graph.commit(tx)
-    return len(edges)
-
-
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="使用 OpenAI 兼容接口更新同公司晋升路径")
 
@@ -366,8 +320,6 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--backup-dir", default=os.getenv("PROMOTION_BACKUP_DIR", "promotion_backups"))
 
     parser.add_argument("--include-inferred", action="store_true")
-    parser.add_argument("--clear-existing", action="store_true")
-    parser.add_argument("--dry-run", action="store_true")
     return parser.parse_args()
 
 
@@ -436,33 +388,13 @@ def main() -> None:
     )
     print(f"[INFO] 已本地备份 JSON: {backup_file}")
 
-    if args.dry_run:
-        for edge in all_edges[:30]:
-            if isinstance(edge, PromotionEdge):
-                print(
-                    f"[PREVIEW] {edge.company} | {edge.from_title} -> {edge.to_title} "
-                    f"(conf={edge.confidence}, reason={edge.reason})"
-                )
-            elif isinstance(edge, dict):
-                print(
-                    "[PREVIEW] "
-                    f"{edge.get('company', '未知公司')} | "
-                    f"{edge.get('from_title', '未知岗位')} -> {edge.get('to_title', '未知岗位')} "
-                    f"(conf={edge.get('confidence', 0)}, reason={edge.get('reason', '模型推断')})"
-                )
-        if len(all_edges) > 30:
-            print(f"[PREVIEW] ... 其余 {len(all_edges) - 30} 条省略")
-        print("[INFO] dry-run 模式，未写入数据库。")
-        return
-
-    if args.clear_existing:
-        deleted = delete_existing_source_edges(graph)
-        print(f"[INFO] 删除旧关系 source={SOURCE_TAG}: {deleted}")
-
-    created = persist_edges(graph, all_edges)
-    print(f"[INFO] 已写入/更新 VERTICAL_UP 关系: {created}")
+    for edge in all_edges[:30]:
+        if isinstance(edge, PromotionEdge):
+            print(f"[PREVIEW] {edge.company} | {edge.from_title} -> {edge.to_title} (conf={edge.confidence}, reason={edge.reason})")
+    if len(all_edges) > 30:
+        print(f"[PREVIEW] ... 其余 {len(all_edges) - 30} 条省略")
+    print("[INFO] 该历史入口现在只生成本地候选 JSON，不再写 Neo4j。请将策展结果整理为晋升路线 CSV 后通过后端任务队列导入。")
 
 
 if __name__ == "__main__":
     main()
-

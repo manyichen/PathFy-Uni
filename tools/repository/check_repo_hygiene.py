@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import subprocess
 import sys
+import re
 from pathlib import Path, PurePosixPath
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -17,6 +18,11 @@ FORBIDDEN_PREFIXES = (
 )
 FORBIDDEN_NAMES = ("job_eval_results_", "IMG_")
 FORBIDDEN_SUFFIXES = (".env", ".xls", ".xlsx", ".dump", ".sql.gz")
+NEO4J_WRITER_PATTERN = re.compile(r"\b(?:execute_write|DETACH\s+DELETE|DELETE\s+[a-zA-Z]|\bSET\s+[a-zA-Z]|\bMERGE\s*\()", re.IGNORECASE)
+NEO4J_READ_ONLY_ALLOWLIST = {
+    "tools/neo4j/check_neo4j_duplicates.py",
+    "tools/repository/check_repo_hygiene.py",
+}
 
 
 def tracked_files() -> list[str]:
@@ -49,8 +55,20 @@ def violations(paths: list[str]) -> list[str]:
     return problems
 
 
+def graph_writer_violations() -> list[str]:
+    problems = []
+    for absolute in (ROOT / "tools").rglob("*.py"):
+        relative = absolute.relative_to(ROOT).as_posix()
+        if relative in NEO4J_READ_ONLY_ALLOWLIST:
+            continue
+        source = absolute.read_text(encoding="utf-8", errors="ignore")
+        if ("GraphDatabase" in source or "neo4j_driver" in source) and NEO4J_WRITER_PATTERN.search(source):
+            problems.append(f"direct Neo4j writer outside backend queue: {relative}")
+    return problems
+
+
 def main() -> int:
-    problems = violations(tracked_files())
+    problems = violations(tracked_files()) + graph_writer_violations()
     if problems:
         print("Repository hygiene check failed:", file=sys.stderr)
         for problem in problems:

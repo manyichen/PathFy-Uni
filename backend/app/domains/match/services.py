@@ -1,7 +1,7 @@
 """
 人岗匹配：八维轮廓 Pearson + 软 surplus 加权粗排（M1）；可选 DeepSeek 在候选池上精排 Top5 与文字分析（M2）。
 
-Neo4j 使用 NEO4J_*；DeepSeek 使用 DEEPSEEK_API_KEY（可与 tools/job_eval/.env 保持一致后复制到 backend/.env）。
+Neo4j 使用 NEO4J_*；DeepSeek 使用 backend/.env 中的 DEEPSEEK_API_KEY。
 """
 
 from __future__ import annotations
@@ -387,7 +387,7 @@ def run_match_preview(body: Dict[str, Any], jwt_user_id: int | None) -> Tuple[Di
         if not api_key:
             data_out["llm"] = {
                 "ok": False,
-                "error": "未配置 DEEPSEEK_API_KEY，无法精排。请将 tools/job_eval/.env 中的密钥同步到 backend/.env。",
+                "error": "未配置 DEEPSEEK_API_KEY，无法精排。请在 backend/.env 中配置。",
             }
         else:
             model = str(current_app.config.get("MATCH_DEEPSEEK_MODEL") or "deepseek-chat")

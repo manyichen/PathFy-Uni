@@ -423,11 +423,18 @@ def main() -> None:
     parser.add_argument("--excel-path", default=DEFAULT_XLS_PATH, help="招聘数据 Excel 路径（.xls）")
     parser.add_argument("--batch-size", type=int, default=DEFAULT_BATCH_SIZE, help="批处理大小，建议 64/128/256")
     parser.add_argument("--clear-all", action="store_true", help="执行前清空 Neo4j 中全部数据")
+    parser.add_argument("--offline-bootstrap", action="store_true", help="仅用于隔离环境首次建库；生产增量必须进入后端任务队列")
     parser.add_argument("--llm-provider", choices=["gemini", "ollama"], default="gemini", help="大模型提供方")
     parser.add_argument("--gemini-model", default=os.getenv("GEMINI_MODEL", "gemini-2.5-flash"), help="Gemini 模型名")
     parser.add_argument("--ollama-base-url", default=os.getenv("OLLAMA_BASE_URL", DEFAULT_OLLAMA_BASE_URL), help="Ollama 服务地址")
     parser.add_argument("--ollama-model", default=os.getenv("OLLAMA_MODEL", "qwen3.5:4b"), help="Ollama 模型名")
     args = parser.parse_args()
+    if not args.offline_bootstrap:
+        raise RuntimeError(
+            "直接写图入口默认关闭。生产更新请在图谱管理后台上传岗位 Excel，"
+            "或使用 backend: python -m app.domains.graph.cli enqueue job_import ...；"
+            "仅隔离环境首次建库可显式添加 --offline-bootstrap。"
+        )
 
     gemini_client: Optional[genai.Client] = None
     ollama_client: Optional[OllamaClient] = None

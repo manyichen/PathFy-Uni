@@ -526,7 +526,7 @@ Neo4j 已部署但尚无 Job 节点时，需导入岗位数据才能使用岗位
 
 以管理员身份打开 `/graph-admin/update`，上传岗位 Excel 创建任务。graph worker 会生成岗位、JobTitle、晋升和换岗变更集；在任务详情页审查并确认后才会写入 Neo4j。
 
-学习资源和竞赛分别上传 `datasets/master/learning_resources.csv` 和 `datasets/master/competitions.csv`。旧 `generate_graph/` 和 `tools/neo4j/sync_*` 入口仅供数据整理与历史排查，不应再直接写生产图谱。
+学习资源和竞赛分别上传 `datasets/master/learning_resources.csv` 和 `datasets/master/competitions.csv`。晋升、换岗、推荐、能力评估和维护操作也统一从图谱管理后台进入 MySQL 队列。`tools/neo4j/` 仅保留只读诊断，禁止直接写生产图谱。
 
 导入完成后，在前端 `/jobs` 页面应能看到岗位列表。
 

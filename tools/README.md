@@ -13,24 +13,13 @@ tools/
 │   ├── validate_learning_resource_urls.py
 │   ├── validate_competition_urls.py
 │   └── analyze_job_title_counts.py
-├── neo4j/                    # 知识图谱：同步、回填、检查
-│   ├── sync_neo4j_job_titles.py
-│   ├── sync_neo4j_learning_resources.py
-│   ├── sync_neo4j_competitions.py
-│   ├── sync_neo4j_job_promotions.py
-│   ├── sync_neo4j_promotion_recommendations.py
-│   ├── backfill_job_salary_norm.py
-│   ├── cleanup_neo4j_inferred_jobs.py
+├── neo4j/                    # 知识图谱只读诊断
 │   └── check_neo4j_duplicates.py
 ├── repository/               # 仓库卫生检查
 │   └── check_repo_hygiene.py
-└── job_eval/                 # 岗位八维能力 LLM 批量评估（独立依赖）
+└── job_eval/                 # 历史能力结果的本地只读质检
     ├── README.md
-    ├── requirements.txt
-    ├── run_job_eval_batch.py
-    ├── import_job_eval_jsonl.py
-    ├── make_qc_report.py
-    └── debug.sh
+    └── make_qc_report.py
 ```
 
 ### 相关目录（不在 `tools/` 根下）
@@ -65,54 +54,20 @@ python tools/csv/validate_learning_resource_urls.py
 
 ---
 
-## `neo4j/` — 知识图谱同步
+## `neo4j/` — 知识图谱只读诊断
 
-依赖 `backend/.env` 中的 `NEO4J_*`。建议 **`--dry-run` 先预览**，再正式写入。
+`tools/neo4j/` 只保留重复项检查。岗位、学习资源、竞赛、晋升、换岗、推荐、能力评估、薪资回填和清理操作统一进入后端 MySQL 任务队列，在管理端审阅变更集后确认。
 
-### 推荐导入顺序
-
-```mermaid
-flowchart LR
-  A[job_titles / jobs] --> B[learning_resources]
-  A --> C[competitions]
-  B --> D[job_promotions]
-  C --> D
-  D --> E[promotion_recommendations]
-```
-
-| 顺序 | 脚本 | 图谱效果 |
-|------|------|----------|
-| 1 | `sync_neo4j_job_titles.py` | `Job` —`HAS_TITLE`→ `JobTitle` |
-| 2 | `sync_neo4j_learning_resources.py` | `LearningResource` —`FOR_JOB_TITLE`→ `JobTitle` |
-| 3 | `sync_neo4j_competitions.py` | `Competition` —`FOR_JOB_TITLE`→ `JobTitle` |
-| 4 | `sync_neo4j_job_promotions.py` | `JobPromotion` 节点及 —`FOR_JOB_TITLE`→ `JobTitle` |
-| 5 | `sync_neo4j_promotion_recommendations.py` | `RECOMMENDS_RESOURCE` / `RECOMMENDS_COMPETITION` |
-| 可选 | `backfill_job_salary_norm.py` | 回填 `Job.salary_norm` 等字段 |
-| 可选 | `cleanup_neo4j_inferred_jobs.py` | 清理推断岗位 |
-| 检查 | `check_neo4j_duplicates.py` | 节点/关系重复与数量核对 |
-| 6b | `sync_neo4j_job_title_lateral.py` | `SIMILAR_FOR_LATERAL`：JobTitle 水平换岗相似 |
-
-```bash
-python tools/neo4j/sync_neo4j_learning_resources.py --dry-run
-python tools/neo4j/sync_neo4j_learning_resources.py
-
-python tools/csv/build_promotion_recommendations_csv.py
-python tools/neo4j/sync_neo4j_promotion_recommendations.py
-```
-
-**说明：** `RECOMMENDS_*` 关系按 `(JobPromotion, LearningResource|Competition)` 做 `MERGE`，同一资源在 CSV 多 `stage` 会合并为一条边；详见 `check_neo4j_duplicates.py` 输出。
+自动化场景使用 `cd backend && python -m app.domains.graph.cli enqueue ...`，该命令同样只入队。
 
 ---
 
 ## `job_eval/` — 岗位能力评估
 
-从 Neo4j 抽 `Job` 证据，调用 LLM 生成八维分数，可选写回图谱。配置与用法见 **`job_eval/README.md`**。
+这里只保留对历史 JSONL 生成本地报告的只读工具。评估和导入使用图谱管理后台。
 
 ```bash
-cd tools/job_eval
-pip install -r requirements.txt
-# 配置 .env 后
-python run_job_eval_batch.py --dry-run
+python tools/job_eval/make_qc_report.py --input path/to/results.jsonl
 ```
 
 ---
@@ -136,4 +91,4 @@ python tools/analyze_neo4j_graph.py
 | 作用域 | 文件 |
 |--------|------|
 | Neo4j 同步、`csv` 部分脚本 | `backend/.env` |
-| 岗位评估 | `tools/job_eval/.env`（可复制 `.env.example`） |
+| 图谱任务与岗位评估 | `backend/.env` |
