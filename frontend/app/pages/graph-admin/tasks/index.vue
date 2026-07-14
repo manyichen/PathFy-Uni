@@ -1,42 +1,16 @@
 <script setup lang="ts">
-definePageMeta({ middleware: 'admin' })
-useSeoMeta({ title: '图谱任务队列' })
-const graph = useGraphTasksApi()
-const toast = useToast()
-const data = ref<any>({ items: [], total: 0 })
-const page = ref(1)
-const status = ref('all')
-const type = ref('all')
-const guard = ref<any>()
-async function load() {
-  try {
-    [data.value, guard.value] = await Promise.all([
-      graph.tasks({ page: page.value, status: status.value === 'all' ? '' : status.value, task_type: type.value === 'all' ? '' : type.value }),
-      graph.guard()
-    ])
-  } catch (e) { toast.add({ title: String(e), color: 'error' }) }
-}
-async function cancel(id: number) {
-  try { await graph.cancel(id); await load() }
-  catch (e) { toast.add({ title: String(e), color: 'error' }) }
-}
-watch([page, status, type], load)
-onMounted(load)
+import { graphStatusLabels, graphTaskCatalog, taskDangerous, taskLabel } from '~/types/graph'
+definePageMeta({ middleware: 'admin' }); useSeoMeta({ title: '图谱任务队列' })
+const graph=useGraphTasksApi();const toast=useToast();const data=ref<any>({items:[],total:0});const page=ref(1);const status=ref('all');const type=ref('all');const requestedBy=ref<number>();const createdFrom=ref('');const createdTo=ref('');const guard=ref<any>()
+const statusItems=[{label:'全部状态',value:'all'},...Object.entries(graphStatusLabels).map(([value,label])=>({label,value}))]
+const typeItems=[{label:'全部类型',value:'all'},...Object.entries(graphTaskCatalog).map(([value,item])=>({label:`${item.category} · ${item.label}`,value}))]
+async function load(){try{[data.value,guard.value]=await Promise.all([graph.tasks({page:page.value,status:status.value==='all'?'':status.value,task_type:type.value==='all'?'':type.value,requested_by:requestedBy.value,created_from:createdFrom.value?`${createdFrom.value} 00:00:00`:'',created_to:createdTo.value?`${createdTo.value} 23:59:59`:''}),graph.guard()])}catch(error){toast.add({title:String(error),color:'error'})}}
+async function cancel(id:number){try{await graph.cancel(id);await load()}catch(error){toast.add({title:String(error),color:'error'})}}
+function descriptor(item:any){if(item.files?.length)return item.files.map((file:any)=>file.original_name).join('、');if(item.options?.scope)return `范围：${item.options.scope}`;if(item.task_type==='salary_normalization')return item.options?.force?'全部岗位':'仅缺失或过期';if(item.task_type==='inferred_job_cleanup')return 'inferred Job 与低频 JobTitle';return '无文件维护任务'}
+watch([page,status,type],()=>{page.value=page.value||1;load()});onMounted(load)
 </script>
 
-<template>
-  <div class="page-stack">
-    <GraphAdminNav />
-    <GraphGuardBanner :guard="guard" />
-    <div class="page-heading"><h1>历史任务队列</h1><p class="muted">查看排队、执行、待确认及历史任务</p></div>
-    <UCard><div class="flex flex-wrap gap-3">
-      <USelect v-model="status" :items="[{ label: '全部状态', value: 'all' }, ...['queued','running','awaiting_confirmation','succeeded','partial_failed','failed','rejected','cancelled'].map(x => ({ label: x, value: x }))]" class="w-56" />
-      <USelect v-model="type" :items="[{ label: '全部类型', value: 'all' }, { label: '岗位', value: 'job_import' }, { label: '学习资源', value: 'learning_resource_import' }, { label: '竞赛', value: 'competition_import' }]" class="w-56" />
-    </div></UCard>
-    <div class="grid gap-3">
-      <UCard v-for="item in data.items" :key="item.id"><div class="flex flex-wrap items-center justify-between gap-3"><div><div class="flex gap-2"><UBadge :label="item.status" /><UBadge :label="item.task_type" color="neutral" variant="soft" /></div><p class="mt-2 font-medium">#{{ item.id }} · {{ item.input_file_name }}</p><p class="text-sm muted">{{ item.created_at }}</p></div><div class="flex gap-2"><UButton :to="`/graph-admin/tasks/${item.id}`" variant="soft">详情</UButton><UButton v-if="item.status === 'queued'" color="error" variant="ghost" @click="cancel(item.id)">取消</UButton></div></div></UCard>
-      <UEmpty v-if="!data.items.length" title="暂无任务" />
-    </div>
-    <UPagination v-model:page="page" :total="data.total" :items-per-page="20" />
-  </div>
-</template>
+<template><div class="page-stack"><GraphAdminNav/><GraphGuardBanner :guard="guard"/><div class="page-heading"><h1>历史任务队列</h1><p class="muted">所有图谱写入都在这里留下可追溯记录</p></div>
+<UCard><div class="flex flex-wrap gap-3"><USelect v-model="status" :items="statusItems" class="w-48"/><USelect v-model="type" :items="typeItems" class="w-64"/><UInput v-model.number="requestedBy" type="number" min="1" placeholder="申请人 ID" class="w-32"/><UInput v-model="createdFrom" type="date"/><UInput v-model="createdTo" type="date"/><UButton variant="soft" @click="page=1;load()">查询</UButton><span class="ml-auto self-center text-sm muted">共 {{ data.total }} 个任务</span></div></UCard>
+<div class="grid gap-3"><UCard v-for="item in data.items" :key="item.id"><div class="flex flex-wrap items-center justify-between gap-4"><div class="min-w-0"><div class="flex flex-wrap items-center gap-2"><span class="text-sm font-semibold">#{{ item.id }}</span><UBadge :label="graphStatusLabels[item.status]||item.status"/><UBadge :label="taskLabel(item.task_type)" color="neutral" variant="soft"/><UBadge v-if="taskDangerous(item.task_type)" label="危险操作" color="error" variant="soft"/></div><p class="mt-2 truncate font-medium">{{ descriptor(item) }}</p><p class="mt-1 text-sm muted">{{ item.source_id||'无来源标识' }} · {{ item.mode }} · 申请人 #{{ item.requested_by }} · {{ item.files?.length||0 }} 个文件 · {{ item.created_at }}</p></div><div class="flex gap-2"><UButton :to="`/graph-admin/tasks/${item.id}`" variant="soft">查看详情</UButton><UButton v-if="item.status==='queued'" color="error" variant="ghost" @click="cancel(item.id)">取消</UButton></div></div></UCard><UEmpty v-if="!data.items.length" title="暂无符合条件的任务"/></div>
+<UPagination v-if="data.total>20" v-model:page="page" :total="data.total" :items-per-page="20"/></div></template>

@@ -1,57 +1,23 @@
 <script setup lang="ts">
-definePageMeta({ middleware: 'admin' })
-useSeoMeta({ title: '图谱任务详情' })
-const route = useRoute()
-const graph = useGraphTasksApi()
-const toast = useToast()
-const task = ref<any>()
-const guard = ref<any>()
-const loading = ref('')
-const rejectOpen = ref(false)
-const reason = ref('')
-let timer: ReturnType<typeof setInterval> | undefined
-async function load() {
-  try { [task.value, guard.value] = await Promise.all([graph.task(String(route.params.id)), graph.guard()]) }
-  catch (e) { toast.add({ title: String(e), color: 'error' }) }
-}
-async function confirm() {
-  loading.value = 'confirm'
-  try { await graph.confirm(task.value.id); toast.add({ title: '变更已提交', color: 'success' }); await load() }
-  catch (e) { toast.add({ title: String(e), color: 'error' }) }
-  finally { loading.value = '' }
-}
-async function reject() {
-  loading.value = 'reject'
-  try { await graph.reject(task.value.id, reason.value); rejectOpen.value = false; await load() }
-  catch (e) { toast.add({ title: String(e), color: 'error' }) }
-  finally { loading.value = '' }
-}
-onMounted(async () => { await load(); timer = setInterval(() => { if (['queued', 'running', 'applying'].includes(task.value?.status)) load() }, 3000) })
-onBeforeUnmount(() => { if (timer) clearInterval(timer) })
+import { graphStatusLabels, summaryLabels, taskDangerous, taskLabel } from '~/types/graph'
+definePageMeta({middleware:'admin'});useSeoMeta({title:'图谱任务详情'})
+const route=useRoute();const graph=useGraphTasksApi();const toast=useToast();const task=ref<any>();const guard=ref<any>();const loading=ref('');const rejectOpen=ref(false);const confirmOpen=ref(false);const reason=ref('');let timer:ReturnType<typeof setInterval>|undefined
+async function load(){try{[task.value,guard.value]=await Promise.all([graph.task(String(route.params.id)),graph.guard()])}catch(error){toast.add({title:String(error),color:'error'})}}
+async function confirm(){loading.value='confirm';try{await graph.confirm(task.value.id);confirmOpen.value=false;toast.add({title:'整单变更已提交',color:'success'});await load()}catch(error){toast.add({title:String(error),color:'error'})}finally{loading.value=''}}
+async function reject(){loading.value='reject';try{await graph.reject(task.value.id,reason.value);rejectOpen.value=false;await load()}catch(error){toast.add({title:String(error),color:'error'})}finally{loading.value=''}}
+function detailRows(detail:any){return Object.entries(detail||{}).filter(([,value])=>value===null||['string','number','boolean'].includes(typeof value)).slice(0,6)}
+function openReject(){rejectOpen.value=true}function openConfirm(){confirmOpen.value=true}function closeConfirm(){confirmOpen.value=false}
+onMounted(async()=>{await load();timer=setInterval(()=>{if(['queued','running','applying'].includes(task.value?.status))load()},3000)});onBeforeUnmount(()=>{if(timer)clearInterval(timer)})
 </script>
 
-<template>
-  <div class="page-stack">
-    <GraphAdminNav />
-    <GraphGuardBanner :guard="guard" />
-    <template v-if="task">
-      <div class="flex flex-wrap items-end justify-between gap-3">
-        <div class="page-heading"><h1>任务 #{{ task.id }}</h1><p class="muted">{{ task.task_type }} · {{ task.input_file_name }}</p></div>
-        <div v-if="task.status === 'awaiting_confirmation'" class="flex gap-2">
-          <UButton color="error" variant="soft" @click="() => { rejectOpen = true }">拒绝</UButton>
-          <UButton :loading="loading === 'confirm'" @click="confirm">确认整单变更</UButton>
-        </div>
-      </div>
-      <div class="grid gap-3 md:grid-cols-3">
-        <UCard><p class="muted">状态</p><UBadge class="mt-2" :label="task.status" /></UCard>
-        <UCard><p class="muted">来源</p><p class="mt-2 font-medium">{{ task.source_id || '-' }} · {{ task.mode }}</p></UCard>
-        <UCard><p class="muted">SHA-256</p><p class="mt-2 break-all text-xs">{{ task.input_sha256 }}</p></UCard>
-      </div>
-      <UCard><template #header><h2 class="font-semibold">更新摘要</h2></template><pre class="overflow-auto whitespace-pre-wrap text-sm">{{ JSON.stringify(task.change_summary || {}, null, 2) }}</pre></UCard>
-      <UCard v-if="task.error_message"><template #header><h2 class="font-semibold text-error">错误</h2></template><p class="whitespace-pre-wrap">{{ task.error_message }}</p></UCard>
-      <UCard><template #header><h2 class="font-semibold">任务时间线</h2></template><div class="grid gap-4"><div v-for="event in task.events" :key="event.id" class="border-l-2 border-primary pl-4"><div class="flex justify-between gap-3"><strong>{{ event.message }}</strong><span class="text-xs muted">{{ event.created_at }}</span></div><p class="text-sm muted">{{ event.stage }} · {{ event.event_type }}</p><pre v-if="event.detail" class="mt-2 overflow-auto text-xs">{{ JSON.stringify(event.detail, null, 2) }}</pre></div></div></UCard>
-    </template>
-    <USkeleton v-else class="h-80" />
-    <UModal v-model:open="rejectOpen" title="拒绝变更"><template #body><UTextarea v-model="reason" :rows="5" placeholder="填写拒绝原因" /><div class="mt-4 flex justify-end"><UButton color="error" :loading="loading === 'reject'" @click="reject">确认拒绝</UButton></div></template></UModal>
-  </div>
-</template>
+<template><div class="page-stack"><GraphAdminNav/><GraphGuardBanner :guard="guard"/><template v-if="task"><div class="flex flex-wrap items-end justify-between gap-3"><div class="page-heading"><div class="flex items-center gap-2"><h1>任务 #{{ task.id }}</h1><UBadge v-if="taskDangerous(task.task_type)" label="危险操作" color="error"/></div><p class="muted">{{ taskLabel(task.task_type) }}</p></div><div v-if="task.status==='awaiting_confirmation'" class="flex gap-2"><UButton color="error" variant="soft" @click="openReject">拒绝</UButton><UButton @click="openConfirm">确认整单变更</UButton></div></div>
+<div class="grid gap-3 md:grid-cols-4"><UCard><p class="text-sm muted">状态</p><UBadge class="mt-2" :label="graphStatusLabels[task.status]||task.status"/></UCard><UCard><p class="text-sm muted">基础 revision</p><p class="mt-2 text-xl font-semibold">{{ task.base_graph_revision??'-' }}</p></UCard><UCard><p class="text-sm muted">来源与模式</p><p class="mt-2 font-medium">{{ task.source_id||'-' }} · {{ task.mode }}</p></UCard><UCard><p class="text-sm muted">创建时间</p><p class="mt-2 text-sm font-medium">{{ task.created_at }}</p></UCard></div>
+<UCard v-if="task.files?.length"><template #header><h2 class="font-semibold">输入文件</h2></template><div class="grid gap-3"><div v-for="file in task.files" :key="file.id||file.role" class="grid gap-1 rounded-lg border border-default p-3 md:grid-cols-[8rem_1fr_auto]"><strong>{{ file.role }}</strong><span>{{ file.original_name }}</span><span class="text-sm muted">{{ file.size }} bytes</span><code class="break-all text-xs text-muted md:col-span-3">SHA-256 {{ file.sha256 }}</code></div></div></UCard>
+<UCard><template #header><h2 class="font-semibold">更新摘要</h2></template><GraphTaskSummary :summary="task.change_summary"/></UCard>
+<UCard v-if="task.change_set_sha256"><template #header><div><h2 class="font-semibold">变更明细</h2><p class="text-sm muted">按类型分页审阅，完整变更集由后端哈希保护</p></div></template><GraphTaskChanges :task-id="task.id" :enabled="Boolean(task.change_set_sha256)"/></UCard>
+<UAlert v-if="task.error_message" color="error" icon="i-lucide-circle-x" title="任务错误" :description="task.error_message"/>
+<UCard><template #header><h2 class="font-semibold">任务时间线</h2></template><div class="grid gap-5"><div v-for="event in task.events" :key="event.id" class="relative border-l-2 border-primary pl-5"><span class="absolute -left-1.5 top-1 size-2.5 rounded-full bg-primary"/><div class="flex flex-wrap justify-between gap-2"><strong>{{ event.message }}</strong><span class="text-xs muted">{{ event.created_at }}</span></div><p class="mt-1 text-sm muted">{{ event.stage }} · {{ event.event_type }}</p><div v-if="detailRows(event.detail).length" class="mt-2 flex flex-wrap gap-2"><UBadge v-for="([key,value]) in detailRows(event.detail)" :key="key" color="neutral" variant="soft" :label="`${summaryLabels[key]||key}: ${value}`"/></div></div></div></UCard>
+</template><USkeleton v-else class="h-80"/>
+<UModal v-model:open="rejectOpen" title="拒绝整单变更"><template #body><UTextarea v-model="reason" :rows="5" placeholder="填写拒绝原因"/><div class="mt-4 flex justify-end"><UButton color="error" :disabled="!reason.trim()" :loading="loading==='reject'" @click="reject">确认拒绝</UButton></div></template></UModal>
+<UModal v-model:open="confirmOpen" :title="taskDangerous(task?.task_type)?'确认危险图谱操作':'确认应用整单变更'"><template #body><UAlert :color="taskDangerous(task?.task_type)?'error':'warning'" icon="i-lucide-triangle-alert" :title="taskDangerous(task?.task_type)?'本任务包含不可恢复的节点删除':'确认后将修改线上 Neo4j'" description="系统会再次校验写锁、revision 和变更集哈希，并在一个事务中应用。"/><div class="mt-4 flex justify-end gap-2"><UButton variant="ghost" @click="closeConfirm">取消</UButton><UButton :color="taskDangerous(task?.task_type)?'error':'primary'" :loading="loading==='confirm'" @click="confirm">确认应用</UButton></div></template></UModal>
+</div></template>
