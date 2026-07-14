@@ -13,9 +13,10 @@ from app.domains.graph.services import (
     get_stats,
 )
 from app.domains.graph.locking import GraphOperationBusy, graph_write_lock
+from app.domains.graph import task_repository
 from app.domains.graph.task_service import (
     GraphTaskError, cancel_task, confirm_task, enqueue_task, guard_status,
-    list_tasks, reject_task, task_detail,
+    list_tasks, reject_task, task_changes, task_detail,
 )
 
 graph_bp = Blueprint("graph", __name__, url_prefix="/api/graph")
@@ -222,13 +223,16 @@ def create_graph_task():
     user_id, err = _require_admin()
     if err: return err
     try:
-        form = request.form
+        form = request.form.to_dict() if request.files else (request.get_json(silent=True) or {})
         task = enqueue_task(
             user_id=user_id, task_type=str(form.get("task_type") or ""),
-            uploaded_file=request.files.get("file"), source_id=form.get("source_id"),
-            mode=str(form.get("mode") or "merge"), batch_size=int(form.get("batch_size") or 128),
+            uploaded_file=request.files.get("file"),
+            uploaded_files={key: value for key, value in request.files.items()},
+            source_id=form.get("source_id"),
+            mode=form.get("mode"), batch_size=int(form.get("batch_size") or 128),
             generate_promotions=_parse_bool(form.get("generate_promotions"), True),
             generate_lateral=_parse_bool(form.get("generate_lateral"), True),
+            options=form,
         )
         return jsonify({"ok": True, "data": task}), 202
     except GraphTaskError as exc: return jsonify({"ok": False, "message": exc.message}), exc.status
@@ -241,7 +245,11 @@ def graph_tasks_list():
     if err: return err
     try:
         page = max(1, int(request.args.get("page") or 1)); size = max(1, min(int(request.args.get("page_size") or 20), 100))
-        data = list_tasks(page=page, page_size=size, status=request.args.get("status") or None, task_type=request.args.get("task_type") or None)
+        requested_by = int(request.args["requested_by"]) if request.args.get("requested_by") else None
+        data = list_tasks(page=page, page_size=size, status=request.args.get("status") or None,
+                          task_type=request.args.get("task_type") or None, requested_by=requested_by,
+                          created_from=request.args.get("created_from") or None,
+                          created_to=request.args.get("created_to") or None)
         return jsonify({"ok": True, "data": data})
     except ValueError: return jsonify({"ok": False, "message": "分页参数格式错误"}), 400
 
@@ -251,6 +259,18 @@ def graph_task_detail(task_id: int):
     _, err = _require_admin()
     if err: return err
     try: return jsonify({"ok": True, "data": task_detail(task_id)})
+    except GraphTaskError as exc: return jsonify({"ok": False, "message": exc.message}), exc.status
+
+
+@graph_bp.get("/tasks/<int:task_id>/changes")
+def graph_task_changes(task_id: int):
+    _, err = _require_admin()
+    if err: return err
+    try:
+        page = max(1, int(request.args.get("page") or 1))
+        size = max(1, min(int(request.args.get("page_size") or 20), 100))
+        return jsonify({"ok": True, "data": task_changes(task_id, group=request.args.get("group") or None, page=page, page_size=size)})
+    except ValueError: return jsonify({"ok": False, "message": "分页参数格式错误"}), 400
     except GraphTaskError as exc: return jsonify({"ok": False, "message": exc.message}), exc.status
 
 
@@ -302,8 +322,8 @@ def clear():
             return jsonify({"ok": False, "message": "请二次确认（confirmed: true）"}), 400
 
         guard = guard_status()
-        if guard["locked"]:
-            return jsonify({"ok": False, "message": "图谱被待确认任务锁定，不能执行紧急清空"}), 409
+        if guard["locked"] or task_repository.has_active_tasks():
+            return jsonify({"ok": False, "message": "存在运行中或待确认的图谱任务，不能执行紧急清空"}), 409
         with graph_write_lock():
             result = clear_graph()
             with db_cursor() as (_, cur):

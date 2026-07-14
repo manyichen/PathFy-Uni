@@ -554,7 +554,31 @@ def get_stats() -> Dict[str, Any]:
     if not password:
         raise GraphServiceError("未配置 NEO4J_PASSWORD", 500)
     driver = neo4j_driver(uri, user, password)
-    return get_graph_statistics(driver, database)
+    stats = get_graph_statistics(driver, database)
+    with driver.session(database=database) as session:
+        row = session.run("""
+        MATCH (j:Job)
+        WITH count(j) AS jobs,
+             sum(CASE WHEN j.cap_version IS NULL OR j.cap_req_theory IS NULL OR j.cap_conf_theory IS NULL THEN 1 ELSE 0 END) AS capability_missing,
+             sum(CASE WHEN j.cap_version IS NOT NULL AND j.cap_version <> $cap_version THEN 1 ELSE 0 END) AS capability_stale,
+             sum(CASE WHEN j.cap_conf_theory < 0.6 OR j.cap_conf_cross < 0.6 OR j.cap_conf_practice < 0.6 OR j.cap_conf_digital < 0.6 OR j.cap_conf_innovation < 0.6 OR j.cap_conf_teamwork < 0.6 OR j.cap_conf_social < 0.6 OR j.cap_conf_growth < 0.6 THEN 1 ELSE 0 END) AS low_confidence,
+             sum(CASE WHEN j.salary_parse_version IS NULL OR j.salary_parse_version <> $salary_version THEN 1 ELSE 0 END) AS salary_stale,
+             sum(CASE WHEN j.source='inferred' THEN 1 ELSE 0 END) AS inferred_jobs
+        OPTIONAL MATCH (jt:JobTitle)
+        WITH jobs,capability_missing,capability_stale,low_confidence,salary_stale,inferred_jobs,
+             sum(CASE WHEN coalesce(jt.job_count,0)<2 THEN 1 ELSE 0 END) AS low_frequency_titles
+        OPTIONAL MATCH ()-[l:SIMILAR_FOR_LATERAL]->()
+        WITH *,sum(CASE WHEN l.generation_source='curated' THEN 1 ELSE 0 END) AS curated_lateral,
+             sum(CASE WHEN l.generation_source<>'curated' OR l.generation_source IS NULL THEN 1 ELSE 0 END) AS auto_lateral
+        OPTIONAL MATCH (p:JobPromotion)
+        RETURN jobs,capability_missing,capability_stale,low_confidence,salary_stale,inferred_jobs,low_frequency_titles,
+               curated_lateral,auto_lateral,
+               sum(CASE WHEN p.generation_source='curated' THEN 1 ELSE 0 END) AS curated_promotions,
+               sum(CASE WHEN p.generation_source<>'curated' OR p.generation_source IS NULL THEN 1 ELSE 0 END) AS auto_promotions
+        """, cap_version=os.getenv("GRAPH_CAP_VERSION", "job-cap-v2"), salary_version="v1").single()
+        if row:
+            stats.update({key: int(value or 0) for key, value in dict(row).items()})
+    return stats
 
 
 def get_job_titles() -> List[Dict[str, Any]]:

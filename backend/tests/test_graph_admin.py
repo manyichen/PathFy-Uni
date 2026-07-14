@@ -50,6 +50,21 @@ def test_task_list_and_detail_are_admin_scoped(client, monkeypatch):
     assert client.get("/api/graph/tasks/9").get_json()["data"]["id"] == 9
 
 
+def test_create_no_file_maintenance_task_from_json(client, monkeypatch):
+    captured = {}
+    monkeypatch.setattr(graph_router, "enqueue_task", lambda **kwargs: captured.update(kwargs) or {"id": 18, "status": "queued"})
+    response = client.post("/api/graph/tasks", json={"task_type": "salary_normalization", "force": True})
+    assert response.status_code == 202
+    assert captured["uploaded_file"] is None
+    assert captured["options"]["force"] is True
+
+
+def test_task_change_preview_is_paginated(client, monkeypatch):
+    monkeypatch.setattr(graph_router, "task_changes", lambda task_id, **kwargs: {"id": task_id, **kwargs})
+    data = client.get("/api/graph/tasks/8/changes?group=jobs&page=2&page_size=10").get_json()["data"]
+    assert data == {"id": 8, "group": "jobs", "page": 2, "page_size": 10}
+
+
 def test_confirm_reject_cancel_routes(client, monkeypatch):
     monkeypatch.setattr(graph_router, "confirm_task", lambda task_id, user_id: {"id": task_id, "user": user_id})
     monkeypatch.setattr(graph_router, "reject_task", lambda task_id, user_id, reason: {"reason": reason})

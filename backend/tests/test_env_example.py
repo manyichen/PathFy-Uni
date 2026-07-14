@@ -24,7 +24,6 @@ def test_examples_do_not_contain_obvious_real_secrets():
         BACKEND_ROOT / ".env.example",
         BACKEND_ROOT.parent / "frontend/.env.example",
         BACKEND_ROOT.parent / "generate_graph/.env.example",
-        BACKEND_ROOT.parent / "tools/job_eval/.env.example",
     ):
         content = path.read_text(encoding="utf-8")
         assert not re.search(r"\b(sk-|AIza)[A-Za-z0-9_-]{12,}", content), path

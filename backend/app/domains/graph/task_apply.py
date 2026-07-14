@@ -7,6 +7,7 @@ from uuid import uuid4
 
 from app.domains.graph.constants import SOFT_SKILL_DIMS, normalize_text, parse_experience_years
 from app.domains.graph.sync_service import _generated_id, _promotion_id
+from app.domains.graph.task_registry import TASK_HANDLERS
 from app.infrastructure.neo4j import neo4j_driver, neo4j_settings
 from app.infrastructure.salary import neo4j_salary_properties
 
@@ -16,12 +17,13 @@ def _apply_job(tx, change: dict[str, Any], run_id: str) -> None:
     for item in change.get("jobs", []):
         row, ai, key = item["row"], item.get("ai", {}), item["job_key"]
         sal = neo4j_salary_properties(normalize_text(row.get("salary")))
+        capability = item.get("capability", {})
         tx.run(
             """MERGE (j:Job {job_key:$key}) SET j += $props,
                j.import_fingerprint=$fingerprint,j.import_source_id=$source,
                j.last_seen_run_id=$run,j.import_managed=true,j.last_imported_at=datetime()""",
             key=key, fingerprint=item["fingerprint"], source=source_id, run=run_id,
-            props={"title": normalize_text(row.get("name")), "company": normalize_text(row.get("company")),
+            props={**capability, "title": normalize_text(row.get("name")), "company": normalize_text(row.get("company")),
                    "location": normalize_text(row.get("location")), "salary": sal["salary"],
                    "salary_norm": sal["salary_norm"], "salary_negotiable": sal["salary_negotiable"],
                    "salary_parse_version": sal["salary_parse_version"], "salary_monthly_min": sal.get("salary_monthly_min"),
@@ -58,7 +60,9 @@ def _apply_job(tx, change: dict[str, Any], run_id: str) -> None:
     source = "graph_task_llm"
     for p in change.get("promotions", []):
         frm, to = p["from_title"], p["to_title"]
-        tx.run("""MATCH (jt:JobTitle {name:$frm}) MERGE (pr:JobPromotion {promotion_id:$id})
+        tx.run("""MATCH (jt:JobTitle {name:$frm}) OPTIONAL MATCH (existing:JobPromotion {promotion_id:$id})
+          WITH jt,existing WHERE existing IS NULL OR coalesce(existing.generation_source,'') <> 'curated'
+          MERGE (pr:JobPromotion {promotion_id:$id})
           SET pr.from_title=$frm,pr.to_title=$to,pr.title=$title,pr.stage1=$s1,pr.stage2=$s2,
           pr.stage3=$s3,pr.stage3_job_title=$s3job,pr.confidence=$confidence,pr.rationale=$rationale,
           pr.generation_source=$source,pr.generation_run_id=$run,pr.updated_at=datetime()
@@ -66,14 +70,19 @@ def _apply_job(tx, change: dict[str, Any], run_id: str) -> None:
           title=str(p.get("promotion_name", "")), s1=str(p.get("stage1", "")), s2=str(p.get("stage2", "")),
           s3=str(p.get("stage3", "")), s3job=str(p.get("stage3_job_title", "")), confidence=float(p.get("confidence", 0)),
           rationale=str(p.get("rationale", "")), source=source, run=run_id)
-    tx.run("MATCH (p:JobPromotion {generation_source:$source}) WHERE coalesce(p.generation_run_id,'')<>$run DETACH DELETE p", source=source, run=run_id)
+    if change.get("version", 1) == 1 or change.get("replace_auto_promotions", True):
+        tx.run("MATCH (p:JobPromotion {generation_source:$source}) WHERE coalesce(p.generation_run_id,'')<>$run DETACH DELETE p", source=source, run=run_id)
     for rank, p in enumerate(change.get("lateral", []), 1):
-        tx.run("""MATCH (a:JobTitle {name:$frm}),(b:JobTitle {name:$to}) MERGE (a)-[r:SIMILAR_FOR_LATERAL]->(b)
+        tx.run("""MATCH (a:JobTitle {name:$frm}),(b:JobTitle {name:$to})
+          OPTIONAL MATCH (a)-[existing:SIMILAR_FOR_LATERAL]->(b)
+          WITH a,b,existing WHERE existing IS NULL OR coalesce(existing.generation_source,'') <> 'curated'
+          MERGE (a)-[r:SIMILAR_FOR_LATERAL]->(b)
           SET r.score=$score,r.rank=$rank,r.track_from=$tf,r.track_to=$tt,r.cap_similarity=$cap,
           r.same_track=$same,r.rationale=$why,r.generation_source=$source,r.generation_run_id=$run,r.updated_at=datetime()""",
           frm=p["from"],to=p["to"],score=float(p.get("score",0)),rank=rank,tf=str(p.get("track_from","")),tt=str(p.get("track_to","")),
           cap=float(p.get("cap_similarity",0)),same=bool(p.get("same_track",False)),why=str(p.get("rationale","")),source=source,run=run_id)
-    tx.run("MATCH ()-[r:SIMILAR_FOR_LATERAL {generation_source:$source}]->() WHERE coalesce(r.generation_run_id,'')<>$run DELETE r", source=source, run=run_id)
+    if change.get("version", 1) == 1 or change.get("replace_auto_lateral", True):
+        tx.run("MATCH ()-[r:SIMILAR_FOR_LATERAL {generation_source:$source}]->() WHERE coalesce(r.generation_run_id,'')<>$run DELETE r", source=source, run=run_id)
 
 
 def _apply_resources(tx, change: dict[str, Any], run_id: str) -> None:
@@ -81,10 +90,11 @@ def _apply_resources(tx, change: dict[str, Any], run_id: str) -> None:
     for row in change["items"]:
         rid = row["resource_id"]; ids.append(rid)
         tx.run("""MERGE (r:LearningResource {resource_id:$id}) SET r += $props,
-          r.import_source_id=$source,r.import_run_id=$run,r.import_managed=true,r.updated_at=datetime()
+          r.import_source_id=$source,r.source_id=$source,r.generation_source='curated',r.source_priority=100,
+          r.import_run_id=$run,r.last_task_run_id=$run,r.import_managed=true,r.updated_at=datetime()
           WITH r OPTIONAL MATCH (r)-[old:FOR_JOB_TITLE]->(:JobTitle) DELETE old""", id=rid, source=source, run=run_id,
           props={k:v for k,v in row.items() if k != "job_titles"})
-        tx.run("UNWIND $titles AS title MATCH (r:LearningResource {resource_id:$id}),(jt:JobTitle {name:title}) MERGE (r)-[:FOR_JOB_TITLE]->(jt)", titles=row["job_titles"], id=rid)
+        tx.run("UNWIND $titles AS title MATCH (r:LearningResource {resource_id:$id}),(jt:JobTitle {name:title}) MERGE (r)-[rel:FOR_JOB_TITLE]->(jt) SET rel.source_id=$source,rel.generation_source='curated',rel.source_priority=100", titles=row["job_titles"], id=rid, source=source)
     if change.get("mode") == "snapshot": tx.run("MATCH (r:LearningResource {import_source_id:$source,import_managed:true}) WHERE NOT r.resource_id IN $ids DETACH DELETE r", source=source, ids=ids)
 
 
@@ -93,11 +103,79 @@ def _apply_competitions(tx, change: dict[str, Any], run_id: str) -> None:
     for row in change["items"]:
         cid = row["competition_id"]; ids.append(cid)
         tx.run("""MERGE (c:Competition {competition_id:$id}) SET c += $props,
-          c.import_source_id=$source,c.import_run_id=$run,c.import_managed=true,c.updated_at=datetime()
+          c.import_source_id=$source,c.source_id=$source,c.generation_source='curated',c.source_priority=100,
+          c.import_run_id=$run,c.last_task_run_id=$run,c.import_managed=true,c.updated_at=datetime()
           WITH c OPTIONAL MATCH (c)-[old:FOR_JOB_TITLE]->(:JobTitle) DELETE old""", id=cid, source=source, run=run_id,
           props={k:v for k,v in row.items() if k != "job_titles"})
-        tx.run("UNWIND $titles AS title MATCH (c:Competition {competition_id:$id}),(jt:JobTitle {name:title}) MERGE (c)-[:FOR_JOB_TITLE]->(jt)", titles=row["job_titles"], id=cid)
+        tx.run("UNWIND $titles AS title MATCH (c:Competition {competition_id:$id}),(jt:JobTitle {name:title}) MERGE (c)-[rel:FOR_JOB_TITLE]->(jt) SET rel.source_id=$source,rel.generation_source='curated',rel.source_priority=100", titles=row["job_titles"], id=cid, source=source)
     if change.get("mode") == "snapshot": tx.run("MATCH (c:Competition {import_source_id:$source,import_managed:true}) WHERE NOT c.competition_id IN $ids DETACH DELETE c", source=source, ids=ids)
+
+
+def _apply_capabilities(tx, change: dict[str, Any], _run_id: str) -> None:
+    for item in change.get("jobs", []):
+        tx.run("MATCH (j:Job {job_key:$key}) SET j += $props,j.cap_updated_at=datetime()", key=item["job_key"], props=item["capability"])
+
+
+def _apply_promotions(tx, change: dict[str, Any], run_id: str) -> None:
+    source = change.get("source_id") or "curated-promotions"; ids = []
+    for row in change.get("items", []):
+        pid = row["promotion_id"]; ids.append(pid)
+        tx.run("""MERGE (p:JobPromotion {promotion_id:$id}) SET p += $props,
+          p.generation_source='curated',p.source_id=$source,p.source_priority=100,
+          p.last_task_run_id=$run,p.updated_at=datetime()
+          WITH p OPTIONAL MATCH (p)-[old:FOR_JOB_TITLE]->(:JobTitle) DELETE old
+          WITH p MATCH (jt:JobTitle {name:$title}) MERGE (p)-[:FOR_JOB_TITLE]->(jt)""",
+          id=pid, props=row, source=source, run=run_id, title=row["job_title"])
+    if change.get("mode") == "snapshot":
+        tx.run("MATCH (p:JobPromotion {generation_source:'curated',source_id:$source}) WHERE NOT p.promotion_id IN $ids DETACH DELETE p", source=source, ids=ids)
+
+
+def _apply_lateral_import(tx, change: dict[str, Any], run_id: str) -> None:
+    source = change.get("source_id") or "curated-lateral"; pairs = []
+    for row in change.get("items", []):
+        frm, to = row["from_job_title"], row["to_job_title"]; pairs.append(f"{frm}\u0000{to}")
+        props = {k: v for k, v in row.items() if k not in {"from_job_title", "to_job_title"}}
+        tx.run("""MATCH (a:JobTitle {name:$from_title}),(b:JobTitle {name:$to_title})
+          MERGE (a)-[r:SIMILAR_FOR_LATERAL]->(b) SET r += $props,r.generation_source='curated',
+          r.source_id=$source,r.source_priority=100,r.last_task_run_id=$run,r.updated_at=datetime()""",
+          from_title=frm, to_title=to, props=props, source=source, run=run_id)
+    if change.get("mode") == "snapshot":
+        tx.run("MATCH (a:JobTitle)-[r:SIMILAR_FOR_LATERAL {generation_source:'curated',source_id:$source}]->(b:JobTitle) WHERE NOT (a.name+'\\u0000'+b.name) IN $pairs DELETE r", source=source, pairs=pairs)
+
+
+def _apply_recommendations(tx, change: dict[str, Any], run_id: str) -> None:
+    source = change.get("source_id") or "curated-promotion-recommendations"
+    resource_keys, competition_keys = [], []
+    for row in change.get("resource_recommendations", []):
+        key = f"{row['promotion_id']}\u0000{row['resource_id']}"; resource_keys.append(key)
+        props = {k: v for k, v in row.items() if k not in {"promotion_id", "resource_id"}}
+        tx.run("""MATCH (p:JobPromotion {promotion_id:$promotion_id}),(r:LearningResource {resource_id:$resource_id})
+          MERGE (p)-[rel:RECOMMENDS_RESOURCE]->(r) SET rel += $props,rel.generation_source='curated',
+          rel.source_id=$source,rel.source_priority=100,rel.last_task_run_id=$run,rel.updated_at=datetime()""",
+          promotion_id=row["promotion_id"], resource_id=row["resource_id"], props=props, source=source, run=run_id)
+    for row in change.get("competition_recommendations", []):
+        key = f"{row['promotion_id']}\u0000{row['competition_id']}"; competition_keys.append(key)
+        props = {k: v for k, v in row.items() if k not in {"promotion_id", "competition_id"}}
+        tx.run("""MATCH (p:JobPromotion {promotion_id:$promotion_id}),(c:Competition {competition_id:$competition_id})
+          MERGE (p)-[rel:RECOMMENDS_COMPETITION]->(c) SET rel += $props,rel.generation_source='curated',
+          rel.source_id=$source,rel.source_priority=100,rel.last_task_run_id=$run,rel.updated_at=datetime()""",
+          promotion_id=row["promotion_id"], competition_id=row["competition_id"], props=props, source=source, run=run_id)
+    if change.get("mode") == "snapshot":
+        tx.run("MATCH (p:JobPromotion)-[r:RECOMMENDS_RESOURCE {source_id:$source}]->(x:LearningResource) WHERE NOT (p.promotion_id+'\\u0000'+x.resource_id) IN $keys DELETE r", source=source, keys=resource_keys)
+        tx.run("MATCH (p:JobPromotion)-[r:RECOMMENDS_COMPETITION {source_id:$source}]->(x:Competition) WHERE NOT (p.promotion_id+'\\u0000'+x.competition_id) IN $keys DELETE r", source=source, keys=competition_keys)
+
+
+def _apply_salary(tx, change: dict[str, Any], _run_id: str) -> None:
+    for item in change.get("jobs", []):
+        tx.run("MATCH (j:Job {job_key:$key}) SET j += $props", key=item["job_key"], props=item["new"])
+
+
+def _apply_inferred_cleanup(tx, change: dict[str, Any], _run_id: str) -> None:
+    keys = [x["job_key"] for x in change.get("jobs", []) if x.get("job_key")]
+    titles = [x["name"] for x in change.get("job_titles", []) if x.get("name")]
+    tx.run("UNWIND $keys AS key MATCH (j:Job {job_key:key,source:'inferred'}) DETACH DELETE j", keys=keys)
+    tx.run("MATCH (jt:JobTitle) OPTIONAL MATCH (j:Job)-[:HAS_TITLE]->(jt) WITH jt,count(j) AS actual SET jt.job_count=actual")
+    tx.run("UNWIND $titles AS name MATCH (jt:JobTitle {name:name}) WHERE coalesce(jt.job_count,0)<2 DETACH DELETE jt", titles=titles)
 
 
 def is_task_applied(task_uuid: str) -> bool:
@@ -132,10 +210,23 @@ def apply_change_set(change: dict[str, Any], *, task_uuid: str, change_sha256: s
     _ensure_constraints(driver, database)
     def apply(tx):
         kind = change.get("kind")
-        if kind == "job_import": _apply_job(tx, change, run_id)
-        elif kind == "learning_resource_import": _apply_resources(tx, change, run_id)
-        elif kind == "competition_import": _apply_competitions(tx, change, run_id)
-        else: raise ValueError(f"未知变更集类型: {kind}")
+        handlers = {
+            "job_import": _apply_job,
+            "job_capability_evaluation": _apply_capabilities,
+            "job_capability_result_import": _apply_capabilities,
+            "learning_resource_import": _apply_resources,
+            "competition_import": _apply_competitions,
+            "job_promotion_import": _apply_promotions,
+            "job_lateral_import": _apply_lateral_import,
+            "promotion_recommendation_import": _apply_recommendations,
+            "salary_normalization": _apply_salary,
+            "inferred_job_cleanup": _apply_inferred_cleanup,
+        }
+        try:
+            handler_key = TASK_HANDLERS[str(kind)][1]
+            handler = handlers[str(handler_key)]
+        except KeyError as exc: raise ValueError(f"未知变更集类型: {kind}") from exc
+        handler(tx, change, run_id)
         tx.run("CREATE (c:GraphTaskCommit {task_uuid:$uuid,change_sha256:$sha,run_id:$run,applied_at:datetime()})", uuid=task_uuid, sha=change_sha256, run=run_id)
     with driver.session(database=database) as session: session.execute_write(apply)
     return {"run_id": run_id, "kind": change.get("kind")}

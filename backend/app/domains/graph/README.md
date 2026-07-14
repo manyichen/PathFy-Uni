@@ -18,6 +18,14 @@
 - `job_import`：按 `job_key` 和内容指纹增量提取岗位；同步 JobTitle，并可选择生成晋升路径和换岗关系。`snapshot` 只清理同一 `source_id` 管理的缺失岗位。
 - `learning_resource_import`：使用 `datasets/master/learning_resources.csv` 字段契约，更新 `LearningResource` 和 `FOR_JOB_TITLE`。
 - `competition_import`：使用 `datasets/master/competitions.csv` 字段契约，更新 `Competition` 和 `FOR_JOB_TITLE`。
+- `job_capability_evaluation`：对缺失、过期或全部存量岗位生成八维评分与置信度变更集。
+- `job_capability_result_import`：严格校验并导入历史岗位能力 JSONL。
+- `job_promotion_import` / `job_lateral_import`：导入策展晋升与换岗数据，策展来源优先于自动生成。
+- `promotion_recommendation_import`：同时导入学习资源和竞赛推荐两个 CSV，整单确认。
+- `salary_normalization` / `inferred_job_cleanup`：无文件维护任务，仍须生成变更集并由管理员确认。
+
+所有生产写入必须由 graph worker 规划、MySQL 队列留痕并在管理员确认后执行。命令行批处理使用
+`python -m app.domains.graph.cli enqueue <task-type> ...`，该命令只入队，不直接连接 Neo4j 写库。
 
 旧的直接导入及五个独立派生写接口返回 410，不再提供预览模式。紧急清空接口保留，但受全局 guard 约束并写入 MySQL 审计历史。
 

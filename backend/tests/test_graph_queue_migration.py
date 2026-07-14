@@ -4,6 +4,7 @@ from pathlib import Path
 
 
 MIGRATION = Path(__file__).parents[1] / "migrations/versions/20260713_0002_graph_update_queue.py"
+CATALOG_MIGRATION = Path(__file__).parents[1] / "migrations/versions/20260714_0003_graph_task_catalog.py"
 
 
 def test_graph_queue_migration_contains_durable_models():
@@ -19,3 +20,11 @@ def test_graph_queue_migration_contains_durable_models():
 def test_guard_starts_unlocked_at_revision_zero():
     source = MIGRATION.read_text(encoding="utf-8")
     assert "INSERT INTO graph_write_guard (id, graph_revision) VALUES (1, 0)" in source
+
+
+def test_graph_task_catalog_migration_supports_multiple_files():
+    source = CATALOG_MIGRATION.read_text(encoding="utf-8")
+    assert 'down_revision = "20260713_0002"' in source
+    assert "CREATE TABLE graph_update_task_files" in source
+    assert "promotion_recommendation_import" in source
+    assert "salary_normalization" in source

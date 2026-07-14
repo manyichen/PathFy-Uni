@@ -24,12 +24,21 @@ def _decode(row: dict[str, Any] | None, *, include_change_set: bool = False):
     raw_change = item.pop("change_set_json", None)
     if include_change_set:
         item["change_set"] = json.loads(raw_change) if isinstance(raw_change, str) else raw_change
+    else:
+        item.pop("input_file_path", None)
     return item
 
 
-def create_task(*, task_uuid: str, task_type: str, requested_by: int, file_name: str,
-                file_path: str, file_size: int, sha256: str, source_id: str | None,
-                mode: str, options: dict[str, Any]) -> dict[str, Any]:
+def create_task(*, task_uuid: str, task_type: str, requested_by: int,
+                files: list[dict[str, Any]] | None = None,
+                source_id: str | None, mode: str, options: dict[str, Any],
+                file_name: str | None = None, file_path: str | None = None,
+                file_size: int | None = None, sha256: str | None = None) -> dict[str, Any]:
+    files = list(files or [])
+    if not files and file_name:
+        files.append({"role": "file", "original_name": file_name, "private_path": file_path,
+                      "size": file_size or 0, "sha256": sha256, "media_type": None})
+    primary = next((item for item in files if item["role"] == "file"), files[0] if files else None)
     with db_cursor() as (_, cur):
         cur.execute(
             """
@@ -38,16 +47,36 @@ def create_task(*, task_uuid: str, task_type: str, requested_by: int, file_name:
                input_file_size, input_sha256, source_id, mode, options_json)
             VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
             """,
-            (task_uuid, task_type, requested_by, file_name, file_path, file_size,
-             sha256, source_id, mode, _json(options)),
+            (task_uuid, task_type, requested_by,
+             primary and primary["original_name"], primary and primary["private_path"],
+             primary and primary["size"], primary and primary["sha256"],
+             source_id, mode, _json(options)),
         )
         task_id = cur.lastrowid
+        if files:
+            cur.executemany(
+                """INSERT INTO graph_update_task_files
+                   (task_id,role,original_name,private_path,size,sha256,media_type)
+                   VALUES (%s,%s,%s,%s,%s,%s,%s)""",
+                [(task_id, item["role"], item["original_name"], item.get("private_path"),
+                  item["size"], item["sha256"], item.get("media_type")) for item in files],
+            )
         cur.execute(
             "INSERT INTO graph_update_task_events (task_id,event_type,stage,message,detail_json) VALUES (%s,'queued','queue','任务已进入队列',%s)",
             (task_id, _json({"task_type": task_type})),
         )
         cur.execute("SELECT * FROM graph_update_tasks WHERE id=%s", (task_id,))
-        return _decode(cur.fetchone())
+        task = _decode(cur.fetchone())
+        task["files"] = [{k: v for k, v in item.items() if k != "private_path"} for item in files]
+        return task
+
+
+def _load_files(cur, task_id: int, *, include_paths: bool = False) -> list[dict[str, Any]]:
+    columns = "id,role,original_name,size,sha256,media_type,created_at"
+    if include_paths:
+        columns += ",private_path"
+    cur.execute(f"SELECT {columns} FROM graph_update_task_files WHERE task_id=%s ORDER BY id", (task_id,))
+    return [dict(row) for row in cur.fetchall()]
 
 
 def add_event(task_id: int, event_type: str, message: str, *, stage: str | None = None,
@@ -67,6 +96,12 @@ def get_guard(*, for_update: bool = False, cursor=None) -> dict[str, Any]:
     with db_cursor() as (_, cur):
         cur.execute("SELECT * FROM graph_write_guard WHERE id=1")
         return dict(cur.fetchone())
+
+
+def has_active_tasks() -> bool:
+    with db_cursor() as (_, cur):
+        cur.execute("SELECT 1 FROM graph_update_tasks WHERE status IN ('running','awaiting_confirmation','applying') LIMIT 1")
+        return cur.fetchone() is not None
 
 
 def claim_next_task() -> dict[str, Any] | None:
@@ -93,6 +128,7 @@ def claim_next_task() -> dict[str, Any] | None:
         )
         cur.execute("SELECT * FROM graph_update_tasks WHERE id=%s", (task_id,))
         task = _decode(cur.fetchone(), include_change_set=True)
+        task["files"] = _load_files(cur, task_id, include_paths=True)
         cur.execute(
             "INSERT INTO graph_update_task_events (task_id,event_type,stage,message) VALUES (%s,'started','worker','Worker 开始生成变更集')",
             (task_id,),
@@ -117,7 +153,10 @@ def recover_running_tasks() -> int:
 def get_applying_tasks() -> list[dict[str, Any]]:
     with db_cursor() as (_, cur):
         cur.execute("SELECT * FROM graph_update_tasks WHERE status='applying'")
-        return [_decode(row, include_change_set=True) for row in cur.fetchall()]
+        tasks = [_decode(row, include_change_set=True) for row in cur.fetchall()]
+        for task in tasks:
+            task["files"] = _load_files(cur, int(task["id"]), include_paths=True)
+        return tasks
 
 
 def reset_applying_task(task_id: int) -> None:
@@ -154,7 +193,7 @@ def prepare_task(task_id: int, *, base_revision: int, summary: dict[str, Any],
 
 def fail_task(task_id: int, message: str) -> None:
     with db_cursor() as (_, cur):
-        cur.execute("UPDATE graph_update_tasks SET status='failed',error_message=%s,finished_at=NOW() WHERE id=%s", (message[:65000], task_id))
+        cur.execute("UPDATE graph_update_tasks SET status='failed',error_message=%s,input_file_path=NULL,finished_at=NOW() WHERE id=%s", (message[:65000], task_id))
         cur.execute("UPDATE graph_write_guard SET locked_task_id=NULL,locked_at=NULL WHERE id=1 AND locked_task_id=%s", (task_id,))
         cur.execute("INSERT INTO graph_update_task_events (task_id,event_type,stage,message) VALUES (%s,'failed','worker',%s)", (task_id, message[:500]))
 
@@ -166,12 +205,19 @@ def requeue_task(task_id: int, message: str) -> None:
 
 
 def list_tasks(*, page: int, page_size: int, status: str | None = None,
-               task_type: str | None = None) -> dict[str, Any]:
+               task_type: str | None = None, requested_by: int | None = None,
+               created_from: str | None = None, created_to: str | None = None) -> dict[str, Any]:
     clauses, params = [], []
     if status:
         clauses.append("status=%s"); params.append(status)
     if task_type:
         clauses.append("task_type=%s"); params.append(task_type)
+    if requested_by is not None:
+        clauses.append("requested_by=%s"); params.append(requested_by)
+    if created_from:
+        clauses.append("created_at>=%s"); params.append(created_from)
+    if created_to:
+        clauses.append("created_at<=%s"); params.append(created_to)
     where = " WHERE " + " AND ".join(clauses) if clauses else ""
     with db_cursor() as (_, cur):
         cur.execute("SELECT COUNT(*) AS total FROM graph_update_tasks" + where, params)
@@ -180,7 +226,10 @@ def list_tasks(*, page: int, page_size: int, status: str | None = None,
             "SELECT * FROM graph_update_tasks" + where + " ORDER BY created_at DESC,id DESC LIMIT %s OFFSET %s",
             (*params, page_size, (page - 1) * page_size),
         )
-        return {"items": [_decode(r) for r in cur.fetchall()], "total": total, "page": page, "page_size": page_size}
+        items = [_decode(r) for r in cur.fetchall()]
+        for item in items:
+            item["files"] = _load_files(cur, int(item["id"]))
+        return {"items": items, "total": total, "page": page, "page_size": page_size}
 
 
 def get_task(task_id: int, *, include_change_set: bool = False) -> dict[str, Any] | None:
@@ -190,6 +239,7 @@ def get_task(task_id: int, *, include_change_set: bool = False) -> dict[str, Any
         task = _decode(cur.fetchone(), include_change_set=include_change_set)
         if not task:
             return None
+        task["files"] = _load_files(cur, task_id, include_paths=include_change_set)
         cur.execute("SELECT id,event_type,stage,message,detail_json,created_at FROM graph_update_task_events WHERE task_id=%s ORDER BY id", (task_id,))
         events = []
         for row in cur.fetchall():
@@ -197,6 +247,25 @@ def get_task(task_id: int, *, include_change_set: bool = False) -> dict[str, Any
             event["detail"] = json.loads(raw) if isinstance(raw, str) else raw; events.append(event)
         task["events"] = events
         return task
+
+
+def task_changes(task_id: int, *, group: str | None, page: int, page_size: int) -> dict[str, Any] | None:
+    task = get_task(task_id, include_change_set=True)
+    if not task:
+        return None
+    change = task.get("change_set") or {}
+    groups = {key: value for key, value in change.items() if isinstance(value, list)}
+    selected = group if group in groups else (next(iter(groups), None) if not group else None)
+    rows = groups.get(selected, []) if selected else []
+    start = (page - 1) * page_size
+    return {"group": selected, "groups": {key: len(value) for key, value in groups.items()},
+            "items": rows[start:start + page_size], "total": len(rows),
+            "page": page, "page_size": page_size}
+
+
+def clear_task_file_paths(task_id: int) -> None:
+    with db_cursor() as (_, cur):
+        cur.execute("UPDATE graph_update_task_files SET private_path=NULL WHERE task_id=%s", (task_id,))
 
 
 def set_applying(task_id: int, user_id: int) -> dict[str, Any] | None:

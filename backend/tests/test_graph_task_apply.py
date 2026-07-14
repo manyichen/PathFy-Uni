@@ -38,3 +38,14 @@ def test_already_applied_task_is_idempotent(monkeypatch):
     monkeypatch.setattr(task_apply, "is_task_applied", lambda _uuid: True)
     result = task_apply.apply_change_set({"kind": "competition_import"}, task_uuid="a" * 32, change_sha256="b" * 64)
     assert result["already_applied"] is True
+
+
+def test_capability_change_set_updates_jobs_in_same_transaction(monkeypatch):
+    driver = FakeDriver()
+    monkeypatch.setattr(task_apply, "neo4j_settings", lambda: ("bolt://test", "neo4j", "pw", "neo4j"))
+    monkeypatch.setattr(task_apply, "neo4j_driver", lambda *_args: driver)
+    monkeypatch.setattr(task_apply, "is_task_applied", lambda _uuid: False)
+    task_apply.apply_change_set({"version": 2, "kind": "job_capability_evaluation", "jobs": [{"job_key": "j1", "capability": {"cap_req_theory": 70}}]}, task_uuid="c" * 32, change_sha256="d" * 64)
+    queries = [query for query, _ in driver.value.tx.queries]
+    assert any("cap_updated_at" in query for query in queries)
+    assert any("GraphTaskCommit" in query for query in queries)
