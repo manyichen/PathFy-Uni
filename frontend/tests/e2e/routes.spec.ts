@@ -43,3 +43,43 @@ test('jobs keeps the assistant visible without an extra click', async ({ page })
   await expect(page.getByRole('heading', { name: 'AI 岗位助手' })).toBeVisible()
   await expect(page.getByPlaceholder('输入岗位偏好或问题…')).toBeVisible()
 })
+
+test('graph and report share the rich job picker', async ({ page }) => {
+  await page.route('**/api/jobs/options**', route => route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: JSON.stringify({ ok: true, data: { total: 1, page: 1, page_size: 20, jobs: [{ id: 'job-1', title: '数据分析师', company: '示例科技', location: '上海', salary: '15-20K', experience_years: 2 }] } })
+  }))
+  await page.goto('/graph')
+  await page.getByRole('button', { name: '选择当前岗位' }).click()
+  await expect(page.getByText('示例科技')).toBeVisible()
+  await expect(page.getByText('2 年经验', { exact: false })).toBeVisible()
+  await page.getByRole('button', { name: /数据分析师/ }).click()
+  await expect(page.getByText('示例科技 · 上海')).toBeVisible()
+
+  await page.goto('/report')
+  await page.getByRole('button', { name: '手动选择岗位' }).click()
+  await expect(page.getByText('示例科技')).toBeVisible()
+})
+
+test('report keeps the development line chart and guidance copy', async ({ page }) => {
+  const pageErrors: string[] = []
+  page.on('pageerror', error => pageErrors.push(error.message))
+  await page.addInitScript(() => {
+    localStorage.setItem('career_report_workspace_v1_1', JSON.stringify({
+      v: 1,
+      reportSnapshot: {
+        generated_at: '2026-07-14T12:00:00',
+        targets: [],
+        development_lines: { lines: [{ line_id: 'line-1', line_name: '数据分析师发展线', timeline: [{ month: 0, progress: 0, label: '起点' }, { month: 3, progress: 35, label: '完成项目' }] }] },
+        plans_by_target: [],
+        evaluation: { metrics: [] }
+      }
+    }))
+  })
+  await page.goto('/report')
+  await expect(page.getByRole('heading', { name: '发展线与复盘节点' })).toBeVisible()
+  expect(pageErrors).toEqual([])
+  await expect(page.locator('canvas').first()).toBeVisible()
+  await expect(page.getByText('折线不是预测结果')).toBeVisible()
+})

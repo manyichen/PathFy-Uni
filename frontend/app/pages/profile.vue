@@ -122,7 +122,7 @@ onMounted(async () => {
 <template>
   <div class="page-stack">
     <div class="flex flex-wrap items-end justify-between gap-3">
-      <div class="page-heading"><h1 class="flex items-center gap-2"><UIcon name="i-lucide-chart-radar" class="text-primary" />学生就业能力画像</h1><p class="muted">整合简历、证书、项目和补充材料，形成八维能力证据</p></div>
+      <div class="page-heading"><h1 class="flex items-center gap-2"><UIcon name="i-lucide-radar" class="text-primary" />学生就业能力画像</h1><p class="muted">整合简历、证书、项目和补充材料，形成八维能力证据</p></div>
       <UButton icon="i-lucide-history" color="neutral" variant="soft" @click="() => { historyOpen = true }">历史画像</UButton>
     </div>
 
@@ -152,14 +152,14 @@ onMounted(async () => {
       </UCard>
     </div>
 
-    <UEmpty v-if="!result" title="还没有能力画像" description="生成新画像，或从历史记录中恢复" icon="i-lucide-chart-radar" />
+    <UEmpty v-if="!result" title="还没有能力画像" description="生成新画像，或从历史记录中恢复" icon="i-lucide-radar" />
     <template v-else>
       <UCard><template #header><h2 class="font-semibold">整体评价</h2></template><p class="leading-7">{{ analysis.overall_evaluation || '暂无整体评价' }}</p></UCard>
 
       <div class="grid gap-4 lg:grid-cols-3">
         <UCard><template #header><h2 class="font-semibold">材料来源</h2></template><div class="grid gap-2"><div v-for="(item, i) in materials" :key="`${item.name}-${i}`" class="rounded-lg border border-default p-3"><div class="flex justify-between gap-2"><span class="truncate text-sm font-medium">{{ item.name || '补充文本' }}</span><UBadge :label="item.status === 'ok' ? '已识别' : item.status || '已使用'" :color="item.status === 'ok' ? 'success' : 'neutral'" size="sm" variant="soft" /></div><p class="mt-1 text-xs muted">{{ item.kind || '材料' }}<template v-if="item.chars"> · {{ item.chars }} 字</template></p></div><p v-if="!materials.length" class="text-sm muted">暂无材料来源记录</p></div></UCard>
-        <UCard><template #header><h2 class="font-semibold text-success">优势维度</h2></template><div class="grid gap-2"><div v-for="item in arrayOf(analysis.advantage_dimensions)" :key="dimensionName(item)" class="flex items-center justify-between rounded-lg bg-success/10 px-3 py-2"><span class="text-sm font-medium">{{ dimensionName(item) }}</span><strong>{{ dimensionScore(item) }} 分</strong></div><p v-if="!arrayOf(analysis.advantage_dimensions).length" class="text-sm muted">暂无优势维度数据</p></div></UCard>
-        <UCard><template #header><h2 class="font-semibold text-warning">待提升维度</h2></template><div class="grid gap-2"><div v-for="item in arrayOf(analysis['劣势_dimensions'] || analysis.weakness_dimensions)" :key="dimensionName(item)" class="flex items-center justify-between rounded-lg bg-warning/10 px-3 py-2"><span class="text-sm font-medium">{{ dimensionName(item) }}</span><strong>{{ dimensionScore(item) }} 分</strong></div><p v-if="!arrayOf(analysis['劣势_dimensions'] || analysis.weakness_dimensions).length" class="text-sm muted">暂无待提升维度数据</p></div></UCard>
+        <UCard><template #header><h2 class="font-semibold">优势维度</h2></template><div class="grid gap-2"><div v-for="item in arrayOf(analysis.advantage_dimensions)" :key="dimensionName(item)" class="flex items-center justify-between rounded-lg border border-primary/20 bg-primary/5 px-3 py-2"><span class="text-sm font-medium">{{ dimensionName(item) }}</span><strong class="text-success">{{ dimensionScore(item) }} 分</strong></div><p v-if="!arrayOf(analysis.advantage_dimensions).length" class="text-sm muted">暂无优势维度数据</p></div></UCard>
+        <UCard><template #header><h2 class="font-semibold">待提升维度</h2></template><div class="grid gap-2"><div v-for="item in arrayOf(analysis['劣势_dimensions'] || analysis.weakness_dimensions)" :key="dimensionName(item)" class="flex items-center justify-between rounded-lg border border-primary/20 bg-primary/5 px-3 py-2"><span class="text-sm font-medium">{{ dimensionName(item) }}</span><strong class="text-warning">{{ dimensionScore(item) }} 分</strong></div><p v-if="!arrayOf(analysis['劣势_dimensions'] || analysis.weakness_dimensions).length" class="text-sm muted">暂无待提升维度数据</p></div></UCard>
       </div>
 
       <div class="grid gap-4 lg:grid-cols-2">
@@ -169,10 +169,8 @@ onMounted(async () => {
 
       <UCard><template #header><h2 class="font-semibold">各维度详细分析</h2></template><div class="dimension-grid"><article v-for="item in arrayOf(analysis.dimension_analysis)" :key="dimensionName(item)" class="rounded-xl border border-default p-4"><div class="flex items-center justify-between"><h3 class="font-medium">{{ dimensionName(item) }}</h3><div class="flex items-center gap-2"><strong class="text-primary">{{ dimensionScore(item) }}</strong><UBadge v-if="item.level" :label="item.level" color="neutral" variant="soft" /></div></div><p class="mt-2 text-sm leading-6 muted">{{ displayText(item.interpretation || item.analysis || item.description) }}</p></article><p v-if="!arrayOf(analysis.dimension_analysis).length" class="text-sm muted">暂无维度详细分析</p></div></UCard>
 
-      <div class="grid gap-4 lg:grid-cols-2">
-        <UCard><template #header><h2 class="font-semibold">行业适配性分析</h2></template><div class="grid gap-3"><article v-for="(item, i) in arrayOf(analysis.industry_match || analysis.industry_adaptability)" :key="i" class="rounded-lg bg-elevated p-3"><div v-if="typeof item === 'object'" class="mb-1 flex items-center justify-between"><strong>{{ item.industry || item.name || item.field || '适配方向' }}</strong><UBadge v-if="item.match_score || item.score" :label="`${item.match_score || item.score} 分`" variant="soft" /></div><p class="text-sm leading-6 muted">{{ displayText(item) }}</p></article><p v-if="!arrayOf(analysis.industry_match || analysis.industry_adaptability).length" class="text-sm muted">暂无行业适配分析</p></div></UCard>
-        <UCard><template #header><h2 class="font-semibold">材料关键词分析</h2></template><div class="flex flex-wrap gap-2"><UBadge v-for="(item, i) in arrayOf(analysis.material_keywords || analysis.keywords || analysis.keyword_analysis)" :key="i" :label="displayText(item)" color="neutral" variant="soft" /><p v-if="!arrayOf(analysis.material_keywords || analysis.keywords || analysis.keyword_analysis).length" class="text-sm muted">暂无材料关键词</p></div></UCard>
-      </div>
+      <UCard><template #header><div><h2 class="font-semibold">行业适配性分析</h2><p class="text-xs muted">结合能力结构判断更容易发挥优势的行业场景</p></div></template><div class="industry-grid"><article v-for="(item, i) in arrayOf(analysis.industry_match || analysis.industry_adaptability)" :key="i" class="rounded-lg bg-elevated p-4"><div v-if="typeof item === 'object'" class="mb-1 flex items-center justify-between"><strong>{{ item.industry || item.name || item.field || '适配方向' }}</strong><UBadge v-if="item.match_score || item.score" :label="`${item.match_score || item.score} 分`" variant="soft" /></div><p class="text-sm leading-6 muted">{{ displayText(item) }}</p></article><p v-if="!arrayOf(analysis.industry_match || analysis.industry_adaptability).length" class="text-sm muted">暂无行业适配分析</p></div></UCard>
+      <UCard><template #header><div><h2 class="font-semibold">材料关键词分析</h2><p class="text-xs muted">从全部材料中提取的能力、经历和职业方向关键词</p></div></template><div class="flex flex-wrap gap-2"><UBadge v-for="(item, i) in arrayOf(analysis.material_keywords || analysis.keywords || analysis.keyword_analysis)" :key="i" :label="displayText(item)" color="neutral" variant="soft" /><p v-if="!arrayOf(analysis.material_keywords || analysis.keywords || analysis.keyword_analysis).length" class="text-sm muted">暂无材料关键词</p></div></UCard>
     </template>
 
     <UModal v-model:open="historyOpen" title="历史能力画像">
@@ -184,6 +182,7 @@ onMounted(async () => {
 <style scoped>
 .profile-top-grid { display: grid; gap: 1rem; align-items: stretch; }
 .dimension-grid { display: grid; gap: .75rem; }
-@media (min-width: 768px) { .dimension-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+ .industry-grid { display: grid; gap: .75rem; }
+@media (min-width: 768px) { .dimension-grid, .industry-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (min-width: 1280px) { .profile-top-grid { grid-template-columns: minmax(300px, .9fr) minmax(360px, 1.1fr) minmax(300px, .9fr); } }
 </style>

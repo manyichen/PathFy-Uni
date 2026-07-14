@@ -1,7 +1,7 @@
 <script setup lang="ts">
 useSeoMeta({ title: '首页' })
 const features = [
-  ['能力画像', '整合简历、证书和项目材料，形成八维能力画像', '/profile', 'i-lucide-chart-radar'],
+  ['能力画像', '整合简历、证书和项目材料，形成八维能力画像', '/profile', 'i-lucide-radar'],
   ['岗位探索', '浏览岗位要求、晋升路径与横向转岗机会', '/jobs', 'i-lucide-briefcase-business'],
   ['人岗匹配', '结合能力画像进行岗位粗排和 AI 精排', '/match', 'i-lucide-git-compare'],
   ['生涯报告', '生成目标明确、可复盘的职业成长计划', '/report', 'i-lucide-file-chart-column']

@@ -13,7 +13,7 @@ const hueOptions = [
 const userNav = [
   { label: '首页', to: '/', icon: 'i-lucide-house' },
   { label: '岗位探索', to: '/jobs', icon: 'i-lucide-briefcase-business' },
-  { label: '能力画像', to: '/profile', icon: 'i-lucide-chart-radar' },
+  { label: '能力画像', to: '/profile', icon: 'i-lucide-radar' },
   { label: '性格测试', to: '/personality', icon: 'i-lucide-brain' },
   { label: '人岗匹配', to: '/match', icon: 'i-lucide-git-compare' },
   { label: '职业图谱', to: '/graph', icon: 'i-lucide-network' },
