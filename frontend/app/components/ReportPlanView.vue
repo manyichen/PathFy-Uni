@@ -3,8 +3,24 @@ const props = defineProps<{ reportId: number; plans: any[]; recommendations?: an
 const emit = defineEmits<{ changed: [] }>()
 const api = useApi()
 const toast = useToast()
-const saving = ref('')
+const pending = reactive(new Set<string>())
+const doneState = reactive<Record<string, boolean>>({})
 const phaseOrder = ['early', 'mid', 'late']
+
+function actionKey(jobId: string, itemIndex: number, actionIndex: number) {
+  return `${jobId}-${itemIndex}-${actionIndex}`
+}
+
+watch(() => props.plans, plans => {
+  for (const plan of plans || []) {
+    for (const [itemIndex, item] of (plan.next_month_plan?.items || []).entries()) {
+      for (const [actionIndex, action] of (item.custom_actions || []).entries()) {
+        const key = actionKey(plan.job_id, itemIndex, actionIndex)
+        if (!pending.has(key)) doneState[key] = Boolean(action.done)
+      }
+    }
+  }
+}, { immediate: true, deep: true })
 
 function phases(plan: any) {
   return phaseOrder.map(key => ({ key, ...(plan.phases?.[key] || {}) })).filter(item => item.items?.length)
@@ -18,18 +34,20 @@ function recFor(plan: any) {
 function refLabel(item: any) { return item.label || item.resource_name || item.competition_name || item.id || '推荐内容' }
 function refUrl(item: any) { return item.url || item.resource_url || item.official_url || '' }
 
-async function toggle(jobId: string, itemIndex: number, actionIndex: number, action: any) {
-  const key = `${jobId}-${itemIndex}-${actionIndex}`
-  saving.value = key
-  const previous = Boolean(action.done)
-  action.done = !previous
+async function toggle(jobId: string, itemIndex: number, actionIndex: number, action: any, checked: boolean) {
+  const key = actionKey(jobId, itemIndex, actionIndex)
+  if (pending.has(key)) return
+  const previous = doneState[key] ?? Boolean(action.done)
+  doneState[key] = checked
+  pending.add(key)
   try {
-    await api.ok(`/api/report/${props.reportId}/plan-actions/done`, { method: 'POST', body: { job_id: jobId, item_index: itemIndex, action_index: actionIndex, done: action.done } })
+    await api.ok(`/api/report/${props.reportId}/plan-actions/done`, { method: 'POST', body: { job_id: jobId, item_index: itemIndex, action_index: actionIndex, done: checked } })
+    action.done = checked
     emit('changed')
   } catch (error) {
-    action.done = previous
+    doneState[key] = previous
     toast.add({ title: error instanceof Error ? error.message : '保存失败', color: 'error' })
-  } finally { saving.value = '' }
+  } finally { pending.delete(key) }
 }
 </script>
 
@@ -46,7 +64,7 @@ async function toggle(jobId: string, itemIndex: number, actionIndex: number, act
           <div class="grid gap-3 md:grid-cols-2">
             <article v-for="(item, itemIndex) in plan.next_month_plan.items" :key="`${plan.job_id}-${itemIndex}`" class="rounded-lg bg-default p-3">
               <h5 class="font-medium">{{ item.focus_label || item.focus_dimension }}</h5><p class="mt-1 text-sm muted">{{ item.milestone }}</p>
-              <div class="mt-3 grid gap-2"><UCheckbox v-for="(action, actionIndex) in item.custom_actions || []" :key="actionIndex" :model-value="Boolean(action.done)" :label="action.text" :disabled="saving === `${plan.job_id}-${itemIndex}-${actionIndex}`" @update:model-value="toggle(plan.job_id, Number(itemIndex), Number(actionIndex), action)" /></div>
+              <div class="mt-3 grid gap-2"><UCheckbox v-for="(action, actionIndex) in item.custom_actions || []" :key="actionKey(plan.job_id, Number(itemIndex), Number(actionIndex))" :model-value="doneState[actionKey(plan.job_id, Number(itemIndex), Number(actionIndex))] ?? Boolean(action.done)" :label="action.text" :class="pending.has(actionKey(plan.job_id, Number(itemIndex), Number(actionIndex))) && 'pointer-events-none'" @update:model-value="toggle(plan.job_id, Number(itemIndex), Number(actionIndex), action, Boolean($event))" /></div>
             </article>
           </div>
         </section>

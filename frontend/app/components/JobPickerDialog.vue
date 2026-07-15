@@ -17,17 +17,26 @@ const query = ref('')
 const page = ref(1)
 const loading = ref(false)
 const result = ref<any>({ jobs: [], total: 0, page_size: 20 })
+let requestSequence = 0
 
-async function load(reset = false) {
-  if (reset) page.value = 1
+async function load() {
+  const sequence = ++requestSequence
   loading.value = true
   try {
     const params = new URLSearchParams({ page: String(page.value), page_size: '20' })
     if (query.value.trim()) params.set('q', query.value.trim())
-    result.value = await api.ok<any>(`/api/jobs/options?${params}`)
+    const data = await api.ok<any>(`/api/jobs/options?${params}`)
+    if (sequence === requestSequence) result.value = data
   } catch (error) {
-    toast.add({ title: error instanceof Error ? error.message : '岗位加载失败', color: 'error' })
-  } finally { loading.value = false }
+    if (sequence === requestSequence) toast.add({ title: error instanceof Error ? error.message : '岗位加载失败', color: 'error' })
+  } finally {
+    if (sequence === requestSequence) loading.value = false
+  }
+}
+
+function search() {
+  if (page.value !== 1) page.value = 1
+  else load()
 }
 
 function choose(job: any) {
@@ -35,7 +44,11 @@ function choose(job: any) {
   if (!props.multiple) emit('update:open', false)
 }
 
-watch(() => props.open, value => { if (value) load(true) })
+watch(() => props.open, value => {
+  if (!value) return
+  if (page.value !== 1) page.value = 1
+  else load()
+})
 watch(page, () => { if (props.open) load() })
 </script>
 
@@ -43,13 +56,13 @@ watch(page, () => { if (props.open) load() })
   <UModal :open="open" :title="title" :ui="{ content: 'sm:max-w-5xl' }" @update:open="emit('update:open', $event)">
     <template #body>
       <div class="grid gap-4">
-        <form class="flex gap-2" @submit.prevent="load(true)">
+        <form class="flex gap-2" @submit.prevent="search">
           <UInput v-model="query" class="flex-1" size="lg" icon="i-lucide-search" placeholder="搜索岗位名称、公司或地点" />
-          <UButton type="submit" size="lg" :loading="loading">搜索</UButton>
+          <UButton type="submit" size="lg" class="w-24 justify-center" :loading="loading">搜索</UButton>
         </form>
         <div class="flex items-center justify-between text-sm muted"><span>共 {{ result.total || 0 }} 个岗位</span><span>可按岗位、公司和城市检索</span></div>
-        <div v-if="loading" class="grid gap-3 md:grid-cols-2"><USkeleton v-for="n in 6" :key="n" class="h-28" /></div>
-        <div v-else-if="result.jobs?.length" class="job-picker-grid">
+        <div v-if="loading && !result.jobs?.length" class="grid gap-3 md:grid-cols-2"><USkeleton v-for="n in 6" :key="n" class="h-28" /></div>
+        <div v-else-if="result.jobs?.length" class="job-picker-grid" :class="loading && 'is-loading'">
           <button v-for="job in result.jobs" :key="job.id" type="button" :class="['job-option', selectedIds.includes(job.id) && 'selected']" @click="choose(job)">
             <div class="min-w-0"><div class="flex items-center gap-2"><h3 class="truncate font-semibold">{{ job.title }}</h3><UBadge v-if="selectedIds.includes(job.id)" label="已选择" size="sm" variant="soft" /></div><p class="mt-2 flex items-center gap-1.5 text-sm muted"><UIcon name="i-lucide-building-2" class="shrink-0" /><span class="truncate">{{ job.company || '未知公司' }}</span></p><p class="mt-1 flex items-center gap-1.5 text-sm muted"><UIcon name="i-lucide-map-pin" class="shrink-0" />{{ job.location || '未知地点' }}<span v-if="job.experience_years">· {{ job.experience_years }} 年经验</span></p></div><div class="shrink-0 text-right"><p class="font-medium text-primary">{{ job.salary || '薪资面议' }}</p><UIcon name="i-lucide-chevron-right" class="mt-3" /></div>
           </button>
@@ -63,7 +76,8 @@ watch(page, () => { if (props.open) load() })
 </template>
 
 <style scoped>
-.job-picker-grid { display: grid; gap: .75rem; max-height: min(62vh, 680px); overflow-y: auto; padding: .15rem; }
+.job-picker-grid { display: grid; gap: .75rem; max-height: min(62vh, 680px); overflow-y: auto; padding: .15rem; transition: opacity .15s ease; }
+.job-picker-grid.is-loading { opacity: .55; pointer-events: none; }
 .job-option { display: flex; min-width: 0; align-items: flex-start; justify-content: space-between; gap: 1rem; border: 1px solid var(--ui-border); border-radius: .85rem; padding: 1rem; text-align: left; transition: border-color .15s ease, background .15s ease; }
 .job-option:hover, .job-option.selected { border-color: color-mix(in srgb, var(--ui-primary) 48%, transparent); background: color-mix(in srgb, var(--ui-primary) 6%, transparent); }
 @media (min-width: 768px) { .job-picker-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }

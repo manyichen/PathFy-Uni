@@ -14,6 +14,10 @@ const loading = ref(true)
 const submitting = ref(false)
 const started = ref(false)
 const current = ref(0)
+const history = ref<any[]>([])
+const historyOpen = ref(false)
+const historyLoading = ref(false)
+const restoringId = ref<number>()
 const cacheKey = computed(() => `career_personality_v1_${auth.user.value?.id || 'guest'}`)
 const answered = computed(() => Object.keys(answers.value).length)
 const question = computed(() => questions.value[current.value])
@@ -37,6 +41,50 @@ function select(value: string) {
   if (current.value < questions.value.length - 1) current.value += 1
 }
 
+function normalizeProfile(profile: any) {
+  const detailed = profile?.detailed_analysis || {}
+  const recommendations = detailed.job_recommendations || profile?.job_recommendations || {}
+  const recommendedJobs = Array.isArray(profile?.recommended_jobs)
+    ? profile.recommended_jobs
+    : String(profile?.recommended_jobs || '').split(/[,，]/).map(item => item.trim()).filter(Boolean)
+  return {
+    ...profile,
+    profile_id: profile?.profile_id || profile?.id,
+    dimension_analysis: profile?.dimension_analysis || detailed.dimension_analysis,
+    complete_analysis: profile?.complete_analysis || detailed.complete_analysis,
+    job_recommendations: recommendations,
+    recommended_jobs: recommendedJobs.length ? recommendedJobs : (recommendations.recommended_jobs || [])
+  }
+}
+
+async function loadHistory() {
+  const userId = auth.user.value?.id
+  if (!userId) return
+  historyLoading.value = true
+  try {
+    const body = await api.request<CodeEnvelope<any[]>>(`/api/personality/history/${userId}`)
+    if (body.code === 200) history.value = body.data || []
+  } finally { historyLoading.value = false }
+}
+
+async function openHistory() {
+  historyOpen.value = true
+  try { await loadHistory() }
+  catch (error) { toast.add({ title: error instanceof Error ? error.message : '历史记录加载失败', color: 'error' }) }
+}
+
+async function restoreProfile(profileId: number, close = true) {
+  restoringId.value = profileId
+  try {
+    const body = await api.request<CodeEnvelope<any>>(`/api/personality/profile/${profileId}`)
+    if (body.code !== 200) throw new Error(body.msg || '记录加载失败')
+    result.value = normalizeProfile(body.data)
+    started.value = true
+    if (close) historyOpen.value = false
+    persist()
+  } finally { restoringId.value = undefined }
+}
+
 async function submit() {
   if (answered.value !== questions.value.length) {
     toast.add({ title: '请完成全部题目', color: 'warning' })
@@ -49,8 +97,9 @@ async function submit() {
       body: { answers: Object.entries(answers.value).map(([id, user_choice]) => ({ question_id: Number(id), user_choice })) }
     })
     if (body.code !== 200) throw new Error(body.msg || '提交失败')
-    result.value = body.data
+    result.value = normalizeProfile(body.data)
     persist()
+    await loadHistory()
     toast.add({ title: '测试完成', color: 'success' })
   } catch (error) {
     toast.add({ title: error instanceof Error ? error.message : '提交失败', color: 'error' })
@@ -90,6 +139,10 @@ onMounted(async () => {
   } finally {
     loading.value = false
   }
+  try {
+    await loadHistory()
+    if (!result.value && !answered.value && history.value[0]?.id) await restoreProfile(history.value[0].id, false)
+  } catch { /* history is optional; local progress remains available */ }
 })
 
 watch([answers, current, started], persist, { deep: true })
@@ -97,9 +150,12 @@ watch([answers, current, started], persist, { deep: true })
 
 <template>
   <div class="page-stack mx-auto w-full max-w-4xl">
-    <div class="page-heading">
-      <h1 class="flex items-center gap-2"><UIcon name="i-lucide-brain" class="text-primary"/>职业性格测试</h1>
-      <p class="muted">用一组二选一问题了解职业偏好，约 5 分钟完成</p>
+    <div class="flex flex-wrap items-end justify-between gap-3">
+      <div class="page-heading">
+        <h1 class="flex items-center gap-2"><UIcon name="i-lucide-brain" class="text-primary"/>职业性格测试</h1>
+        <p class="muted">用一组二选一问题了解职业偏好，约 5 分钟完成</p>
+      </div>
+      <UButton color="neutral" variant="soft" icon="i-lucide-history" @click="openHistory">历史记录<span v-if="history.length">（{{ history.length }}）</span></UButton>
     </div>
 
     <USkeleton v-if="loading" class="h-96" />
@@ -159,5 +215,18 @@ watch([answers, current, started], persist, { deep: true })
       </div>
       <UButton variant="outline" icon="i-lucide-rotate-ccw" @click="restart">重新测试</UButton>
     </template>
+
+    <UModal v-model:open="historyOpen" title="性格测试记录">
+      <template #body>
+        <div v-if="historyLoading" class="grid gap-2"><USkeleton v-for="n in 4" :key="n" class="h-20" /></div>
+        <div v-else class="grid gap-2">
+          <button v-for="item in history" :key="item.id" type="button" class="flex items-center justify-between gap-3 rounded-xl border border-default p-3 text-left transition hover:border-primary" :disabled="restoringId === item.id" @click="restoreProfile(item.id)">
+            <span class="flex min-w-0 items-center gap-3"><strong class="grid size-11 shrink-0 place-items-center rounded-lg bg-primary/10 text-primary">{{ item.mbti_type }}</strong><span class="min-w-0"><span class="block text-sm font-medium">{{ item.mbti_type }} · 职业性格测试</span><small class="muted">{{ String(item.created_at || '').replace('T', ' ').slice(0, 16) }}</small></span></span>
+            <UIcon :name="restoringId === item.id ? 'i-lucide-loader-circle' : 'i-lucide-chevron-right'" :class="restoringId === item.id && 'animate-spin'" class="shrink-0" />
+          </button>
+          <UEmpty v-if="!history.length" title="暂无测试记录" description="完成测试后，结果会保存在这里。" />
+        </div>
+      </template>
+    </UModal>
   </div>
 </template>

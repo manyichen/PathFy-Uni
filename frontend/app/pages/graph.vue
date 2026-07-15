@@ -3,6 +3,7 @@ definePageMeta({ middleware: 'auth' })
 useSeoMeta({ title: '职业图谱' })
 
 const jobsApi = useJobsApi()
+const auth = useAuth()
 const toast = useToast()
 const from = ref('')
 const to = ref('')
@@ -13,10 +14,28 @@ const loading = ref(false)
 const promotion = ref<any>()
 const lateral = ref<any>()
 const transition = ref<any>()
+const cacheKey = computed(() => `career_graph_workspace_v1_${auth.user.value?.id || 'guest'}`)
+
+function persist() {
+  if (!import.meta.client) return
+  try {
+    localStorage.setItem(cacheKey.value, JSON.stringify({
+      v: 1, savedAt: Date.now(), from: from.value, to: to.value,
+      fromJob: fromJob.value, toJob: toJob.value,
+      promotion: promotion.value, lateral: lateral.value, transition: transition.value
+    }))
+  } catch { /* ignore unavailable or full local storage */ }
+}
 
 function chooseJob(job: any) {
-  if (picker.value === 'from') { from.value = job.id; fromJob.value = job }
-  else { to.value = job.id; toJob.value = job }
+  if (picker.value === 'from') {
+    if (from.value !== job.id) { promotion.value = undefined; lateral.value = undefined; transition.value = undefined }
+    from.value = job.id; fromJob.value = job
+  } else {
+    if (to.value !== job.id) transition.value = undefined
+    to.value = job.id; toJob.value = job
+  }
+  persist()
 }
 
 async function analyze() {
@@ -26,10 +45,28 @@ async function analyze() {
   try {
     [promotion.value, lateral.value] = await Promise.all([jobsApi.promotion(from.value), jobsApi.lateral(from.value)])
     if (to.value && to.value !== from.value) transition.value = await jobsApi.transition(from.value, to.value)
+    persist()
   } catch (error) {
     toast.add({ title: error instanceof Error ? error.message : '路径分析失败', color: 'error' })
   } finally { loading.value = false }
 }
+
+onMounted(() => {
+  auth.hydrate()
+  const raw = localStorage.getItem(cacheKey.value)
+  if (!raw) return
+  try {
+    const cache = JSON.parse(raw)
+    if (cache.v !== 1) return
+    from.value = cache.from || ''
+    to.value = cache.to || ''
+    fromJob.value = cache.fromJob
+    toJob.value = cache.toJob
+    promotion.value = cache.promotion
+    lateral.value = cache.lateral
+    transition.value = cache.transition
+  } catch { /* ignore invalid cache */ }
+})
 
 </script>
 
