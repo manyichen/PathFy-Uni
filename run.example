@@ -1,0 +1,18 @@
+# PathFy-Uni local startup commands
+# Run these in two separate PowerShell terminals.
+#one use run.sh
+cd E:\Suilli10086\PathFy-Uni
+& "E:\AAnew\Git\bin\bash.exe" run.sh
+
+# Terminal 1: backend
+cd E:\Suilli10086\PathFy-Uni\backend
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+python run.py
+deactivate
+
+# Terminal 2: frontend
+cd E:\Suilli10086\PathFy-Uni\frontend
+pnpm install
+pnpm dev

@@ -3,7 +3,45 @@
 
 :root {
   --pathfy-hue: 192;
+  --hue: var(--pathfy-hue);
   --ui-primary: hsl(var(--pathfy-hue) 82% 43%);
+  --color-selection-bar: linear-gradient(
+    to right,
+    oklch(0.8 0.1 0),
+    oklch(0.8 0.1 30),
+    oklch(0.8 0.1 60),
+    oklch(0.8 0.1 90),
+    oklch(0.8 0.1 120),
+    oklch(0.8 0.1 150),
+    oklch(0.8 0.1 180),
+    oklch(0.8 0.1 210),
+    oklch(0.8 0.1 240),
+    oklch(0.8 0.1 270),
+    oklch(0.8 0.1 300),
+    oklch(0.8 0.1 330),
+    oklch(0.8 0.1 360)
+  );
+  color-scheme: light;
+}
+
+:root.dark {
+  --color-selection-bar: linear-gradient(
+    to right,
+    oklch(0.7 0.1 0),
+    oklch(0.7 0.1 30),
+    oklch(0.7 0.1 60),
+    oklch(0.7 0.1 90),
+    oklch(0.7 0.1 120),
+    oklch(0.7 0.1 150),
+    oklch(0.7 0.1 180),
+    oklch(0.7 0.1 210),
+    oklch(0.7 0.1 240),
+    oklch(0.7 0.1 270),
+    oklch(0.7 0.1 300),
+    oklch(0.7 0.1 330),
+    oklch(0.7 0.1 360)
+  );
+  color-scheme: dark;
 }
 
 html { scroll-behavior: smooth; }
@@ -13,4 +51,55 @@ body { min-height: 100vh; background: var(--ui-bg); }
 .page-heading h1 { font-size: 1.75rem; line-height: 2.1rem; font-weight: 700; }
 .muted { color: var(--ui-text-muted); }
 .panel-grid { display: grid; gap: 1rem; }
+.page-viewport {
+  position: relative;
+  min-height: calc(100vh - 8rem);
+  isolation: isolate;
+}
 @media (min-width: 1024px) { .panel-grid.two { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@supports (view-transition-name: none) {
+  ::view-transition,
+  ::view-transition-group(*),
+  ::view-transition-old(*),
+  ::view-transition-new(*),
+  ::view-transition-image-pair(*) {
+    pointer-events: none !important;
+  }
+
+  html.use-view-transition::view-transition-group(root) {
+    animation-duration: .52s;
+    animation-timing-function: cubic-bezier(.33, 1, .68, 1);
+  }
+
+  html.use-view-transition::view-transition-old(root) {
+    z-index: 0;
+    animation: none;
+  }
+
+  html.use-view-transition::view-transition-new(root) {
+    z-index: 1;
+    animation: theme-circle-reveal .52s cubic-bezier(.33, 1, .68, 1) both;
+  }
+
+  @keyframes theme-circle-reveal {
+    from { clip-path: circle(0 at var(--theme-x, 50vw) var(--theme-y, 50vh)); }
+    to { clip-path: circle(var(--theme-r, 150vmax) at var(--theme-x, 50vw) var(--theme-y, 50vh)); }
+  }
+}
+
+html.is-theme-transitioning:not(.use-view-transition) body,
+html.is-theme-transitioning:not(.use-view-transition) main,
+html.is-theme-transitioning:not(.use-view-transition) header,
+html.is-theme-transitioning:not(.use-view-transition) .quick-panel,
+html.is-theme-transitioning:not(.use-view-transition) .scheme-switch {
+  transition:
+    background-color .42s ease,
+    color .32s ease,
+    border-color .42s ease,
+    box-shadow .42s ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  html.use-view-transition::view-transition-new(root) { animation: none !important; }
+}

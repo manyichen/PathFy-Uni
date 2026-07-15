@@ -7,7 +7,7 @@ const toast = useToast()
 const q = ref('')
 const sort = ref('default')
 const page = ref(1)
-const jobsLoading = ref(false)
+const jobsLoading = ref(true)
 const assistantLoading = ref(false)
 const result = ref<any>({ jobs: [], total: 0, total_pages: 1 })
 const selected = ref<string | null>(null)
@@ -78,7 +78,7 @@ onMounted(() => { load(); loadSessions() })
     </div>
 
     <div class="jobs-layout">
-      <main class="min-w-0 page-stack">
+      <div class="min-w-0 page-stack">
         <UCard>
           <form class="flex flex-wrap gap-3" @submit.prevent="page = 1; load()">
             <UInput v-model="q" icon="i-lucide-search" placeholder="岗位、公司或地点" class="min-w-60 flex-1" />
@@ -103,7 +103,7 @@ onMounted(() => { load(); loadSessions() })
         </div>
         <UEmpty v-else title="没有匹配岗位" icon="i-lucide-search-x" />
         <UPagination v-if="result.total > (result.page_size || 20)" v-model:page="page" :total="result.total" :items-per-page="result.page_size || 20" />
-      </main>
+      </div>
 
       <aside class="assistant-column">
         <UCard class="assistant-card">

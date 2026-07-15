@@ -126,7 +126,13 @@ def validate_preferences(values: dict[str, Any]) -> dict[str, Any]:
     if unknown: raise ValueError(f"未知偏好: {', '.join(sorted(unknown))}")
     out = dict(values)
     if "theme" in out and out["theme"] not in {"system", "light", "dark"}: raise ValueError("主题值无效")
-    if "hue" in out and str(out["hue"]) not in {"150", "192", "220", "270"}: raise ValueError("主题色值无效")
+    if "hue" in out:
+        try:
+            hue = int(out["hue"])
+        except (TypeError, ValueError) as exc:
+            raise ValueError("主题色值无效") from exc
+        if not 0 <= hue <= 360: raise ValueError("主题色值无效")
+        out["hue"] = str(hue)
     if "default_match_goal" in out and out["default_match_goal"] not in {"fit", "stretch"}: raise ValueError("默认匹配目标无效")
     for key in ("allow_external_llm", "default_refine_with_llm", "report_public_info", "report_copywriter", "report_auto_replan", "report_graph_recommendations", "report_recommendation_llm"):
         if key in out and not isinstance(out[key], bool): raise ValueError(f"{key} 必须为布尔值")
@@ -134,5 +140,4 @@ def validate_preferences(values: dict[str, Any]) -> dict[str, Any]:
         if key in out:
             out[key] = int(out[key])
             if not lo <= out[key] <= hi: raise ValueError(f"{key} 超出允许范围")
-    if "hue" in out: out["hue"] = str(out["hue"])
     return out
