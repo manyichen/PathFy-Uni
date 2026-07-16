@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from typing import Any
+from uuid import uuid4
 
 from app.db import db_cursor
 
@@ -105,7 +106,7 @@ def has_active_tasks() -> bool:
         return cur.fetchone() is not None
 
 
-def claim_next_task() -> dict[str, Any] | None:
+def claim_next_task(*, worker_id: str = "graph-worker", lease_seconds: int = 60) -> dict[str, Any] | None:
     """Claim one queued task only when no task is running or awaiting confirmation."""
     with db_cursor() as (_, cur):
         guard = get_guard(for_update=True, cursor=cur)
@@ -117,15 +118,22 @@ def claim_next_task() -> dict[str, Any] | None:
         if cur.fetchone():
             return None
         cur.execute(
-            "SELECT id FROM graph_update_tasks WHERE status='queued' ORDER BY created_at,id LIMIT 1 FOR UPDATE SKIP LOCKED"
+            """SELECT id FROM graph_update_tasks
+               WHERE status='queued' AND (next_retry_at IS NULL OR next_retry_at<=NOW(6))
+               ORDER BY created_at,id LIMIT 1 FOR UPDATE SKIP LOCKED"""
         )
         row = cur.fetchone()
         if not row:
             return None
         task_id = int(row["id"])
+        lease_token = uuid4().hex
         cur.execute(
-            "UPDATE graph_update_tasks SET status='running',started_at=NOW(),base_graph_revision=%s WHERE id=%s AND status='queued'",
-            (guard["graph_revision"], task_id),
+            """UPDATE graph_update_tasks SET status='running',started_at=COALESCE(started_at,NOW(6)),
+               base_graph_revision=%s,worker_id=%s,lease_token=%s,heartbeat_at=NOW(6),
+               lease_expires_at=DATE_ADD(NOW(6),INTERVAL %s SECOND),attempt_count=attempt_count+1,
+               next_retry_at=NULL,last_error_code=NULL,last_error_retryable=NULL
+               WHERE id=%s AND status='queued'""",
+            (guard["graph_revision"], worker_id[:128], lease_token, max(15, int(lease_seconds)), task_id),
         )
         cur.execute("SELECT * FROM graph_update_tasks WHERE id=%s", (task_id,))
         task = _decode(cur.fetchone(), include_change_set=True)
@@ -137,15 +145,33 @@ def claim_next_task() -> dict[str, Any] | None:
         return task
 
 
-def recover_running_tasks() -> int:
-    """Requeue work left running by a terminated single worker process."""
+def renew_lease(task_id: int, lease_token: str, *, lease_seconds: int) -> bool:
     with db_cursor() as (_, cur):
-        cur.execute("SELECT id FROM graph_update_tasks WHERE status='running' FOR UPDATE")
+        cur.execute(
+            """UPDATE graph_update_tasks SET heartbeat_at=NOW(6),
+               lease_expires_at=DATE_ADD(NOW(6),INTERVAL %s SECOND)
+               WHERE id=%s AND status IN ('running','applying') AND lease_token=%s""",
+            (max(15, int(lease_seconds)), task_id, lease_token),
+        )
+        return cur.rowcount == 1
+
+
+def recover_expired_tasks() -> int:
+    """Requeue only running work whose worker lease has expired."""
+    with db_cursor() as (_, cur):
+        cur.execute(
+            """SELECT id FROM graph_update_tasks WHERE status='running'
+               AND (lease_expires_at IS NULL OR lease_expires_at<=NOW(6)) FOR UPDATE"""
+        )
         ids = [int(row["id"]) for row in cur.fetchall()]
         if ids:
-            cur.execute("UPDATE graph_update_tasks SET status='queued',started_at=NULL WHERE status='running'")
+            cur.execute(
+                """UPDATE graph_update_tasks SET status='queued',worker_id=NULL,lease_token=NULL,
+                   heartbeat_at=NULL,lease_expires_at=NULL,next_retry_at=NOW(6)
+                   WHERE status='running' AND (lease_expires_at IS NULL OR lease_expires_at<=NOW(6))"""
+            )
             cur.executemany(
-                "INSERT INTO graph_update_task_events (task_id,event_type,stage,message) VALUES (%s,'recovered','worker','Worker 重启，遗留任务已重新排队')",
+                "INSERT INTO graph_update_task_events (task_id,event_type,stage,message) VALUES (%s,'recovered','worker','Worker 租约过期，任务已重新排队')",
                 [(task_id,) for task_id in ids],
             )
         return len(ids)
@@ -167,11 +193,22 @@ def reset_applying_task(task_id: int) -> None:
 
 
 def prepare_task(task_id: int, *, base_revision: int, summary: dict[str, Any],
-                 change_set_json: str, change_set_sha256: str) -> bool:
+                 change_set_json: str, change_set_sha256: str,
+                 lease_token: str | None = None) -> bool:
     with db_cursor() as (_, cur):
         guard = get_guard(for_update=True, cursor=cur)
+        lease_clause = " AND lease_token=%s" if lease_token else ""
+        lease_params = (lease_token,) if lease_token else ()
         if guard.get("locked_task_id") or int(guard["graph_revision"]) != int(base_revision):
-            cur.execute("UPDATE graph_update_tasks SET status='queued',started_at=NULL WHERE id=%s AND status='running'", (task_id,))
+            cur.execute(
+                """UPDATE graph_update_tasks SET status='queued',worker_id=NULL,lease_token=NULL,
+                   heartbeat_at=NULL,lease_expires_at=NULL,next_retry_at=NOW(6),
+                   attempt_count=GREATEST(attempt_count-1,0)
+                   WHERE id=%s AND status='running'""" + lease_clause,
+                (task_id, *lease_params),
+            )
+            if cur.rowcount != 1:
+                return False
             cur.execute(
                 "INSERT INTO graph_update_task_events (task_id,event_type,stage,message) VALUES (%s,'requeued','revision','图谱版本变化，任务已重新排队')",
                 (task_id,),
@@ -179,8 +216,10 @@ def prepare_task(task_id: int, *, base_revision: int, summary: dict[str, Any],
             return False
         cur.execute(
             """UPDATE graph_update_tasks SET status='awaiting_confirmation',change_summary_json=%s,
-               change_set_json=%s,change_set_sha256=%s,prepared_at=NOW() WHERE id=%s AND status='running'""",
-            (_json(summary), change_set_json, change_set_sha256, task_id),
+               change_set_json=%s,change_set_sha256=%s,prepared_at=NOW(),worker_id=NULL,
+               lease_token=NULL,heartbeat_at=NULL,lease_expires_at=NULL
+               WHERE id=%s AND status='running'""" + lease_clause,
+            (_json(summary), change_set_json, change_set_sha256, task_id, *lease_params),
         )
         if cur.rowcount != 1:
             return False
@@ -192,16 +231,55 @@ def prepare_task(task_id: int, *, base_revision: int, summary: dict[str, Any],
         return True
 
 
-def fail_task(task_id: int, message: str) -> None:
+def fail_or_retry_task(task_id: int, message: str, *, lease_token: str | None,
+                       error_code: str, retryable: bool, max_attempts: int,
+                       retry_delay_seconds: int) -> str:
     with db_cursor() as (_, cur):
-        cur.execute("UPDATE graph_update_tasks SET status='failed',error_message=%s,input_file_path=NULL,finished_at=NOW() WHERE id=%s", (message[:65000], task_id))
+        lease_clause = " AND lease_token=%s" if lease_token else ""
+        lease_params = (lease_token,) if lease_token else ()
+        cur.execute("SELECT attempt_count FROM graph_update_tasks WHERE id=%s AND status='running'" + lease_clause + " FOR UPDATE", (task_id, *lease_params))
+        row = cur.fetchone()
+        if not row:
+            return "lost"
+        should_retry = bool(retryable) and int(row.get("attempt_count") or 0) < max(1, int(max_attempts))
+        status = "queued" if should_retry else "failed"
+        cur.execute(
+            """UPDATE graph_update_tasks SET status=%s,error_message=%s,last_error_code=%s,
+               last_error_retryable=%s,worker_id=NULL,lease_token=NULL,heartbeat_at=NULL,
+               lease_expires_at=NULL,finished_at=CASE WHEN %s THEN NULL ELSE NOW(6) END,
+               next_retry_at=CASE WHEN %s THEN DATE_ADD(NOW(6),INTERVAL %s SECOND) ELSE NULL END
+               WHERE id=%s AND status='running'""" + lease_clause,
+            (status, message[:65000], error_code[:80], bool(retryable), should_retry,
+             should_retry, max(1, int(retry_delay_seconds)), task_id, *lease_params),
+        )
+        if cur.rowcount != 1:
+            return "lost"
         cur.execute("UPDATE graph_write_guard SET locked_task_id=NULL,locked_at=NULL WHERE id=1 AND locked_task_id=%s", (task_id,))
-        cur.execute("INSERT INTO graph_update_task_events (task_id,event_type,stage,message) VALUES (%s,'failed','worker',%s)", (task_id, message[:500]))
+        event = "retry_scheduled" if should_retry else "failed"
+        event_message = (f"临时错误，将在 {max(1, int(retry_delay_seconds))} 秒后重试: {message}" if should_retry else message)
+        cur.execute("INSERT INTO graph_update_task_events (task_id,event_type,stage,message,detail_json) VALUES (%s,%s,'worker',%s,%s)",
+                    (task_id, event, event_message[:500], _json({"error_code": error_code, "retryable": bool(retryable), "attempt_count": int(row.get("attempt_count") or 0)})))
+        return status
 
 
-def requeue_task(task_id: int, message: str) -> None:
+def fail_task(task_id: int, message: str, *, lease_token: str | None = None) -> None:
+    fail_or_retry_task(task_id, message, lease_token=lease_token, error_code="unclassified",
+                       retryable=False, max_attempts=1, retry_delay_seconds=1)
+
+
+def requeue_task(task_id: int, message: str, *, lease_token: str | None = None) -> None:
     with db_cursor() as (_, cur):
-        cur.execute("UPDATE graph_update_tasks SET status='queued',started_at=NULL WHERE id=%s AND status='running'", (task_id,))
+        lease_clause = " AND lease_token=%s" if lease_token else ""
+        lease_params = (lease_token,) if lease_token else ()
+        cur.execute(
+            """UPDATE graph_update_tasks SET status='queued',worker_id=NULL,lease_token=NULL,
+               heartbeat_at=NULL,lease_expires_at=NULL,next_retry_at=NOW(6),
+               attempt_count=GREATEST(attempt_count-1,0)
+               WHERE id=%s AND status='running'""" + lease_clause,
+            (task_id, *lease_params),
+        )
+        if cur.rowcount != 1:
+            return
         cur.execute("INSERT INTO graph_update_task_events (task_id,event_type,stage,message) VALUES (%s,'requeued','lock',%s)", (task_id, message[:500]))
 
 
