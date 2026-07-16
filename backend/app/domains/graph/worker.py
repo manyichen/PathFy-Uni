@@ -13,6 +13,7 @@ from flask import current_app
 from app import create_app
 from app.domains.graph import task_repository as repo
 from app.domains.graph.change_storage import encode_change_set
+from app.domains.graph.inverse import build_inverse_change_set
 from app.domains.graph.task_planner import TaskPlanningError, build_change_set
 from app.domains.graph.task_apply import apply_change_set, ensure_graph_schema, is_task_applied
 from app.domains.graph.locking import GraphOperationBusy, graph_write_lock
@@ -25,11 +26,12 @@ class TaskLeaseLost(RuntimeError):
 
 
 class _LeaseHeartbeat:
-    def __init__(self, app, task_id: int, lease_token: str, lease_seconds: int):
+    def __init__(self, app, task_id: int, lease_token: str, lease_seconds: int, worker_id: str):
         self.app = app
         self.task_id = task_id
         self.lease_token = lease_token
         self.lease_seconds = max(15, int(lease_seconds))
+        self.worker_id = worker_id
         self.stop = threading.Event()
         self.lost = threading.Event()
         self.thread = threading.Thread(target=self._run, name=f"graph-lease-{task_id}", daemon=True)
@@ -42,6 +44,7 @@ class _LeaseHeartbeat:
                     if not repo.renew_lease(self.task_id, self.lease_token, lease_seconds=self.lease_seconds):
                         self.lost.set()
                         return
+                    repo.touch_worker(self.worker_id, current_task_id=self.task_id)
                 except Exception:
                     # A temporary DB outage may recover before the lease expires.  The
                     # final compare-and-set still prevents a stale worker from committing.
@@ -89,10 +92,13 @@ def process_one(*, worker_id: str | None = None, lease_seconds: int | None = Non
     max_attempts = int(max_attempts or app.config["GRAPH_WORKER_MAX_ATTEMPTS"])
     retry_base_seconds = int(retry_base_seconds or app.config["GRAPH_WORKER_RETRY_BASE_SECONDS"])
     task = repo.claim_next_task(worker_id=worker_id, lease_seconds=lease_seconds)
-    if not task: return False
+    if not task:
+        repo.touch_worker(worker_id)
+        return False
     lease_token = str(task.get("lease_token") or "")
     try:
-        with _LeaseHeartbeat(app, int(task["id"]), lease_token, lease_seconds) as heartbeat:
+        with _LeaseHeartbeat(app, int(task["id"]), lease_token, lease_seconds, worker_id) as heartbeat:
+            repo.touch_worker(worker_id, current_task_id=int(task["id"]))
             heartbeat.ensure_owned()
             repo.add_event(task["id"], "planning", "正在解析输入并生成变更集", stage="planning")
 
@@ -104,12 +110,17 @@ def process_one(*, worker_id: str | None = None, lease_seconds: int | None = Non
                 change_set, summary = build_change_set(task, emit)
             heartbeat.ensure_owned()
             encoded = encode_change_set(change_set)
+            inverse_change = build_inverse_change_set(change_set)
+            inverse = encode_change_set(inverse_change) if inverse_change is not None else None
             try:
                 with graph_write_lock():
                     prepared = repo.prepare_task(
                         task["id"], base_revision=int(task["base_graph_revision"]), summary=summary,
                         change_manifest=encoded.manifest, change_chunks=encoded.chunks,
                         change_set_sha256=encoded.sha256, lease_token=lease_token,
+                        inverse_manifest=inverse.manifest if inverse else None,
+                        inverse_chunks=inverse.chunks if inverse else (),
+                        inverse_sha256=inverse.sha256 if inverse else None,
                     )
                     if not prepared:
                         heartbeat.lost.set()
@@ -146,13 +157,15 @@ def process_applying_one(*, worker_id: str | None = None, lease_seconds: int | N
     retry_base_seconds = int(retry_base_seconds or app.config["GRAPH_WORKER_RETRY_BASE_SECONDS"])
     task = repo.claim_next_applying_task(worker_id=worker_id, lease_seconds=lease_seconds)
     if not task:
+        repo.touch_worker(worker_id)
         return False
     task_id = int(task["id"])
     lease_token = str(task.get("lease_token") or "")
     committed = bool(task.get("neo4j_committed_at"))
     commit_recorded = committed
     try:
-        with _LeaseHeartbeat(app, task_id, lease_token, lease_seconds) as heartbeat:
+        with _LeaseHeartbeat(app, task_id, lease_token, lease_seconds, worker_id) as heartbeat:
+            repo.touch_worker(worker_id, current_task_id=task_id)
             heartbeat.ensure_owned()
             change = _verify_task_change_set(task)
             if not committed:
@@ -242,10 +255,12 @@ def main() -> None:
     args = parser.parse_args(); app = create_app()
     with app.app_context():
         ensure_graph_schema()
+        worker_id = f"{socket.gethostname()}:{os.getpid()}"
+        repo.touch_worker(worker_id)
         repo.recover_expired_tasks()
         while True:
             repo.recover_expired_tasks()
-            worked = process_applying_one() or process_one()
+            worked = process_applying_one(worker_id=worker_id) or process_one(worker_id=worker_id)
             if args.once: return
             if not worked: time.sleep(float(app.config["GRAPH_WORKER_POLL_SECONDS"]))
 

@@ -375,13 +375,26 @@ def get_stats() -> Dict[str, Any]:
         raise GraphServiceError("未配置 NEO4J_PASSWORD", 500)
     driver = neo4j_driver(uri, user, password)
     stats = get_graph_statistics(driver, database)
+    from app.domains.graph import task_repository
+    from app.infrastructure.salary import SALARY_PARSE_VERSION
+
+    confidence_threshold = float(setting("GRAPH_CAP_REVIEW_CONFIDENCE_THRESHOLD", 0.6))
+    cap_version = str(setting("GRAPH_CAP_VERSION", "job-cap-v2"))
     with driver.session(database=database) as session:
         row = session.run("""
         MATCH (j:Job)
         WITH count(j) AS jobs,
-             sum(CASE WHEN j.cap_version IS NULL OR j.cap_req_theory IS NULL OR j.cap_conf_theory IS NULL THEN 1 ELSE 0 END) AS capability_missing,
+             sum(CASE WHEN j.cap_version IS NULL OR j.cap_input_fingerprint IS NULL
+               OR any(value IN [j.cap_req_theory,j.cap_req_cross,j.cap_req_practice,j.cap_req_digital,
+                 j.cap_req_innovation,j.cap_req_teamwork,j.cap_req_social,j.cap_req_growth,
+                 j.cap_conf_theory,j.cap_conf_cross,j.cap_conf_practice,j.cap_conf_digital,
+                 j.cap_conf_innovation,j.cap_conf_teamwork,j.cap_conf_social,j.cap_conf_growth]
+                 WHERE value IS NULL) THEN 1 ELSE 0 END) AS capability_missing,
              sum(CASE WHEN j.cap_version IS NOT NULL AND j.cap_version <> $cap_version THEN 1 ELSE 0 END) AS capability_stale,
-             sum(CASE WHEN j.cap_conf_theory < 0.6 OR j.cap_conf_cross < 0.6 OR j.cap_conf_practice < 0.6 OR j.cap_conf_digital < 0.6 OR j.cap_conf_innovation < 0.6 OR j.cap_conf_teamwork < 0.6 OR j.cap_conf_social < 0.6 OR j.cap_conf_growth < 0.6 THEN 1 ELSE 0 END) AS low_confidence,
+             sum(CASE WHEN j.cap_conf_theory < $confidence OR j.cap_conf_cross < $confidence
+               OR j.cap_conf_practice < $confidence OR j.cap_conf_digital < $confidence
+               OR j.cap_conf_innovation < $confidence OR j.cap_conf_teamwork < $confidence
+               OR j.cap_conf_social < $confidence OR j.cap_conf_growth < $confidence THEN 1 ELSE 0 END) AS low_confidence,
              sum(CASE WHEN j.salary_parse_version IS NULL OR j.salary_parse_version <> $salary_version THEN 1 ELSE 0 END) AS salary_stale,
              sum(CASE WHEN j.source='inferred' THEN 1 ELSE 0 END) AS inferred_jobs
         OPTIONAL MATCH (jt:JobTitle)
@@ -395,9 +408,10 @@ def get_stats() -> Dict[str, Any]:
                curated_lateral,auto_lateral,
                sum(CASE WHEN p.generation_source='curated' THEN 1 ELSE 0 END) AS curated_promotions,
                sum(CASE WHEN p.generation_source<>'curated' OR p.generation_source IS NULL THEN 1 ELSE 0 END) AS auto_promotions
-        """, cap_version=str(setting("GRAPH_CAP_VERSION", "job-cap-v2")), salary_version="v1").single()
+        """, cap_version=cap_version, confidence=confidence_threshold, salary_version=SALARY_PARSE_VERSION).single()
         if row:
             stats.update({key: int(value or 0) for key, value in dict(row).items()})
+    stats.update(task_repository.operational_metrics())
     return stats
 
 

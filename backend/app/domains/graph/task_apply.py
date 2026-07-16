@@ -265,6 +265,14 @@ def _apply_salary(tx, change: dict[str, Any], _run_id: str, loader: GroupLoader 
         tx.run("UNWIND $rows AS item MATCH (j:Job {job_key:item.job_key}) SET j += item.new", rows=chunk)
 
 
+def _apply_inverse(tx, change: dict[str, Any], _run_id: str, loader: GroupLoader | None = None) -> None:
+    for chunk in _chunks(change, "jobs", loader):
+        tx.run(
+            "UNWIND $rows AS item MATCH (j:Job {job_key:item.job_key}) SET j += item.properties",
+            rows=chunk,
+        )
+
+
 def _apply_inferred_cleanup(tx, change: dict[str, Any], _run_id: str, loader: GroupLoader | None = None) -> None:
     for chunk in _chunks(change, "jobs", loader):
         tx.run("UNWIND $rows AS item MATCH (j:Job {job_key:item.job_key,source:'inferred'}) DETACH DELETE j", rows=chunk)
@@ -330,6 +338,7 @@ def apply_change_set(
             "job_lateral_import": _apply_lateral_import,
             "promotion_recommendation_import": _apply_recommendations,
             "salary_normalization": _apply_salary,
+            "graph_inverse": _apply_inverse,
             "inferred_job_cleanup": _apply_inferred_cleanup,
         }
         try:

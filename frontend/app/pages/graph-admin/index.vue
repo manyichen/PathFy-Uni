@@ -59,6 +59,15 @@ const maintenanceItems = computed(() => [
   { label: '低频岗位名称', value: stats.value.low_frequency_titles || 0, description: '关联真实岗位少于 2', to: '/graph-admin/update' }
 ])
 
+const operations = computed(() => [
+  { label: '活跃 Worker', value: stats.value.active_workers || 0, unit: '个', icon: 'i-lucide-heart-pulse' },
+  { label: '最久排队', value: stats.value.oldest_queue_seconds || 0, unit: '秒', icon: 'i-lucide-timer' },
+  { label: '写锁时长', value: stats.value.graph_lock_seconds || 0, unit: '秒', icon: 'i-lucide-lock-keyhole' },
+  { label: '投影积压', value: stats.value.projection_backlog || 0, unit: '个', icon: 'i-lucide-database-zap' },
+  { label: '7 日失败率', value: Math.round(Number(stats.value.failure_rate_7d || 0) * 1000) / 10, unit: '%', icon: 'i-lucide-activity' },
+  { label: '7 日 LLM Tokens', value: stats.value.llm_total_tokens || 0, unit: '', icon: 'i-lucide-sparkles' }
+])
+
 function relationPercent(item: { curated: number, automatic: number }) {
   const total = Number(item.curated) + Number(item.automatic)
   return total ? Math.round(Number(item.curated) / total * 100) : 0
@@ -167,6 +176,15 @@ onMounted(load)
     </div>
 
     <div class="grid gap-4 xl:grid-cols-12">
+      <UCard class="xl:col-span-12">
+        <template #header><div><h2 class="font-semibold">运行健康</h2><p class="mt-1 text-sm muted">Worker 心跳、队列延迟、写锁、投影与模型消耗</p></div></template>
+        <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-6">
+          <div v-for="item in operations" :key="item.label" class="rounded-xl border border-default p-3.5">
+            <div class="flex items-center gap-2 text-sm muted"><UIcon :name="item.icon" class="size-4 text-primary" />{{ item.label }}</div>
+            <p class="mt-2 text-xl font-bold tabular-nums">{{ Number(item.value).toLocaleString() }}<small class="ml-1 text-xs font-normal muted">{{ item.unit }}</small></p>
+          </div>
+        </div>
+      </UCard>
       <UCard class="xl:col-span-7">
         <template #header>
           <div class="flex flex-wrap items-center justify-between gap-3">

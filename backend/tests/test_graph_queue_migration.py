@@ -8,6 +8,7 @@ CATALOG_MIGRATION = Path(__file__).parents[1] / "migrations/versions/20260714_00
 LEASE_MIGRATION = Path(__file__).parents[1] / "migrations/versions/20260715_0006_graph_worker_leases.py"
 PROJECTION_MIGRATION = Path(__file__).parents[1] / "migrations/versions/20260715_0007_graph_projection_state.py"
 CHUNK_MIGRATION = Path(__file__).parents[1] / "migrations/versions/20260716_0008_graph_change_chunks.py"
+QUALITY_MIGRATION = Path(__file__).parents[1] / "migrations/versions/20260716_0009_graph_quality_observability.py"
 
 
 def test_graph_queue_migration_contains_durable_models():
@@ -67,3 +68,18 @@ def test_graph_change_chunk_migration_is_reversible():
     assert "ADD COLUMN change_storage_version" in source
     assert "DROP TABLE IF EXISTS graph_update_task_change_chunks" in source
     assert "DROP COLUMN change_manifest_json" in source
+
+
+def test_graph_quality_migration_is_reversible():
+    source = QUALITY_MIGRATION.read_text(encoding="utf-8")
+    assert 'down_revision = "20260716_0008"' in source
+    for table in (
+        "graph_update_task_inverse_chunks", "graph_capability_evaluation_cache",
+        "graph_llm_call_metrics", "graph_worker_heartbeats",
+    ):
+        assert f"CREATE TABLE {table}" in source
+        assert f"DROP TABLE IF EXISTS {table}" in source
+    for column in ("inverse_manifest_json", "inverse_sha256", "inverse_of_task_id"):
+        assert f"ADD COLUMN {column}" in source
+        assert f"DROP COLUMN {column}" in source
+    assert "graph_inverse" in source

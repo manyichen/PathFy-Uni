@@ -86,6 +86,16 @@ def test_confirm_reject_cancel_routes(client, monkeypatch):
     assert client.post("/api/graph/tasks/4/cancel").get_json()["data"]["status"] == "cancelled"
 
 
+def test_task_catalog_and_reverse_routes_are_admin_scoped(client, monkeypatch):
+    catalog = client.get("/api/graph/tasks/catalog")
+    assert catalog.status_code == 200
+    assert any(item["task_type"] == "job_import" for item in catalog.get_json()["data"]["items"])
+    monkeypatch.setattr(graph_router, "create_inverse_task", lambda task_id, user_id: {"id": 22, "inverse_of_task_id": task_id, "requested_by": user_id})
+    response = client.post("/api/graph/tasks/9/reverse")
+    assert response.status_code == 201
+    assert response.get_json()["data"] == {"id": 22, "inverse_of_task_id": 9, "requested_by": 7}
+
+
 class _TitleSession:
     def __enter__(self): return self
     def __exit__(self, *_args): return False

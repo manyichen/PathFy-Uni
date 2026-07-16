@@ -4,8 +4,15 @@ import hashlib
 import json
 from contextlib import nullcontext
 
+import pytest
+
 from app.domains.graph import worker
 from app.domains.graph.task_planner import TaskPlanningError
+
+
+@pytest.fixture(autouse=True)
+def _ignore_worker_telemetry(monkeypatch):
+    monkeypatch.setattr(worker.repo, "touch_worker", lambda *_args, **_kwargs: None)
 
 
 def _task():

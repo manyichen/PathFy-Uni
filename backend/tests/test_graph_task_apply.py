@@ -107,3 +107,15 @@ def test_chunk_loader_uses_one_unwind_per_chunk_not_per_item():
     assert len(tx.queries) == 2
     assert all("UNWIND $rows" in query for query, _ in tx.queries)
     assert [len(params["rows"]) for _, params in tx.queries] == [2, 1]
+
+
+def test_inverse_apply_restores_nulls_and_values_in_one_batch():
+    tx = FakeTx()
+    task_apply._apply_inverse(tx, {"jobs": [
+        {"job_key": "j1", "properties": {"cap_version": "v1", "cap_req_theory": None}},
+        {"job_key": "j2", "properties": {"cap_version": "v1", "cap_req_theory": 50}},
+    ]}, "run")
+    assert len(tx.queries) == 1
+    query, params = tx.queries[0]
+    assert "SET j += item.properties" in query
+    assert len(params["rows"]) == 2

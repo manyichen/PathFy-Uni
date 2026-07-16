@@ -58,7 +58,7 @@ test('graph and report share the rich job picker', async ({ page }) => {
   await expect(page.getByText('示例科技 · 上海')).toBeVisible()
 
   await page.goto('/report')
-  await page.getByRole('button', { name: '手动选择岗位' }).click()
+  await page.getByRole('button', { name: '岗位库' }).click()
   await expect(page.getByText('示例科技')).toBeVisible()
 })
 

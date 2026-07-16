@@ -15,9 +15,10 @@ from app.domains.graph.services import (
 from app.domains.graph.locking import GraphOperationBusy, graph_write_lock
 from app.domains.graph import task_repository
 from app.domains.graph.task_service import (
-    GraphTaskError, cancel_task, confirm_task, downloadable_task_file, enqueue_task, guard_status,
+    GraphTaskError, cancel_task, confirm_task, create_inverse_task, downloadable_task_file, enqueue_task, guard_status,
     list_tasks, reject_task, task_changes, task_detail,
 )
+from app.domains.graph.task_registry import task_catalog
 
 graph_bp = Blueprint("graph", __name__, url_prefix="/api/graph")
 TRUE_VALUES = {"1", "true", "yes", "on"}
@@ -239,6 +240,13 @@ def create_graph_task():
     except (TypeError, ValueError): return jsonify({"ok": False, "message": "任务参数格式错误"}), 400
 
 
+@graph_bp.get("/tasks/catalog")
+def graph_task_catalog():
+    _, err = _require_admin()
+    if err: return err
+    return jsonify({"ok": True, "data": {"items": task_catalog()}})
+
+
 @graph_bp.get("/tasks")
 def graph_tasks_list():
     _, err = _require_admin()
@@ -312,6 +320,14 @@ def graph_task_cancel(task_id: int):
     user_id, err = _require_admin()
     if err: return err
     try: return jsonify({"ok": True, "data": cancel_task(task_id, user_id)})
+    except GraphTaskError as exc: return jsonify({"ok": False, "message": exc.message}), exc.status
+
+
+@graph_bp.post("/tasks/<int:task_id>/reverse")
+def graph_task_reverse(task_id: int):
+    user_id, err = _require_admin()
+    if err: return err
+    try: return jsonify({"ok": True, "data": create_inverse_task(task_id, user_id)}), 201
     except GraphTaskError as exc: return jsonify({"ok": False, "message": exc.message}), exc.status
 
 

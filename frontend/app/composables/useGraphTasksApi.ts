@@ -2,6 +2,7 @@ export function useGraphTasksApi() {
   const api = useApi()
   const guard = () => api.ok<any>('/api/graph/guard')
   const stats = () => api.ok<Record<string, number>>('/api/graph/stats')
+  const catalog = () => api.ok<{ items: any[] }>('/api/graph/tasks/catalog')
   const tasks = (params: { page?: number; status?: string; task_type?: string; requested_by?: number; created_from?: string; created_to?: string } = {}) => {
     const query = new URLSearchParams({ page: String(params.page || 1), page_size: '20' })
     if (params.status) query.set('status', params.status)
@@ -25,5 +26,6 @@ export function useGraphTasksApi() {
   const confirm = (id: number) => api.ok<any>(`/api/graph/tasks/${id}/confirm`, { method: 'POST', body: {} })
   const reject = (id: number, reason: string) => api.ok<any>(`/api/graph/tasks/${id}/reject`, { method: 'POST', body: { reason } })
   const cancel = (id: number) => api.ok<any>(`/api/graph/tasks/${id}/cancel`, { method: 'POST', body: {} })
-  return { guard, stats, tasks, task, changes, downloadFile, create, confirm, reject, cancel }
+  const reverse = (id: number) => api.ok<any>(`/api/graph/tasks/${id}/reverse`, { method: 'POST', body: {} })
+  return { guard, stats, catalog, tasks, task, changes, downloadFile, create, confirm, reject, cancel, reverse }
 }

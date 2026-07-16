@@ -12,7 +12,7 @@ import pandas as pd
 from app.domains.graph.constants import COLUMN_ALIASES, REQUIRED_CN_COLUMNS, build_ai_payload, normalize_text, normalize_title
 from app.domains.graph.incremental import deduplicate_jobs, import_keys, job_key_for_row, plan_incremental_rows
 from app.domains.graph.repository import fetch_job_import_fingerprints
-from app.domains.graph.capability_service import CAP_VERSION, CONF_FIELDS, REQ_FIELDS, capability_fingerprint, evaluate_jobs, normalize_imported_result
+from app.domains.graph.capability_service import CAP_RESTORE_FIELDS, CAP_VERSION, CONF_FIELDS, REQ_FIELDS, capability_fingerprint, evaluate_jobs, normalize_imported_result
 from app.domains.graph.task_registry import TASK_HANDLERS
 from app.domains.graph.services import _call_llm_batch_extract, _llm_model
 from app.domains.graph.sync_service import LATERAL_SYSTEM, PROMOTION_PATH_SYSTEM, _call_llm_json, _parse_confidence, _promotion_id
@@ -118,7 +118,7 @@ def plan_job_import(task: dict[str, Any], emit=lambda *_args, **_kwargs: None) -
     for start in range(0, len(jobs), capability_batch_size):
         group = jobs[start:start + capability_batch_size]
         emit("capability", f"正在评估岗位八维能力批次 {start // capability_batch_size + 1}", {"start": start + 1, "rows": len(group), "total": len(jobs)})
-        results = evaluate_jobs([_cap_payload(job) for job in group])
+        results = evaluate_jobs([_cap_payload(job) for job in group], task_id=int(task["id"]))
         for job, result in zip(group, results, strict=True): job["capability"] = result
 
     with driver.session(database=database) as session:
@@ -189,7 +189,9 @@ def plan_job_import(task: dict[str, Any], emit=lambda *_args, **_kwargs: None) -
         "lateral": ([{"from": pair[0], "to": pair[1], "generation_source": "graph_task_llm", "reason": "not_in_replanned_projection"} for pair in sorted(current_auto_lateral - new_lateral_pairs)] if task["options"].get("generate_lateral", True) else []),
     }
     change_set = {"version": 2, "kind": "job_import", "source_id": source_id, "mode": task.get("mode") or "merge", "input_keys": keys, "jobs": jobs, "job_titles": [{"name": n, "count": counts[n]} for n in sorted(counts)], "promotions": promotions, "lateral": lateral, "delete_manifest": delete_manifest, "retained_manifest": {"job_titles": retained_titles}, "replace_auto_promotions": bool(task["options"].get("generate_promotions", True)), "replace_auto_lateral": bool(task["options"].get("generate_lateral", True))}
-    low_confidence = sum(1 for x in jobs if min(float(x["capability"][f]) for f in CONF_FIELDS) < 0.6)
+    from app.domains.settings.service import setting
+    confidence_threshold = float(setting("GRAPH_CAP_REVIEW_CONFIDENCE_THRESHOLD", 0.6))
+    low_confidence = sum(1 for x in jobs if min(float(x["capability"][f]) for f in CONF_FIELDS) < confidence_threshold)
     summary = {"input_rows": len(df) + duplicates, "unique_jobs": len(df), "duplicate_rows": duplicates, "new_or_changed_jobs": len(jobs), "evaluated_jobs": len(jobs), "low_confidence_jobs": low_confidence, "unchanged_jobs": len(unchanged), "job_titles": len(titles), "promotions": len(promotions), "lateral_transfers": len(lateral), "deleted_jobs": len(deleted_jobs), "deleted_job_titles": len(deleted_titles), "retained_job_titles": len(retained_titles), "deleted_promotions": len(delete_manifest["promotions"]), "deleted_lateral_transfers": len(delete_manifest["lateral"]), "snapshot_prune": task.get("mode") == "snapshot", "preview": {"jobs": [{"job_key": x["job_key"], "title": x["row"].get("name"), "company": x["row"].get("company"), "capability": x["capability"]} for x in jobs[:10]], "promotions": promotions[:10], "lateral": lateral[:10], "deletes": {key: value[:10] for key, value in delete_manifest.items()}, "retained_job_titles": retained_titles[:10]}}
     return change_set, summary
 
@@ -253,7 +255,7 @@ def plan_capability_evaluation(task: dict[str, Any], emit=lambda *_args, **_kwar
     scope = task.get("options", {}).get("scope", "missing")
     source_id = task.get("options", {}).get("source_id")
     driver, database = _driver()
-    fields = ",".join([f"j.{field} AS {field}" for field in (*REQ_FIELDS, *CONF_FIELDS)])
+    fields = ",".join([f"j.{field} AS {field}" for field in CAP_RESTORE_FIELDS])
     with driver.session(database=database) as session:
         rows = [dict(row) for row in session.run(
             f"MATCH (j:Job) WHERE coalesce(j.source,'') <> 'inferred' "
@@ -272,9 +274,11 @@ def plan_capability_evaluation(task: dict[str, Any], emit=lambda *_args, **_kwar
         group = selected[start:start + batch_size]
         emit("capability", f"正在评估存量岗位批次 {start // batch_size + 1}", {"start": start + 1, "rows": len(group), "total": len(selected)})
         payloads = [{key: row.get(key) for key in ("job_key", "title", "company", "industry", "demand", "company_detail", "experience", "hard_skills", "certificates")} for row in group]
-        results = evaluate_jobs(payloads)
-        for row, result in zip(group, results, strict=True): changes.append({"job_key": row["job_key"], "old": {field: row.get(field) for field in (*REQ_FIELDS, *CONF_FIELDS, "cap_version")}, "capability": result})
-    low = sum(1 for x in changes if min(float(x["capability"][f]) for f in CONF_FIELDS) < 0.6)
+        results = evaluate_jobs(payloads, task_id=int(task["id"]))
+        for row, result in zip(group, results, strict=True): changes.append({"job_key": row["job_key"], "old": {field: row.get(field) for field in CAP_RESTORE_FIELDS}, "capability": result})
+    from app.domains.settings.service import setting
+    confidence_threshold = float(setting("GRAPH_CAP_REVIEW_CONFIDENCE_THRESHOLD", 0.6))
+    low = sum(1 for x in changes if min(float(x["capability"][f]) for f in CONF_FIELDS) < confidence_threshold)
     return ({"version": 2, "kind": "job_capability_evaluation", "jobs": changes},
             {"scope": scope, "source_id": source_id, "candidate_jobs": len(rows), "evaluated_jobs": len(changes), "low_confidence_jobs": low, "preview": changes[:10]})
 
@@ -295,15 +299,19 @@ def plan_capability_result_import(task: dict[str, Any], emit=lambda *_args, **_k
     keys = [x["job_key"] for x in records]
     if len(keys) != len(set(keys)): raise TaskPlanningError("JSONL 存在重复岗位标识")
     driver, database = _driver()
+    old_fields = ",".join([f"j.{field} AS {field}" for field in CAP_RESTORE_FIELDS])
     with driver.session(database=database) as session:
-        matches = [dict(row) for row in session.run("UNWIND $keys AS input MATCH (j:Job) WHERE coalesce(j.job_key,j.job_code,j.name,j.title,elementId(j))=input RETURN input,j.job_key AS job_key", keys=keys)]
-    mapped: dict[str, list[str]] = {}
-    for row in matches: mapped.setdefault(str(row["input"]), []).append(str(row["job_key"]))
+        matches = [dict(row) for row in session.run(f"UNWIND $keys AS input MATCH (j:Job) WHERE coalesce(j.job_key,j.job_code,j.name,j.title,elementId(j))=input RETURN input,j.job_key AS job_key,{old_fields}", keys=keys)]
+    mapped: dict[str, list[dict[str, Any]]] = {}
+    for row in matches: mapped.setdefault(str(row["input"]), []).append(row)
     unknown = sorted(set(keys) - set(mapped))
     if unknown: raise TaskPlanningError(f"JSONL 引用了不存在的岗位: {unknown[:10]}")
-    ambiguous = sorted(key for key, values in mapped.items() if len(set(values)) != 1)
+    ambiguous = sorted(key for key, values in mapped.items() if len({str(item["job_key"]) for item in values}) != 1)
     if ambiguous: raise TaskPlanningError(f"JSONL 岗位标识不唯一: {ambiguous[:10]}")
-    for record in records: record["job_key"] = mapped[record["job_key"]][0]
+    for record in records:
+        matched = mapped[record["job_key"]][0]
+        record["job_key"] = str(matched["job_key"])
+        record["old"] = {field: matched.get(field) for field in CAP_RESTORE_FIELDS}
     emit("validation", "历史能力结果校验完成", {"jobs": len(records)})
     return {"version": 2, "kind": "job_capability_result_import", "jobs": records}, {"jobs": len(records), "preview": records[:10]}
 
@@ -411,11 +419,20 @@ def plan_salary_normalization(task: dict[str, Any], emit=lambda *_args, **_kwarg
     force = bool(task.get("options", {}).get("force"))
     driver, database = _driver()
     with driver.session(database=database) as session:
-        rows = [dict(x) for x in session.run("MATCH (j:Job) WHERE $force OR j.salary_parse_version IS NULL OR j.salary_parse_version <> $version RETURN j.job_key AS job_key,j.salary AS salary,j.salary_norm AS old_salary_norm,j.salary_parse_version AS old_version", force=force, version=SALARY_PARSE_VERSION)]
+        rows = [dict(x) for x in session.run("""MATCH (j:Job)
+          WHERE $force OR j.salary_parse_version IS NULL OR j.salary_parse_version <> $version
+          RETURN j.job_key AS job_key,j.salary AS salary,j.salary_norm AS old_salary_norm,
+            j.salary_parse_version AS old_version,j.salary_negotiable AS old_negotiable,
+            j.salary_monthly_min AS old_monthly_min,j.salary_monthly_max AS old_monthly_max,
+            j.salary_bonus_months AS old_bonus_months""", force=force, version=SALARY_PARSE_VERSION)]
     changes = []
     for row in rows:
         props = neo4j_salary_properties(row.get("salary") or "")
-        changes.append({"job_key": row["job_key"], "old": {"salary_norm": row.get("old_salary_norm"), "salary_parse_version": row.get("old_version")}, "new": props, "parsed": props.get("salary_norm") not in {"未知"}})
+        changes.append({"job_key": row["job_key"], "old": {
+            "salary_norm": row.get("old_salary_norm"), "salary_parse_version": row.get("old_version"),
+            "salary_negotiable": row.get("old_negotiable"), "salary_monthly_min": row.get("old_monthly_min"),
+            "salary_monthly_max": row.get("old_monthly_max"), "salary_bonus_months": row.get("old_bonus_months"),
+        }, "new": props, "parsed": props.get("salary_norm") not in {"未知"}})
     emit("salary", "薪资规范化变更已生成", {"jobs": len(changes)})
     return {"version": 2, "kind": "salary_normalization", "jobs": changes}, {"jobs": len(changes), "parsed": sum(1 for x in changes if x["parsed"]), "unparsed": sum(1 for x in changes if not x["parsed"]), "preview": changes[:10]}
 

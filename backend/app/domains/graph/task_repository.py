@@ -22,8 +22,12 @@ def _decode(row: dict[str, Any] | None, *, include_change_set: bool = False):
         return None
     item = dict(row)
     for key in ("options_json", "change_summary_json", "config_snapshot_json", "change_manifest_json"):
+        if key not in item:
+            continue
         raw = item.pop(key, None)
         item[key.removesuffix("_json")] = json.loads(raw) if isinstance(raw, str) else raw
+    raw_inverse = item.pop("inverse_manifest_json", None)
+    item["inverse_available"] = bool(item.get("inverse_available") or (raw_inverse and item.get("inverse_sha256")))
     raw_change = item.pop("change_set_json", None)
     if include_change_set:
         if int(item.get("change_storage_version") or 1) >= 2:
@@ -251,6 +255,8 @@ def release_applying_lease(task_id: int, lease_token: str) -> bool:
 def prepare_task(task_id: int, *, base_revision: int, summary: dict[str, Any],
                  change_set_sha256: str, change_manifest: dict[str, Any] | None = None,
                  change_chunks: tuple[ChangeChunk, ...] = (), change_set_json: str | None = None,
+                 inverse_manifest: dict[str, Any] | None = None,
+                 inverse_chunks: tuple[ChangeChunk, ...] = (), inverse_sha256: str | None = None,
                  lease_token: str | None = None) -> bool:
     with db_cursor() as (_, cur):
         guard = get_guard(for_update=True, cursor=cur)
@@ -275,11 +281,14 @@ def prepare_task(task_id: int, *, base_revision: int, summary: dict[str, Any],
         cur.execute(
             """UPDATE graph_update_tasks SET status='awaiting_confirmation',change_summary_json=%s,
                change_set_json=%s,change_manifest_json=%s,change_storage_version=%s,
-               change_set_sha256=%s,prepared_at=NOW(),worker_id=NULL,
+               change_set_sha256=%s,inverse_manifest_json=%s,inverse_sha256=%s,
+               prepared_at=NOW(),worker_id=NULL,
                lease_token=NULL,heartbeat_at=NULL,lease_expires_at=NULL
                WHERE id=%s AND status='running'""" + lease_clause,
             (_json(summary), change_set_json, _json(change_manifest) if change_manifest is not None else None,
-             storage_version, change_set_sha256, task_id, *lease_params),
+             storage_version, change_set_sha256,
+             _json(inverse_manifest) if inverse_manifest is not None else None,
+             inverse_sha256, task_id, *lease_params),
         )
         if cur.rowcount != 1:
             return False
@@ -291,6 +300,15 @@ def prepare_task(task_id: int, *, base_revision: int, summary: dict[str, Any],
                    VALUES (%s,%s,%s,%s,%s,%s)""",
                 [(task_id, chunk.group_name, chunk.chunk_no, chunk.item_count,
                   chunk.sha256, chunk.payload_json) for chunk in change_chunks],
+            )
+        cur.execute("DELETE FROM graph_update_task_inverse_chunks WHERE task_id=%s", (task_id,))
+        if inverse_chunks:
+            cur.executemany(
+                """INSERT INTO graph_update_task_inverse_chunks
+                   (task_id,group_name,chunk_no,item_count,chunk_sha256,payload_json)
+                   VALUES (%s,%s,%s,%s,%s,%s)""",
+                [(task_id, chunk.group_name, chunk.chunk_no, chunk.item_count,
+                  chunk.sha256, chunk.payload_json) for chunk in inverse_chunks],
             )
         cur.execute("UPDATE graph_write_guard SET locked_task_id=%s,locked_at=NOW() WHERE id=1", (task_id,))
         cur.execute(
@@ -371,7 +389,7 @@ def list_tasks(*, page: int, page_size: int, status: str | None = None,
         cur.execute("SELECT COUNT(*) AS total FROM graph_update_tasks" + where, params)
         total = int(cur.fetchone()["total"])
         cur.execute(
-            "SELECT id,task_uuid,task_type,status,requested_by,handled_by,input_file_name,input_file_size,input_sha256,source_id,mode,options_json,settings_revision,base_graph_revision,change_summary_json,change_set_sha256,change_storage_version,error_message,rejection_reason,worker_id,heartbeat_at,lease_expires_at,attempt_count,next_retry_at,last_error_code,last_error_retryable,confirm_requested_at,neo4j_committed_at,projection_status,projection_attempts,projection_error,projection_next_retry_at,created_at,started_at,prepared_at,handled_at,finished_at FROM graph_update_tasks" + where + " ORDER BY created_at DESC,id DESC LIMIT %s OFFSET %s",
+            "SELECT id,task_uuid,task_type,status,requested_by,handled_by,input_file_name,input_file_size,input_sha256,source_id,mode,options_json,settings_revision,base_graph_revision,change_summary_json,change_set_sha256,change_storage_version,inverse_sha256,inverse_of_task_id,(inverse_manifest_json IS NOT NULL) AS inverse_available,error_message,rejection_reason,worker_id,heartbeat_at,lease_expires_at,attempt_count,next_retry_at,last_error_code,last_error_retryable,confirm_requested_at,neo4j_committed_at,projection_status,projection_attempts,projection_error,projection_next_retry_at,created_at,started_at,prepared_at,handled_at,finished_at FROM graph_update_tasks" + where + " ORDER BY created_at DESC,id DESC LIMIT %s OFFSET %s",
             (*params, page_size, (page - 1) * page_size),
         )
         items = [_decode(r) for r in cur.fetchall()]
@@ -382,7 +400,10 @@ def list_tasks(*, page: int, page_size: int, status: str | None = None,
 
 def get_task(task_id: int, *, include_change_set: bool = False) -> dict[str, Any] | None:
     with db_cursor() as (_, cur):
-        columns = "*" if include_change_set else "id,task_uuid,task_type,status,requested_by,handled_by,input_file_name,input_file_size,input_sha256,source_id,mode,options_json,settings_revision,config_snapshot_json,base_graph_revision,change_summary_json,change_set_sha256,change_storage_version,error_message,rejection_reason,worker_id,heartbeat_at,lease_expires_at,attempt_count,next_retry_at,last_error_code,last_error_retryable,confirm_requested_at,neo4j_committed_at,projection_status,projection_attempts,projection_error,projection_next_retry_at,created_at,started_at,prepared_at,handled_at,finished_at"
+        # Public task details intentionally omit the frozen settings document.  The
+        # revision is enough for audit display; only worker/confirm internals may
+        # load the complete snapshot via include_change_set=True.
+        columns = "*" if include_change_set else "id,task_uuid,task_type,status,requested_by,handled_by,input_file_name,input_file_size,input_sha256,source_id,mode,options_json,settings_revision,base_graph_revision,change_summary_json,change_set_sha256,change_storage_version,inverse_sha256,inverse_of_task_id,(inverse_manifest_json IS NOT NULL) AS inverse_available,error_message,rejection_reason,worker_id,heartbeat_at,lease_expires_at,attempt_count,next_retry_at,last_error_code,last_error_retryable,confirm_requested_at,neo4j_committed_at,projection_status,projection_attempts,projection_error,projection_next_retry_at,created_at,started_at,prepared_at,handled_at,finished_at"
         cur.execute(f"SELECT {columns} FROM graph_update_tasks WHERE id=%s", (task_id,))
         task = _decode(cur.fetchone(), include_change_set=include_change_set)
         if not task:
@@ -691,3 +712,135 @@ def cancel_task(task_id: int, user_id: int) -> bool:
             return False
         cur.execute("INSERT INTO graph_update_task_events (task_id,event_type,stage,message) VALUES (%s,'cancelled','queue','排队任务已取消')", (task_id,))
         return True
+
+
+def touch_worker(worker_id: str, *, current_task_id: int | None = None) -> None:
+    try:
+        with db_cursor() as (_, cur):
+            cur.execute(
+                """INSERT INTO graph_worker_heartbeats (worker_id,current_task_id)
+                   VALUES (%s,%s) ON DUPLICATE KEY UPDATE current_task_id=VALUES(current_task_id),
+                     last_heartbeat_at=NOW(6)""",
+                (worker_id[:128], current_task_id),
+            )
+    except Exception:
+        return
+
+
+def operational_metrics() -> dict[str, Any]:
+    """Return bounded aggregate metrics; never expose prompts, keys, or snapshots."""
+    with db_cursor() as (_, cur):
+        cur.execute(
+            """SELECT
+              SUM(status='queued') AS queue_depth,
+              COALESCE(MAX(CASE WHEN status='queued' THEN TIMESTAMPDIFF(SECOND,created_at,NOW(6)) END),0) AS oldest_queue_seconds,
+              COALESCE(AVG(CASE WHEN started_at IS NOT NULL THEN TIMESTAMPDIFF(SECOND,created_at,started_at) END),0) AS queue_wait_avg_seconds,
+              SUM(status='applying' AND projection_status IN ('pending','running','retrying')) AS projection_backlog,
+              SUM(status='failed' AND created_at>=DATE_SUB(NOW(6),INTERVAL 7 DAY)) AS failed_7d,
+              SUM(status IN ('succeeded','failed','partial_failed') AND created_at>=DATE_SUB(NOW(6),INTERVAL 7 DAY)) AS completed_7d
+            FROM graph_update_tasks"""
+        )
+        task = dict(cur.fetchone() or {})
+        cur.execute(
+            """SELECT COUNT(*) AS active_workers,
+              COALESCE(MAX(TIMESTAMPDIFF(SECOND,last_heartbeat_at,NOW(6))),0) AS worker_heartbeat_age_seconds
+              FROM graph_worker_heartbeats
+              WHERE last_heartbeat_at>=DATE_SUB(NOW(6),INTERVAL 5 MINUTE)"""
+        )
+        workers = dict(cur.fetchone() or {})
+        cur.execute(
+            """SELECT COUNT(*) AS llm_calls,
+              COALESCE(SUM(prompt_tokens+completion_tokens),0) AS llm_total_tokens,
+              COALESCE(SUM(duration_ms),0) AS llm_duration_ms,
+              COALESCE(SUM(cache_hit),0) AS llm_cache_hits,
+              COALESCE(SUM(retry_count),0) AS llm_retries
+              FROM graph_llm_call_metrics
+              WHERE created_at>=DATE_SUB(NOW(6),INTERVAL 7 DAY)"""
+        )
+        llm = dict(cur.fetchone() or {})
+        cur.execute(
+            """SELECT COALESCE(TIMESTAMPDIFF(SECOND,locked_at,NOW(6)),0) AS graph_lock_seconds
+               FROM graph_write_guard WHERE id=1"""
+        )
+        lock = dict(cur.fetchone() or {})
+    completed = int(task.get("completed_7d") or 0)
+    failed = int(task.get("failed_7d") or 0)
+    values = {**task, **workers, **llm, **lock, "failure_rate_7d": round(failed / completed, 4) if completed else 0.0}
+    return {key: float(value) if key in {"queue_wait_avg_seconds", "failure_rate_7d"} else int(value or 0) for key, value in values.items()}
+
+
+def create_inverse_task(
+    source_task_id: int, *, requested_by: int, settings_revision: int | None,
+    config_snapshot: dict[str, Any],
+) -> dict[str, Any] | None:
+    """Copy a stored inverse into a new reviewed task and acquire the guard."""
+    with db_cursor() as (_, cur):
+        guard = get_guard(for_update=True, cursor=cur)
+        if guard.get("locked_task_id"):
+            return None
+        cur.execute(
+            """SELECT id,status,task_type,base_graph_revision,inverse_manifest_json,inverse_sha256
+               FROM graph_update_tasks WHERE id=%s FOR UPDATE""",
+            (source_task_id,),
+        )
+        source = cur.fetchone()
+        if not source or source.get("status") != "succeeded" or not source.get("inverse_manifest_json") or not source.get("inverse_sha256"):
+            return None
+        if int(guard.get("graph_revision") or 0) != int(source.get("base_graph_revision") or -2) + 1:
+            return None
+        cur.execute(
+            """SELECT 1 FROM graph_update_tasks WHERE inverse_of_task_id=%s
+               AND status NOT IN ('rejected','cancelled','failed') LIMIT 1 FOR UPDATE""",
+            (source_task_id,),
+        )
+        if cur.fetchone():
+            return None
+        cur.execute(
+            """SELECT 1 FROM graph_update_tasks
+               WHERE status IN ('running','awaiting_confirmation','applying') LIMIT 1 FOR UPDATE"""
+        )
+        if cur.fetchone():
+            return None
+        try:
+            manifest = json.loads(source["inverse_manifest_json"])
+        except (TypeError, json.JSONDecodeError):
+            return None
+        cur.execute(
+            """SELECT group_name,chunk_no,item_count,chunk_sha256,payload_json
+               FROM graph_update_task_inverse_chunks WHERE task_id=%s
+               ORDER BY group_name,chunk_no""",
+            (source_task_id,),
+        )
+        inverse_rows = [dict(row) for row in cur.fetchall()]
+        if not verify_chunk_rows(manifest, inverse_rows, str(source["inverse_sha256"])):
+            return None
+        restored = sum(int(row["item_count"]) for row in inverse_rows if row["group_name"] == "jobs")
+        summary = {"inverse_of_task_id": source_task_id, "inverse_of_type": source["task_type"], "restored_jobs": restored}
+        task_uuid = uuid4().hex
+        cur.execute(
+            """INSERT INTO graph_update_tasks
+               (task_uuid,task_type,status,requested_by,mode,options_json,settings_revision,
+                config_snapshot_json,base_graph_revision,change_summary_json,change_manifest_json,
+                change_storage_version,change_set_sha256,inverse_of_task_id,prepared_at)
+               VALUES (%s,'graph_inverse','awaiting_confirmation',%s,'merge',%s,%s,%s,%s,%s,%s,2,%s,%s,NOW(6))""",
+            (task_uuid, requested_by, _json({"inverse_of_task_id": source_task_id}),
+             settings_revision, _json(config_snapshot), int(guard["graph_revision"]),
+             _json(summary), _json(manifest), source["inverse_sha256"], source_task_id),
+        )
+        task_id = int(cur.lastrowid)
+        if inverse_rows:
+            cur.executemany(
+                """INSERT INTO graph_update_task_change_chunks
+                   (task_id,group_name,chunk_no,item_count,chunk_sha256,payload_json)
+                   VALUES (%s,%s,%s,%s,%s,%s)""",
+                [(task_id, row["group_name"], row["chunk_no"], row["item_count"],
+                  row["chunk_sha256"], row["payload_json"]) for row in inverse_rows],
+            )
+        cur.execute("UPDATE graph_write_guard SET locked_task_id=%s,locked_at=NOW(6) WHERE id=1", (task_id,))
+        cur.execute(
+            """INSERT INTO graph_update_task_events (task_id,event_type,stage,message,detail_json)
+               VALUES (%s,'prepared','inverse','已从历史任务生成反向变更，等待管理员确认',%s)""",
+            (task_id, _json(summary)),
+        )
+        cur.execute("SELECT * FROM graph_update_tasks WHERE id=%s", (task_id,))
+        return _decode(cur.fetchone())

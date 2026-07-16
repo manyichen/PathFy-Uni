@@ -58,3 +58,20 @@ def test_change_preview_exposes_delete_and_retained_manifests(monkeypatch):
     result = task_repository._legacy_task_changes(1, group="delete.jobs", page=1, page_size=20)
     assert result["groups"] == {"jobs": 1, "delete.jobs": 1, "retained.job_titles": 1}
     assert result["items"] == [{"job_key": "old"}]
+
+
+def test_inverse_task_requires_successful_reversible_source(app, monkeypatch):
+    with app.app_context():
+        monkeypatch.setattr(task_service.repo, "get_task", lambda *_args, **_kwargs: {"id": 4, "status": "succeeded", "inverse_available": True})
+        monkeypatch.setattr(task_service, "active_system_settings", lambda: {"revision": 3, "settings": {"GRAPH_CAP_VERSION": "v2"}})
+        captured = {}
+        monkeypatch.setattr(task_service.repo, "create_inverse_task", lambda task_id, **kwargs: captured.update(task_id=task_id, **kwargs) or {"id": 8, "status": "awaiting_confirmation"})
+        result = task_service.create_inverse_task(4, 7)
+    assert result["id"] == 8
+    assert captured == {"task_id": 4, "requested_by": 7, "settings_revision": 3, "config_snapshot": {"GRAPH_CAP_VERSION": "v2"}}
+
+
+def test_inverse_task_rejects_unsupported_or_stale_source(monkeypatch):
+    monkeypatch.setattr(task_service.repo, "get_task", lambda *_args, **_kwargs: {"id": 4, "status": "succeeded", "inverse_available": False})
+    with pytest.raises(task_service.GraphTaskError, match="没有可安全恢复"):
+        task_service.create_inverse_task(4, 7)

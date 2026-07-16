@@ -9,6 +9,7 @@ export const graphTaskCatalog = {
   promotion_recommendation_import: { label: '晋升推荐导入', category: '策展数据', icon: 'i-lucide-waypoints', file: true },
   salary_normalization: { label: '薪资规范化', category: '图谱维护', icon: 'i-lucide-badge-dollar-sign', file: false },
   inferred_job_cleanup: { label: '清理推断岗位', category: '图谱维护', icon: 'i-lucide-trash-2', file: false, dangerous: true },
+  graph_inverse: { label: '恢复上一版属性', category: '图谱维护', icon: 'i-lucide-rotate-ccw', file: false, dangerous: true },
   emergency_clear: { label: '紧急清空', category: '图谱维护', icon: 'i-lucide-triangle-alert', file: false, dangerous: true }
 } as const
 
@@ -30,5 +31,6 @@ export const summaryLabels: Record<string, string> = {
   job_titles: '岗位名称', promotions: '晋升路线', lateral_transfers: '换岗关系', items: '数据项', job_title_links: '岗位关联',
   relationships: '关系数', resource_recommendations: '学习资源推荐', competition_recommendations: '竞赛推荐',
   jobs: '岗位数', parsed: '解析成功', unparsed: '无法解析', delete_jobs: '删除岗位', delete_job_titles: '删除岗位名称',
-  affected_relationships: '影响关系', scope: '评估范围', source_id: '数据来源', snapshot_prune: '来源快照清理'
+  affected_relationships: '影响关系', scope: '评估范围', source_id: '数据来源', snapshot_prune: '来源快照清理',
+  inverse_of_task_id: '恢复来源任务', restored_jobs: '恢复岗位属性'
 }

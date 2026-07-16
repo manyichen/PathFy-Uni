@@ -52,7 +52,8 @@ def enqueue_task(*, user_id: int, task_type: str, uploaded_file: FileStorage | N
                  batch_size: int | None = None, generate_promotions: bool = True,
                  generate_lateral: bool = True, options: dict | None = None):
     if task_type not in TASK_TYPES: raise GraphTaskError("不支持的任务类型")
-    if task_type == "emergency_clear": raise GraphTaskError("紧急清空只能使用 /api/graph/clear 并二次确认")
+    if task_type in {"emergency_clear", "graph_inverse"}:
+        raise GraphTaskError("该任务类型只能通过专用的管理员恢复/维护接口创建")
     spec = task_spec(task_type); system = active_system_settings(); runtime = system["settings"]
     mode = str(mode or spec.default_mode).lower()
     if mode not in {"merge", "snapshot"}: raise GraphTaskError("mode 仅支持 merge 或 snapshot")
@@ -154,3 +155,21 @@ def cancel_task(task_id: int, user_id: int):
     if not task: raise GraphTaskError("任务不存在", 404)
     if not repo.cancel_task(task_id, user_id): raise GraphTaskError("只能取消 queued 任务", 409)
     return {"task_id": task_id, "status": "cancelled"}
+
+
+def create_inverse_task(task_id: int, user_id: int):
+    source = repo.get_task(task_id)
+    if not source:
+        raise GraphTaskError("任务不存在", 404)
+    if source.get("status") != "succeeded":
+        raise GraphTaskError("只有已成功任务可以生成恢复任务", 409)
+    if not source.get("inverse_available"):
+        raise GraphTaskError("该任务没有可安全恢复的属性快照", 409)
+    system = active_system_settings()
+    task = repo.create_inverse_task(
+        task_id, requested_by=user_id, settings_revision=system.get("revision"),
+        config_snapshot=system["settings"],
+    )
+    if not task:
+        raise GraphTaskError("图谱版本已变化、存在活动任务或恢复任务已创建", 409)
+    return task
