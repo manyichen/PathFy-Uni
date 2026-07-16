@@ -81,7 +81,7 @@ def test_confirm_reject_cancel_routes(client, monkeypatch):
     monkeypatch.setattr(graph_router, "confirm_task", lambda task_id, user_id: {"id": task_id, "user": user_id})
     monkeypatch.setattr(graph_router, "reject_task", lambda task_id, user_id, reason: {"reason": reason})
     monkeypatch.setattr(graph_router, "cancel_task", lambda task_id, user_id: {"status": "cancelled"})
-    assert client.post("/api/graph/tasks/4/confirm").status_code == 200
+    assert client.post("/api/graph/tasks/4/confirm").status_code == 202
     assert client.post("/api/graph/tasks/4/reject", json={"reason": "数据异常"}).get_json()["data"]["reason"] == "数据异常"
     assert client.post("/api/graph/tasks/4/cancel").get_json()["data"]["status"] == "cancelled"
 

@@ -6,6 +6,7 @@ from pathlib import Path
 MIGRATION = Path(__file__).parents[1] / "migrations/versions/20260713_0002_graph_update_queue.py"
 CATALOG_MIGRATION = Path(__file__).parents[1] / "migrations/versions/20260714_0003_graph_task_catalog.py"
 LEASE_MIGRATION = Path(__file__).parents[1] / "migrations/versions/20260715_0006_graph_worker_leases.py"
+PROJECTION_MIGRATION = Path(__file__).parents[1] / "migrations/versions/20260715_0007_graph_projection_state.py"
 
 
 def test_graph_queue_migration_contains_durable_models():
@@ -42,3 +43,15 @@ def test_graph_worker_lease_migration_is_reversible():
         assert f'"{column}"' in source
     assert "ix_graph_tasks_queue_retry" in source
     assert "ix_graph_tasks_lease_expiry" in source
+
+
+def test_graph_projection_migration_is_reversible():
+    source = PROJECTION_MIGRATION.read_text(encoding="utf-8")
+    assert 'down_revision = "20260715_0006"' in source
+    for column in (
+        "confirm_requested_at", "neo4j_committed_at", "projection_status",
+        "projection_attempts", "projection_error", "projection_next_retry_at",
+    ):
+        assert f"ADD COLUMN {column}" in source
+        assert f'"{column}"' in source
+    assert "ix_graph_tasks_projection_due" in source

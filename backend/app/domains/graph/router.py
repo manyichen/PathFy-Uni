@@ -295,7 +295,7 @@ def graph_task_file_download(task_id: int, role: str):
 def graph_task_confirm(task_id: int):
     user_id, err = _require_admin()
     if err: return err
-    try: return jsonify({"ok": True, "data": confirm_task(task_id, user_id)})
+    try: return jsonify({"ok": True, "data": confirm_task(task_id, user_id)}), 202
     except GraphTaskError as exc: return jsonify({"ok": False, "message": exc.message}), exc.status
 
 

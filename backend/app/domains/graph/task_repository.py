@@ -174,22 +174,73 @@ def recover_expired_tasks() -> int:
                 "INSERT INTO graph_update_task_events (task_id,event_type,stage,message) VALUES (%s,'recovered','worker','Worker 租约过期，任务已重新排队')",
                 [(task_id,) for task_id in ids],
             )
-        return len(ids)
+        cur.execute(
+            """SELECT id FROM graph_update_tasks WHERE status='applying' AND lease_token IS NOT NULL
+               AND (lease_expires_at IS NULL OR lease_expires_at<=NOW(6)) FOR UPDATE"""
+        )
+        applying_ids = [int(row["id"]) for row in cur.fetchall()]
+        if applying_ids:
+            cur.execute(
+                """UPDATE graph_update_tasks SET worker_id=NULL,lease_token=NULL,heartbeat_at=NULL,
+                   lease_expires_at=NULL,
+                   projection_next_retry_at=CASE WHEN neo4j_committed_at IS NOT NULL
+                     AND projection_status='running' THEN NOW(6) ELSE projection_next_retry_at END,
+                   projection_status=CASE WHEN neo4j_committed_at IS NOT NULL
+                     AND projection_status='running' THEN 'retrying' ELSE projection_status END
+                   WHERE status='applying' AND lease_token IS NOT NULL
+                     AND (lease_expires_at IS NULL OR lease_expires_at<=NOW(6))"""
+            )
+            cur.executemany(
+                "INSERT INTO graph_update_task_events (task_id,event_type,stage,message) VALUES (%s,'recovered','apply','提交或投影 worker 租约过期，任务等待重新处理')",
+                [(task_id,) for task_id in applying_ids],
+            )
+        return len(ids) + len(applying_ids)
 
 
-def get_applying_tasks() -> list[dict[str, Any]]:
+def recover_running_tasks() -> int:
+    """Compatibility alias: recovery is lease-based rather than process-start based."""
+    return recover_expired_tasks()
+
+
+def claim_next_applying_task(*, worker_id: str, lease_seconds: int) -> dict[str, Any] | None:
     with db_cursor() as (_, cur):
-        cur.execute("SELECT * FROM graph_update_tasks WHERE status='applying'")
-        tasks = [_decode(row, include_change_set=True) for row in cur.fetchall()]
-        for task in tasks:
-            task["files"] = _load_files(cur, int(task["id"]), include_paths=True)
-        return tasks
+        cur.execute(
+            """SELECT * FROM graph_update_tasks WHERE status='applying'
+               AND lease_token IS NULL
+               AND (
+                 neo4j_committed_at IS NULL
+                 OR projection_status IN ('pending','running','retrying')
+                    AND (projection_next_retry_at IS NULL OR projection_next_retry_at<=NOW(6))
+               )
+               ORDER BY confirm_requested_at,id LIMIT 1 FOR UPDATE SKIP LOCKED"""
+        )
+        task = _decode(cur.fetchone(), include_change_set=True)
+        if not task:
+            return None
+        lease_token = uuid4().hex
+        cur.execute(
+            """UPDATE graph_update_tasks SET worker_id=%s,lease_token=%s,heartbeat_at=NOW(6),
+               lease_expires_at=DATE_ADD(NOW(6),INTERVAL %s SECOND)
+               WHERE id=%s AND status='applying' AND lease_token IS NULL""",
+            (worker_id[:128], lease_token, max(15, int(lease_seconds)), int(task["id"])),
+        )
+        if cur.rowcount != 1:
+            return None
+        task["worker_id"] = worker_id[:128]
+        task["lease_token"] = lease_token
+        task["files"] = _load_files(cur, int(task["id"]), include_paths=True)
+        return task
 
 
-def reset_applying_task(task_id: int) -> None:
+def release_applying_lease(task_id: int, lease_token: str) -> bool:
     with db_cursor() as (_, cur):
-        cur.execute("UPDATE graph_update_tasks SET status='awaiting_confirmation',handled_by=NULL,handled_at=NULL WHERE id=%s AND status='applying'", (task_id,))
-        cur.execute("INSERT INTO graph_update_task_events (task_id,event_type,stage,message) VALUES (%s,'recovered','confirmation','未发现 Neo4j 提交标记，任务已恢复为待确认')", (task_id,))
+        cur.execute(
+            """UPDATE graph_update_tasks SET worker_id=NULL,lease_token=NULL,
+               heartbeat_at=NULL,lease_expires_at=NULL
+               WHERE id=%s AND status='applying' AND lease_token=%s""",
+            (task_id, lease_token),
+        )
+        return cur.rowcount == 1
 
 
 def prepare_task(task_id: int, *, base_revision: int, summary: dict[str, Any],
@@ -302,7 +353,7 @@ def list_tasks(*, page: int, page_size: int, status: str | None = None,
         cur.execute("SELECT COUNT(*) AS total FROM graph_update_tasks" + where, params)
         total = int(cur.fetchone()["total"])
         cur.execute(
-            "SELECT id,task_uuid,task_type,status,requested_by,handled_by,input_file_name,input_file_size,input_sha256,source_id,mode,options_json,settings_revision,base_graph_revision,change_summary_json,change_set_sha256,error_message,rejection_reason,created_at,started_at,prepared_at,handled_at,finished_at FROM graph_update_tasks" + where + " ORDER BY created_at DESC,id DESC LIMIT %s OFFSET %s",
+            "SELECT id,task_uuid,task_type,status,requested_by,handled_by,input_file_name,input_file_size,input_sha256,source_id,mode,options_json,settings_revision,base_graph_revision,change_summary_json,change_set_sha256,error_message,rejection_reason,worker_id,heartbeat_at,lease_expires_at,attempt_count,next_retry_at,last_error_code,last_error_retryable,confirm_requested_at,neo4j_committed_at,projection_status,projection_attempts,projection_error,projection_next_retry_at,created_at,started_at,prepared_at,handled_at,finished_at FROM graph_update_tasks" + where + " ORDER BY created_at DESC,id DESC LIMIT %s OFFSET %s",
             (*params, page_size, (page - 1) * page_size),
         )
         items = [_decode(r) for r in cur.fetchall()]
@@ -313,7 +364,7 @@ def list_tasks(*, page: int, page_size: int, status: str | None = None,
 
 def get_task(task_id: int, *, include_change_set: bool = False) -> dict[str, Any] | None:
     with db_cursor() as (_, cur):
-        columns = "*" if include_change_set else "id,task_uuid,task_type,status,requested_by,handled_by,input_file_name,input_file_size,input_sha256,source_id,mode,options_json,settings_revision,config_snapshot_json,base_graph_revision,change_summary_json,change_set_sha256,error_message,rejection_reason,created_at,started_at,prepared_at,handled_at,finished_at"
+        columns = "*" if include_change_set else "id,task_uuid,task_type,status,requested_by,handled_by,input_file_name,input_file_size,input_sha256,source_id,mode,options_json,settings_revision,config_snapshot_json,base_graph_revision,change_summary_json,change_set_sha256,error_message,rejection_reason,worker_id,heartbeat_at,lease_expires_at,attempt_count,next_retry_at,last_error_code,last_error_retryable,confirm_requested_at,neo4j_committed_at,projection_status,projection_attempts,projection_error,projection_next_retry_at,created_at,started_at,prepared_at,handled_at,finished_at"
         cur.execute(f"SELECT {columns} FROM graph_update_tasks WHERE id=%s", (task_id,))
         task = _decode(cur.fetchone(), include_change_set=include_change_set)
         if not task:
@@ -367,7 +418,7 @@ def clear_task_file_paths(task_id: int) -> None:
         cur.execute("UPDATE graph_update_task_files SET private_path=NULL WHERE task_id=%s", (task_id,))
 
 
-def set_applying(task_id: int, user_id: int) -> dict[str, Any] | None:
+def set_applying(task_id: int, user_id: int, *, expected_sha256: str | None = None) -> dict[str, Any] | None:
     with db_cursor() as (_, cur):
         guard = get_guard(for_update=True, cursor=cur)
         if int(guard.get("locked_task_id") or 0) != task_id:
@@ -376,19 +427,128 @@ def set_applying(task_id: int, user_id: int) -> dict[str, Any] | None:
         task = _decode(cur.fetchone(), include_change_set=True)
         if not task or task["status"] != "awaiting_confirmation":
             return None
-        cur.execute("UPDATE graph_update_tasks SET status='applying',handled_by=%s,handled_at=NOW() WHERE id=%s", (user_id, task_id))
+        base_revision = task.get("base_graph_revision")
+        if base_revision is None or int(base_revision) != int(guard.get("graph_revision") or 0):
+            return None
+        if expected_sha256 and task.get("change_set_sha256") != expected_sha256:
+            return None
+        cur.execute(
+            """UPDATE graph_update_tasks SET status='applying',handled_by=%s,handled_at=NOW(6),
+               confirm_requested_at=NOW(6),projection_status='waiting_for_graph',
+               projection_attempts=0,projection_error=NULL,projection_next_retry_at=NULL
+               WHERE id=%s AND status='awaiting_confirmation'""",
+            (user_id, task_id),
+        )
+        cur.execute(
+            "INSERT INTO graph_update_task_events (task_id,event_type,stage,message) VALUES (%s,'confirmation_requested','confirmation','管理员已确认，等待 worker 提交图谱')",
+            (task_id,),
+        )
+        task["status"] = "applying"
+        task["handled_by"] = user_id
         return task
 
 
-def finish_apply(task_id: int, *, success: bool, error: str | None = None, partial: bool = False) -> None:
+def mark_neo4j_committed(task_id: int, *, lease_token: str) -> bool:
+    """Record the cross-store commit fact and advance revision exactly once."""
     with db_cursor() as (_, cur):
-        status = "partial_failed" if partial else ("succeeded" if success else "failed")
-        cur.execute("UPDATE graph_update_tasks SET status=%s,error_message=%s,input_file_path=NULL,finished_at=NOW() WHERE id=%s", (status, error, task_id))
-        if success:
-            cur.execute("UPDATE graph_write_guard SET graph_revision=graph_revision+1,locked_task_id=NULL,locked_at=NULL WHERE id=1 AND locked_task_id=%s", (task_id,))
-        else:
-            cur.execute("UPDATE graph_write_guard SET locked_task_id=NULL,locked_at=NULL WHERE id=1 AND locked_task_id=%s", (task_id,))
-        cur.execute("INSERT INTO graph_update_task_events (task_id,event_type,stage,message) VALUES (%s,%s,'apply',%s)", (task_id, status, (error or "变更已提交")[:500] if success else (error or "应用失败")[:500]))
+        cur.execute("SELECT task_type,status,neo4j_committed_at FROM graph_update_tasks WHERE id=%s AND lease_token=%s FOR UPDATE", (task_id, lease_token))
+        task = cur.fetchone()
+        if not task or task["status"] != "applying":
+            return False
+        if task.get("neo4j_committed_at") is not None:
+            return True
+        guard = get_guard(for_update=True, cursor=cur)
+        if int(guard.get("locked_task_id") or 0) != task_id:
+            raise RuntimeError("Neo4j 已提交但 graph_write_guard 不属于当前任务")
+        projection = "pending" if task["task_type"] == "job_import" else "not_required"
+        cur.execute(
+            """UPDATE graph_update_tasks SET neo4j_committed_at=NOW(6),projection_status=%s,
+               projection_error=NULL,projection_next_retry_at=NULL WHERE id=%s AND neo4j_committed_at IS NULL""",
+            (projection, task_id),
+        )
+        if cur.rowcount != 1:
+            return False
+        cur.execute(
+            """UPDATE graph_write_guard SET graph_revision=graph_revision+1,
+               locked_task_id=NULL,locked_at=NULL WHERE id=1 AND locked_task_id=%s""",
+            (task_id,),
+        )
+        if cur.rowcount != 1:
+            raise RuntimeError("提交图谱版本失败")
+        cur.execute(
+            "INSERT INTO graph_update_task_events (task_id,event_type,stage,message) VALUES (%s,'neo4j_committed','apply','Neo4j 事务已提交，图谱版本已递增')",
+            (task_id,),
+        )
+        return True
+
+
+def start_projection(task_id: int, *, lease_token: str) -> bool:
+    with db_cursor() as (_, cur):
+        cur.execute(
+            """UPDATE graph_update_tasks SET projection_status='running',
+               projection_attempts=projection_attempts+1,projection_next_retry_at=NULL
+               WHERE id=%s AND status='applying' AND neo4j_committed_at IS NOT NULL
+               AND projection_status IN ('pending','running','retrying') AND lease_token=%s""",
+            (task_id, lease_token),
+        )
+        return cur.rowcount == 1
+
+
+def schedule_projection_retry(task_id: int, error: str, *, lease_token: str,
+                              retry_delay_seconds: int) -> bool:
+    with db_cursor() as (_, cur):
+        cur.execute(
+            """UPDATE graph_update_tasks SET projection_status='retrying',projection_error=%s,
+               projection_next_retry_at=DATE_ADD(NOW(6),INTERVAL %s SECOND),
+               worker_id=NULL,lease_token=NULL,heartbeat_at=NULL,lease_expires_at=NULL
+               WHERE id=%s AND status='applying' AND neo4j_committed_at IS NOT NULL
+                 AND lease_token=%s""",
+            (error[:65000], max(1, int(retry_delay_seconds)), task_id, lease_token),
+        )
+        if cur.rowcount != 1:
+            return False
+        cur.execute(
+            "INSERT INTO graph_update_task_events (task_id,event_type,stage,message) VALUES (%s,'projection_retry','projection',%s)",
+            (task_id, f"MySQL 投影同步失败，将自动重试: {error}"[:500]),
+        )
+        return True
+
+
+def finish_projection(task_id: int, *, lease_token: str, required: bool) -> bool:
+    with db_cursor() as (_, cur):
+        final_projection = "succeeded" if required else "not_required"
+        cur.execute(
+            """UPDATE graph_update_tasks SET status='succeeded',projection_status=%s,
+               projection_error=NULL,projection_next_retry_at=NULL,error_message=NULL,finished_at=NOW(6),
+               worker_id=NULL,lease_token=NULL,heartbeat_at=NULL,lease_expires_at=NULL
+               WHERE id=%s AND status='applying' AND neo4j_committed_at IS NOT NULL
+                 AND lease_token=%s""",
+            (final_projection, task_id, lease_token),
+        )
+        if cur.rowcount != 1:
+            return False
+        cur.execute(
+            "INSERT INTO graph_update_task_events (task_id,event_type,stage,message) VALUES (%s,'succeeded','projection',%s)",
+            (task_id, "MySQL 派生投影已同步" if required else "图谱变更已提交"),
+        )
+        return True
+
+
+def fail_apply(task_id: int, error: str, *, lease_token: str) -> bool:
+    """Fail an apply attempt only when no Neo4j commit marker has been recorded."""
+    with db_cursor() as (_, cur):
+        cur.execute(
+            """UPDATE graph_update_tasks SET status='failed',error_message=%s,finished_at=NOW(6),
+               worker_id=NULL,lease_token=NULL,heartbeat_at=NULL,lease_expires_at=NULL
+               WHERE id=%s AND status='applying' AND neo4j_committed_at IS NULL
+                 AND lease_token=%s""",
+            (error[:65000], task_id, lease_token),
+        )
+        if cur.rowcount != 1:
+            return False
+        cur.execute("UPDATE graph_write_guard SET locked_task_id=NULL,locked_at=NULL WHERE id=1 AND locked_task_id=%s", (task_id,))
+        cur.execute("INSERT INTO graph_update_task_events (task_id,event_type,stage,message) VALUES (%s,'failed','apply',%s)", (task_id, error[:500]))
+        return True
 
 
 def reject_task(task_id: int, user_id: int, reason: str) -> bool:

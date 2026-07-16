@@ -11,11 +11,7 @@ from flask import current_app
 from werkzeug.datastructures import FileStorage
 
 from app.domains.graph import task_repository as repo
-from app.domains.graph.services import _sync_job_titles_from_graph
-from app.domains.graph.task_apply import apply_change_set, is_task_applied
 from app.domains.graph.incremental import normalize_source_id
-from app.domains.graph.locking import graph_write_lock
-from app.infrastructure.neo4j import neo4j_driver, neo4j_settings
 from app.domains.graph.task_registry import TASK_TYPES, normalize_options, task_spec
 from app.domains.settings.service import active_system_settings
 
@@ -136,35 +132,15 @@ def _verify_change_set(task):
     return change
 
 
-def _sync_mysql_titles() -> None:
-    uri, user, password, database = neo4j_settings(); driver = neo4j_driver(uri, user, password)
-    with driver.session(database=database) as session:
-        rows = session.run("MATCH (jt:JobTitle) RETURN jt.name AS name,coalesce(jt.job_count,0) AS count,coalesce(jt.company_count,0) AS company_count,coalesce(jt.job_code_count,0) AS job_code_count")
-        data = [dict(r) for r in rows]
-    _sync_job_titles_from_graph(data)
-
-
 def confirm_task(task_id: int, user_id: int):
-    task = repo.set_applying(task_id, user_id)
-    if not task: raise GraphTaskError("任务不在待确认状态或未持有写锁", 409)
-    try:
-        change = _verify_change_set(task)
-        with graph_write_lock(allowed_task_id=task_id):
-            result = apply_change_set(change, task_uuid=task["task_uuid"], change_sha256=task["change_set_sha256"])
-            sync_error = None
-            if change.get("kind") == "job_import":
-                try: _sync_mysql_titles()
-                except Exception as exc: sync_error = f"Neo4j 已提交，但 MySQL job_titles 同步失败: {exc}"
-            repo.finish_apply(task_id, success=True, error=sync_error, partial=bool(sync_error))
-        return {**result, "warning": sync_error}
-    except Exception as exc:
-        try: applied = is_task_applied(task["task_uuid"])
-        except Exception: applied = False
-        if applied:
-            repo.finish_apply(task_id, success=True, partial=True, error=f"Neo4j 已提交，任务元数据或 MySQL 同步异常: {exc}"[:65000])
-            raise GraphTaskError(f"Neo4j 已提交，但后续同步异常: {exc}", 500) from exc
-        repo.finish_apply(task_id, success=False, error=str(exc)[:65000])
-        raise GraphTaskError(f"应用变更失败，Neo4j 事务已回滚: {exc}", 500) from exc
+    task = repo.get_task(task_id, include_change_set=True)
+    if not task:
+        raise GraphTaskError("任务不存在", 404)
+    _verify_change_set(task)
+    applying = repo.set_applying(task_id, user_id, expected_sha256=task["change_set_sha256"])
+    if not applying:
+        raise GraphTaskError("任务不在待确认状态、图谱版本已变化或未持有写锁", 409)
+    return {"task_id": task_id, "status": "applying", "accepted": True}
 
 
 def reject_task(task_id: int, user_id: int, reason: str):

@@ -8,8 +8,9 @@
 2. API 将文件保存到 `GRAPH_TASK_UPLOAD_DIR`，计算 SHA-256，并创建 `queued` 任务。
 3. 独立 worker 使用 MySQL 行锁领取任务，在不写 Neo4j 的情况下生成完整变更集。
 4. worker 校验基础 `graph_revision`。版本未变化时将任务置为 `awaiting_confirmation`，并设置应用级全局写锁；变化时重新排队。
-5. 管理员整单确认或拒绝。确认使用一个 Neo4j 写事务应用变更；拒绝不修改 Neo4j。
-6. 原始上传文件保留在 Web 不可访问的私有目录，管理员可从历史任务详情下载；MySQL 永久保留文件 SHA-256、输入摘要、变更统计和事件历史。
+5. 管理员整单确认或拒绝。确认接口只记录提交请求并返回 202，worker 使用独立 applying 租约执行 Neo4j 写事务；拒绝不修改 Neo4j。
+6. Neo4j commit marker 落地后立即递增 revision 并释放写 guard；岗位名称等 MySQL 派生投影幂等执行，失败时自动退避重试且不会重复写图。
+7. 原始上传文件保留在 Web 不可访问的私有目录，管理员可从历史任务详情下载；MySQL 永久保留文件 SHA-256、输入摘要、变更统计和事件历史。
 
 待确认任务不会自动过期。存在待确认任务时 worker 不再领取后续任务，所有使用 `graph_write_lock()` 的写操作返回 409。
 任务文件通过管理员鉴权接口下载，磁盘目录权限为 `700`、文件权限为 `600`，后端不会向 API 返回私有路径。
@@ -41,7 +42,7 @@
 - `POST /api/graph/tasks`：multipart 创建任务，返回 202。
 - `GET /api/graph/tasks`：分页并按 `status`、`task_type` 筛选。
 - `GET /api/graph/tasks/:id`：任务摘要和事件时间线。
-- `POST /api/graph/tasks/:id/confirm`：确认整份变更集。
+- `POST /api/graph/tasks/:id/confirm`：确认整份变更集并返回 202；提交和投影进度从任务详情轮询。
 - `POST /api/graph/tasks/:id/reject`：提交 `{ "reason": "..." }` 拒绝。
 - `POST /api/graph/tasks/:id/cancel`：仅取消 `queued` 任务。
 - `GET /api/graph/guard`：当前 revision 和锁状态。
