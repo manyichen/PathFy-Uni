@@ -7,6 +7,7 @@ from contextlib import nullcontext
 import pytest
 
 from app.domains.graph import task_service
+from app.domains.graph import task_repository
 
 
 def _prepared_task(change=None):
@@ -47,3 +48,17 @@ def test_reject_requires_reason_and_never_applies(monkeypatch):
         task_service.reject_task(3, 9, "")
     monkeypatch.setattr(task_service.repo, "reject_task", lambda task_id, user_id, reason: True)
     assert task_service.reject_task(3, 9, "数据不完整")["status"] == "rejected"
+
+
+def test_change_preview_exposes_delete_and_retained_manifests(monkeypatch):
+    monkeypatch.setattr(task_repository, "get_task", lambda *_args, **_kwargs: {
+        "change_set": {
+            "version": 2,
+            "jobs": [{"job_key": "new"}],
+            "delete_manifest": {"jobs": [{"job_key": "old"}]},
+            "retained_manifest": {"job_titles": [{"name": "策展岗位"}]},
+        }
+    })
+    result = task_repository.task_changes(1, group="delete.jobs", page=1, page_size=20)
+    assert result["groups"] == {"jobs": 1, "delete.jobs": 1, "retained.job_titles": 1}
+    assert result["items"] == [{"job_key": "old"}]

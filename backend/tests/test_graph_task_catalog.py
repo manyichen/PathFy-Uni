@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from app.domains.graph import capability_service, task_registry, task_service
+from app.domains.graph import capability_service, task_planner, task_registry, task_service
 
 
 def test_task_catalog_covers_all_queue_operations():
@@ -76,3 +76,19 @@ def test_downloadable_task_file_must_stay_in_private_root(app, tmp_path, monkeyp
         })
         with pytest.raises(task_service.GraphTaskError, match="路径无效"):
             task_service.downloadable_task_file(1, "file")
+
+
+def test_auto_lateral_planning_covers_more_than_fifty_titles(monkeypatch):
+    requested: list[str] = []
+
+    def fake_call(_system, payload, **_kwargs):
+        import json
+
+        titles = json.loads(payload)["job_titles"]
+        requested.extend(titles)
+        return {"pairs": []}
+
+    monkeypatch.setattr(task_planner, "_call_llm_json", fake_call)
+    titles = [f"岗位-{index:02d}" for index in range(55)]
+    assert task_planner._plan_lateral(titles) == []
+    assert requested == titles

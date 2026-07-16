@@ -106,8 +106,9 @@ def test_resource_csv_schema_and_duplicates(tmp_path, monkeypatch):
     )
     task = {"input_file_path": str(path), "source_id": "resources", "mode": "snapshot"}
     change, summary = task_planner._plan_csv(task, kind="learning_resource_import", required=task_planner.RESOURCE_COLUMNS, id_column="resource_id")
-    assert summary == {"items": 1, "job_title_links": 2, "snapshot_prune": True}
+    assert summary == {"items": 1, "job_title_links": 2, "delete_items": 0, "snapshot_prune": True}
     assert change["items"][0]["job_titles"] == ["Java", "测试"]
+    assert change["delete_manifest"] == {"learning_resources": []}
 
 
 def test_competition_csv_rejects_duplicate_ids(tmp_path, monkeypatch):

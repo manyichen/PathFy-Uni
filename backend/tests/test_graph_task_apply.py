@@ -49,3 +49,47 @@ def test_capability_change_set_updates_jobs_in_same_transaction(monkeypatch):
     queries = [query for query, _ in driver.value.tx.queries]
     assert any("cap_updated_at" in query for query in queries)
     assert any("GraphTaskCommit" in query for query in queries)
+
+
+def test_v2_job_apply_only_deletes_reviewed_manifest_rows():
+    tx = FakeTx()
+    change = {
+        "version": 2,
+        "kind": "job_import",
+        "source_id": "feed-a",
+        "mode": "snapshot",
+        "input_keys": [],
+        "jobs": [],
+        "job_titles": [],
+        "promotions": [],
+        "lateral": [],
+        "delete_manifest": {
+            "jobs": [{"job_key": "old-job", "source_id": "feed-a"}],
+            "job_titles": [{"name": "旧岗位"}],
+            "promotions": [{"promotion_id": "old-promotion"}],
+            "lateral": [{"from": "旧岗位", "to": "新岗位"}],
+        },
+    }
+
+    task_apply._apply_job(tx, change, "run-1")
+
+    queries = [query for query, _ in tx.queries]
+    assert not any("last_seen_run_id,'')<>$run DETACH DELETE j" in query for query in queries)
+    assert not any("generation_run_id,'')<>$run DETACH DELETE p" in query for query in queries)
+    assert not any("generation_run_id,'')<>$run DELETE r" in query for query in queries)
+    assert any("item.job_key" in query for query in queries)
+    title_delete = next(query for query in queries if "item.name" in query and "DETACH DELETE jt" in query)
+    assert "generation_source,'')='curated'" in title_delete
+
+
+def test_v2_snapshot_without_manifest_never_derives_resource_deletes():
+    tx = FakeTx()
+    task_apply._apply_resources(
+        tx,
+        {"version": 2, "kind": "learning_resource_import", "source_id": "feed-a", "mode": "snapshot", "items": []},
+        "run-1",
+    )
+    queries = [query for query, _ in tx.queries]
+    assert not any("NOT r.resource_id IN" in query for query in queries)
+    explicit = next((params for query, params in tx.queries if "item.resource_id" in query), None)
+    assert explicit == {"rows": [], "source": "feed-a"}

@@ -12,6 +12,18 @@ from app.infrastructure.neo4j import neo4j_driver, neo4j_settings
 from app.infrastructure.salary import neo4j_salary_properties
 
 
+def _version(change: dict[str, Any]) -> int:
+    return int(change.get("version", 1) or 1)
+
+
+def _deletes(change: dict[str, Any], group: str) -> list[dict[str, Any]]:
+    manifest = change.get("delete_manifest")
+    if not isinstance(manifest, dict):
+        return []
+    rows = manifest.get(group)
+    return [row for row in rows if isinstance(row, dict)] if isinstance(rows, list) else []
+
+
 def _apply_job(tx, change: dict[str, Any], run_id: str) -> None:
     source_id = change["source_id"]
     for item in change.get("jobs", []):
@@ -49,13 +61,31 @@ def _apply_job(tx, change: dict[str, Any], run_id: str) -> None:
         tx.run("MERGE (c:CareerLevel {name:$name}) WITH c MATCH (j:Job {job_key:$key}) MERGE (j)-[:BELONGS_TO]->(c)", name=level, key=key)
 
     tx.run("UNWIND $keys AS key MATCH (j:Job {job_key:key}) SET j.last_seen_run_id=$run,j.import_source_id=$source,j.import_managed=true", keys=change.get("input_keys", []), run=run_id, source=source_id)
-    if change.get("mode") == "snapshot":
+    if _version(change) == 1 and change.get("mode") == "snapshot":
         tx.run("MATCH (j:Job {import_source_id:$source,import_managed:true}) WHERE coalesce(j.last_seen_run_id,'')<>$run DETACH DELETE j", source=source_id, run=run_id)
+    elif _version(change) >= 2:
+        tx.run(
+            """UNWIND $rows AS item MATCH (j:Job {job_key:item.job_key})
+            WHERE j.import_source_id=item.source_id DETACH DELETE j""",
+            rows=_deletes(change, "jobs"),
+        )
 
-    tx.run("MATCH (j:Job) WITH trim(j.title) AS name,count(j) AS count,count(DISTINCT j.company) AS companies,count(DISTINCT coalesce(j.job_code,'')) AS codes WHERE name<>'' MERGE (jt:JobTitle {name:name}) SET jt.job_count=count,jt.company_count=companies,jt.job_code_count=codes,jt.generation_run_id=$run,jt.updated_at=datetime()", run=run_id)
-    tx.run("MATCH (jt:JobTitle) WHERE coalesce(jt.generation_run_id,'')<>$run DETACH DELETE jt", run=run_id)
+    tx.run("MATCH (j:Job) WITH DISTINCT trim(j.title) AS name WHERE name<>'' MERGE (jt:JobTitle {name:name}) SET jt.generation_run_id=$run,jt.updated_at=datetime()", run=run_id)
     tx.run("MATCH (j:Job)-[r:HAS_TITLE]->(jt:JobTitle) WHERE coalesce(trim(j.title),'')<>jt.name DELETE r")
     tx.run("MATCH (j:Job),(jt:JobTitle) WHERE coalesce(trim(j.title),'')=jt.name MERGE (j)-[:HAS_TITLE]->(jt)")
+    tx.run("""MATCH (jt:JobTitle) OPTIONAL MATCH (j:Job)-[:HAS_TITLE]->(jt)
+      WITH jt,count(j) AS jobs,count(DISTINCT j.company) AS companies,count(DISTINCT j.job_code) AS codes
+      SET jt.job_count=jobs,jt.company_count=companies,jt.job_code_count=codes,jt.updated_at=datetime()""")
+    if _version(change) == 1:
+        tx.run("MATCH (jt:JobTitle) WHERE coalesce(jt.generation_run_id,'')<>$run DETACH DELETE jt", run=run_id)
+    else:
+        tx.run("""UNWIND $rows AS item MATCH (jt:JobTitle {name:item.name})
+          WHERE NOT EXISTS {
+            MATCH (jt)-[r]-(n)
+            WHERE coalesce(r.generation_source,'')='curated'
+               OR coalesce(n.generation_source,'')='curated'
+          }
+          DETACH DELETE jt""", rows=_deletes(change, "job_titles"))
 
     source = "graph_task_llm"
     for p in change.get("promotions", []):
@@ -70,8 +100,10 @@ def _apply_job(tx, change: dict[str, Any], run_id: str) -> None:
           title=str(p.get("promotion_name", "")), s1=str(p.get("stage1", "")), s2=str(p.get("stage2", "")),
           s3=str(p.get("stage3", "")), s3job=str(p.get("stage3_job_title", "")), confidence=float(p.get("confidence", 0)),
           rationale=str(p.get("rationale", "")), source=source, run=run_id)
-    if change.get("version", 1) == 1 or change.get("replace_auto_promotions", True):
+    if _version(change) == 1 and change.get("replace_auto_promotions", True):
         tx.run("MATCH (p:JobPromotion {generation_source:$source}) WHERE coalesce(p.generation_run_id,'')<>$run DETACH DELETE p", source=source, run=run_id)
+    elif _version(change) >= 2:
+        tx.run("UNWIND $rows AS item MATCH (p:JobPromotion {promotion_id:item.promotion_id,generation_source:$source}) DETACH DELETE p", rows=_deletes(change, "promotions"), source=source)
     for rank, p in enumerate(change.get("lateral", []), 1):
         tx.run("""MATCH (a:JobTitle {name:$frm}),(b:JobTitle {name:$to})
           OPTIONAL MATCH (a)-[existing:SIMILAR_FOR_LATERAL]->(b)
@@ -81,8 +113,12 @@ def _apply_job(tx, change: dict[str, Any], run_id: str) -> None:
           r.same_track=$same,r.rationale=$why,r.generation_source=$source,r.generation_run_id=$run,r.updated_at=datetime()""",
           frm=p["from"],to=p["to"],score=float(p.get("score",0)),rank=rank,tf=str(p.get("track_from","")),tt=str(p.get("track_to","")),
           cap=float(p.get("cap_similarity",0)),same=bool(p.get("same_track",False)),why=str(p.get("rationale","")),source=source,run=run_id)
-    if change.get("version", 1) == 1 or change.get("replace_auto_lateral", True):
+    if _version(change) == 1 and change.get("replace_auto_lateral", True):
         tx.run("MATCH ()-[r:SIMILAR_FOR_LATERAL {generation_source:$source}]->() WHERE coalesce(r.generation_run_id,'')<>$run DELETE r", source=source, run=run_id)
+    elif _version(change) >= 2:
+        tx.run("""UNWIND $rows AS item MATCH (a:JobTitle {name:item.from})
+          -[r:SIMILAR_FOR_LATERAL {generation_source:$source}]->(b:JobTitle {name:item.to}) DELETE r""",
+          rows=_deletes(change, "lateral"), source=source)
 
 
 def _apply_resources(tx, change: dict[str, Any], run_id: str) -> None:
@@ -95,7 +131,10 @@ def _apply_resources(tx, change: dict[str, Any], run_id: str) -> None:
           WITH r OPTIONAL MATCH (r)-[old:FOR_JOB_TITLE]->(:JobTitle) DELETE old""", id=rid, source=source, run=run_id,
           props={k:v for k,v in row.items() if k != "job_titles"})
         tx.run("UNWIND $titles AS title MATCH (r:LearningResource {resource_id:$id}),(jt:JobTitle {name:title}) MERGE (r)-[rel:FOR_JOB_TITLE]->(jt) SET rel.source_id=$source,rel.generation_source='curated',rel.source_priority=100", titles=row["job_titles"], id=rid, source=source)
-    if change.get("mode") == "snapshot": tx.run("MATCH (r:LearningResource {import_source_id:$source,import_managed:true}) WHERE NOT r.resource_id IN $ids DETACH DELETE r", source=source, ids=ids)
+    if _version(change) == 1 and change.get("mode") == "snapshot":
+        tx.run("MATCH (r:LearningResource {import_source_id:$source,import_managed:true}) WHERE NOT r.resource_id IN $ids DETACH DELETE r", source=source, ids=ids)
+    elif _version(change) >= 2:
+        tx.run("UNWIND $rows AS item MATCH (r:LearningResource {resource_id:item.resource_id,import_source_id:$source,import_managed:true}) DETACH DELETE r", rows=_deletes(change, "learning_resources"), source=source)
 
 
 def _apply_competitions(tx, change: dict[str, Any], run_id: str) -> None:
@@ -108,7 +147,10 @@ def _apply_competitions(tx, change: dict[str, Any], run_id: str) -> None:
           WITH c OPTIONAL MATCH (c)-[old:FOR_JOB_TITLE]->(:JobTitle) DELETE old""", id=cid, source=source, run=run_id,
           props={k:v for k,v in row.items() if k != "job_titles"})
         tx.run("UNWIND $titles AS title MATCH (c:Competition {competition_id:$id}),(jt:JobTitle {name:title}) MERGE (c)-[rel:FOR_JOB_TITLE]->(jt) SET rel.source_id=$source,rel.generation_source='curated',rel.source_priority=100", titles=row["job_titles"], id=cid, source=source)
-    if change.get("mode") == "snapshot": tx.run("MATCH (c:Competition {import_source_id:$source,import_managed:true}) WHERE NOT c.competition_id IN $ids DETACH DELETE c", source=source, ids=ids)
+    if _version(change) == 1 and change.get("mode") == "snapshot":
+        tx.run("MATCH (c:Competition {import_source_id:$source,import_managed:true}) WHERE NOT c.competition_id IN $ids DETACH DELETE c", source=source, ids=ids)
+    elif _version(change) >= 2:
+        tx.run("UNWIND $rows AS item MATCH (c:Competition {competition_id:item.competition_id,import_source_id:$source,import_managed:true}) DETACH DELETE c", rows=_deletes(change, "competitions"), source=source)
 
 
 def _apply_capabilities(tx, change: dict[str, Any], _run_id: str) -> None:
@@ -126,8 +168,10 @@ def _apply_promotions(tx, change: dict[str, Any], run_id: str) -> None:
           WITH p OPTIONAL MATCH (p)-[old:FOR_JOB_TITLE]->(:JobTitle) DELETE old
           WITH p MATCH (jt:JobTitle {name:$title}) MERGE (p)-[:FOR_JOB_TITLE]->(jt)""",
           id=pid, props=row, source=source, run=run_id, title=row["job_title"])
-    if change.get("mode") == "snapshot":
+    if _version(change) == 1 and change.get("mode") == "snapshot":
         tx.run("MATCH (p:JobPromotion {generation_source:'curated',source_id:$source}) WHERE NOT p.promotion_id IN $ids DETACH DELETE p", source=source, ids=ids)
+    elif _version(change) >= 2:
+        tx.run("UNWIND $rows AS item MATCH (p:JobPromotion {promotion_id:item.promotion_id,generation_source:'curated',source_id:$source}) DETACH DELETE p", rows=_deletes(change, "promotions"), source=source)
 
 
 def _apply_lateral_import(tx, change: dict[str, Any], run_id: str) -> None:
@@ -139,8 +183,12 @@ def _apply_lateral_import(tx, change: dict[str, Any], run_id: str) -> None:
           MERGE (a)-[r:SIMILAR_FOR_LATERAL]->(b) SET r += $props,r.generation_source='curated',
           r.source_id=$source,r.source_priority=100,r.last_task_run_id=$run,r.updated_at=datetime()""",
           from_title=frm, to_title=to, props=props, source=source, run=run_id)
-    if change.get("mode") == "snapshot":
+    if _version(change) == 1 and change.get("mode") == "snapshot":
         tx.run("MATCH (a:JobTitle)-[r:SIMILAR_FOR_LATERAL {generation_source:'curated',source_id:$source}]->(b:JobTitle) WHERE NOT (a.name+'\\u0000'+b.name) IN $pairs DELETE r", source=source, pairs=pairs)
+    elif _version(change) >= 2:
+        tx.run("""UNWIND $rows AS item MATCH (a:JobTitle {name:item.from})
+          -[r:SIMILAR_FOR_LATERAL {generation_source:'curated',source_id:$source}]->(b:JobTitle {name:item.to}) DELETE r""",
+          rows=_deletes(change, "lateral"), source=source)
 
 
 def _apply_recommendations(tx, change: dict[str, Any], run_id: str) -> None:
@@ -160,9 +208,16 @@ def _apply_recommendations(tx, change: dict[str, Any], run_id: str) -> None:
           MERGE (p)-[rel:RECOMMENDS_COMPETITION]->(c) SET rel += $props,rel.generation_source='curated',
           rel.source_id=$source,rel.source_priority=100,rel.last_task_run_id=$run,rel.updated_at=datetime()""",
           promotion_id=row["promotion_id"], competition_id=row["competition_id"], props=props, source=source, run=run_id)
-    if change.get("mode") == "snapshot":
+    if _version(change) == 1 and change.get("mode") == "snapshot":
         tx.run("MATCH (p:JobPromotion)-[r:RECOMMENDS_RESOURCE {source_id:$source}]->(x:LearningResource) WHERE NOT (p.promotion_id+'\\u0000'+x.resource_id) IN $keys DELETE r", source=source, keys=resource_keys)
         tx.run("MATCH (p:JobPromotion)-[r:RECOMMENDS_COMPETITION {source_id:$source}]->(x:Competition) WHERE NOT (p.promotion_id+'\\u0000'+x.competition_id) IN $keys DELETE r", source=source, keys=competition_keys)
+    elif _version(change) >= 2:
+        tx.run("""UNWIND $rows AS item MATCH (p:JobPromotion {promotion_id:item.promotion_id})
+          -[r:RECOMMENDS_RESOURCE {source_id:$source}]->(x:LearningResource {resource_id:item.resource_id}) DELETE r""",
+          rows=_deletes(change, "resource_recommendations"), source=source)
+        tx.run("""UNWIND $rows AS item MATCH (p:JobPromotion {promotion_id:item.promotion_id})
+          -[r:RECOMMENDS_COMPETITION {source_id:$source}]->(x:Competition {competition_id:item.competition_id}) DELETE r""",
+          rows=_deletes(change, "competition_recommendations"), source=source)
 
 
 def _apply_salary(tx, change: dict[str, Any], _run_id: str) -> None:
@@ -175,7 +230,13 @@ def _apply_inferred_cleanup(tx, change: dict[str, Any], _run_id: str) -> None:
     titles = [x["name"] for x in change.get("job_titles", []) if x.get("name")]
     tx.run("UNWIND $keys AS key MATCH (j:Job {job_key:key,source:'inferred'}) DETACH DELETE j", keys=keys)
     tx.run("MATCH (jt:JobTitle) OPTIONAL MATCH (j:Job)-[:HAS_TITLE]->(jt) WITH jt,count(j) AS actual SET jt.job_count=actual")
-    tx.run("UNWIND $titles AS name MATCH (jt:JobTitle {name:name}) WHERE coalesce(jt.job_count,0)<2 DETACH DELETE jt", titles=titles)
+    tx.run("""UNWIND $titles AS name MATCH (jt:JobTitle {name:name})
+      WHERE coalesce(jt.job_count,0)<2 AND NOT EXISTS {
+        MATCH (jt)-[r]-(n)
+        WHERE coalesce(r.generation_source,'')='curated'
+           OR coalesce(n.generation_source,'')='curated'
+      }
+      DETACH DELETE jt""", titles=titles)
 
 
 def is_task_applied(task_uuid: str) -> bool:

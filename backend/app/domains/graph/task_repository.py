@@ -268,6 +268,14 @@ def task_changes(task_id: int, *, group: str | None, page: int, page_size: int) 
         return None
     change = task.get("change_set") or {}
     groups = {key: value for key, value in change.items() if isinstance(value, list)}
+    for manifest_name in ("delete_manifest", "retained_manifest"):
+        manifest = change.get(manifest_name)
+        if not isinstance(manifest, dict):
+            continue
+        prefix = "delete" if manifest_name == "delete_manifest" else "retained"
+        for key, value in manifest.items():
+            if isinstance(value, list):
+                groups[f"{prefix}.{key}"] = value
     selected = group if group in groups else (next(iter(groups), None) if not group else None)
     rows = groups.get(selected, []) if selected else []
     start = (page - 1) * page_size

@@ -15,7 +15,7 @@ from app.domains.graph.repository import fetch_job_import_fingerprints
 from app.domains.graph.capability_service import CAP_VERSION, CONF_FIELDS, REQ_FIELDS, capability_fingerprint, evaluate_jobs, normalize_imported_result
 from app.domains.graph.task_registry import TASK_HANDLERS
 from app.domains.graph.services import _call_llm_batch_extract, _llm_model
-from app.domains.graph.sync_service import LATERAL_SYSTEM, PROMOTION_PATH_SYSTEM, _call_llm_json, _parse_confidence
+from app.domains.graph.sync_service import LATERAL_SYSTEM, PROMOTION_PATH_SYSTEM, _call_llm_json, _parse_confidence, _promotion_id
 from app.infrastructure.neo4j import neo4j_driver, neo4j_settings
 from app.infrastructure.salary import SALARY_PARSE_VERSION, neo4j_salary_properties
 
@@ -75,7 +75,7 @@ def _plan_promotions(titles: list[str]) -> list[dict[str, Any]]:
 
 
 def _plan_lateral(titles: list[str]) -> list[dict[str, Any]]:
-    titles = titles[:50]; valid = set(titles); output, seen = [], set()
+    valid = set(titles); output, seen = [], set()
     for start in range(0, len(titles), 15):
         batch = titles[start:start + 15]
         result = _call_llm_json(LATERAL_SYSTEM, json.dumps({"job_titles": batch, "task": "评估这些岗位两两之间的横向转岗可行性"}, ensure_ascii=False), label=f"换岗关系 batch {start // 15 + 1}")
@@ -122,8 +122,34 @@ def plan_job_import(task: dict[str, Any], emit=lambda *_args, **_kwargs: None) -
         for job, result in zip(group, results, strict=True): job["capability"] = result
 
     with driver.session(database=database) as session:
-        rows = session.run("MATCH (j:Job) RETURN j.job_key AS job_key,j.title AS title,j.import_source_id AS source_id")
+        rows = list(session.run("MATCH (j:Job) RETURN j.job_key AS job_key,j.title AS title,j.import_source_id AS source_id"))
         projected = {str(x["job_key"]): {"title": normalize_title(x["title"]), "source_id": str(x["source_id"] or "")} for x in rows}
+        current_titles = {
+            str(x["name"]): int(x.get("curated_link_count") or 0)
+            for x in session.run(
+                """MATCH (jt:JobTitle)
+                OPTIONAL MATCH (jt)-[r]-(n)
+                RETURN jt.name AS name,
+                  sum(CASE WHEN coalesce(r.generation_source,'')='curated'
+                    OR coalesce(n.generation_source,'')='curated' THEN 1 ELSE 0 END) AS curated_link_count"""
+            )
+        }
+        current_auto_promotions = {
+            str(x["promotion_id"])
+            for x in session.run(
+                "MATCH (p:JobPromotion {generation_source:'graph_task_llm'}) RETURN p.promotion_id AS promotion_id"
+            )
+            if x.get("promotion_id")
+        }
+        current_auto_lateral = {
+            (str(x["from_title"]), str(x["to_title"]))
+            for x in session.run(
+                """MATCH (a:JobTitle)-[r:SIMILAR_FOR_LATERAL {generation_source:'graph_task_llm'}]->(b:JobTitle)
+                RETURN a.name AS from_title,b.name AS to_title"""
+            )
+            if x.get("from_title") and x.get("to_title")
+        }
+    original_projected = dict(projected)
     if task.get("mode") == "snapshot":
         input_set, source = set(keys), str(task.get("source_id") or "")
         projected = {key: value for key, value in projected.items() if value["source_id"] != source or key in input_set}
@@ -138,9 +164,33 @@ def plan_job_import(task: dict[str, Any], emit=lambda *_args, **_kwargs: None) -
     if task["options"].get("generate_promotions", True): emit("promotions", "晋升路径规划完成", {"promotions": len(promotions)})
     lateral = _plan_lateral(titles) if task["options"].get("generate_lateral", True) and len(titles) > 1 else []
     if task["options"].get("generate_lateral", True): emit("lateral", "换岗关系规划完成", {"lateral_transfers": len(lateral)})
-    change_set = {"version": 2, "kind": "job_import", "source_id": task.get("source_id") or "manual", "mode": task.get("mode") or "merge", "input_keys": keys, "jobs": jobs, "job_titles": [{"name": n, "count": counts[n]} for n in sorted(counts)], "promotions": promotions, "lateral": lateral, "replace_auto_promotions": bool(task["options"].get("generate_promotions", True)), "replace_auto_lateral": bool(task["options"].get("generate_lateral", True))}
+    source_id = str(task.get("source_id") or "manual")
+    deleted_jobs = [
+        {"job_key": key, "source_id": value["source_id"], "reason": "missing_from_source_snapshot"}
+        for key, value in sorted(original_projected.items())
+        if task.get("mode") == "snapshot" and value["source_id"] == source_id and key not in set(keys)
+    ]
+    projected_titles = set(titles)
+    removed_titles = sorted(set(current_titles) - projected_titles)
+    deleted_titles = [
+        {"name": name, "reason": "no_projected_jobs"}
+        for name in removed_titles if current_titles[name] == 0
+    ]
+    retained_titles = [
+        {"name": name, "curated_link_count": current_titles[name], "reason": "curated_links"}
+        for name in removed_titles if current_titles[name] > 0
+    ]
+    new_promotion_ids = {_promotion_id(str(x.get("from_title") or ""), str(x.get("to_title") or "")) for x in promotions}
+    new_lateral_pairs = {(str(x.get("from") or ""), str(x.get("to") or "")) for x in lateral}
+    delete_manifest = {
+        "jobs": deleted_jobs,
+        "job_titles": deleted_titles,
+        "promotions": ([{"promotion_id": key, "generation_source": "graph_task_llm", "reason": "not_in_replanned_projection"} for key in sorted(current_auto_promotions - new_promotion_ids)] if task["options"].get("generate_promotions", True) else []),
+        "lateral": ([{"from": pair[0], "to": pair[1], "generation_source": "graph_task_llm", "reason": "not_in_replanned_projection"} for pair in sorted(current_auto_lateral - new_lateral_pairs)] if task["options"].get("generate_lateral", True) else []),
+    }
+    change_set = {"version": 2, "kind": "job_import", "source_id": source_id, "mode": task.get("mode") or "merge", "input_keys": keys, "jobs": jobs, "job_titles": [{"name": n, "count": counts[n]} for n in sorted(counts)], "promotions": promotions, "lateral": lateral, "delete_manifest": delete_manifest, "retained_manifest": {"job_titles": retained_titles}, "replace_auto_promotions": bool(task["options"].get("generate_promotions", True)), "replace_auto_lateral": bool(task["options"].get("generate_lateral", True))}
     low_confidence = sum(1 for x in jobs if min(float(x["capability"][f]) for f in CONF_FIELDS) < 0.6)
-    summary = {"input_rows": len(df) + duplicates, "unique_jobs": len(df), "duplicate_rows": duplicates, "new_or_changed_jobs": len(jobs), "evaluated_jobs": len(jobs), "low_confidence_jobs": low_confidence, "unchanged_jobs": len(unchanged), "job_titles": len(titles), "promotions": len(promotions), "lateral_transfers": len(lateral), "snapshot_prune": task.get("mode") == "snapshot", "preview": {"jobs": [{"job_key": x["job_key"], "title": x["row"].get("name"), "company": x["row"].get("company"), "capability": x["capability"]} for x in jobs[:10]], "promotions": promotions[:10], "lateral": lateral[:10]}}
+    summary = {"input_rows": len(df) + duplicates, "unique_jobs": len(df), "duplicate_rows": duplicates, "new_or_changed_jobs": len(jobs), "evaluated_jobs": len(jobs), "low_confidence_jobs": low_confidence, "unchanged_jobs": len(unchanged), "job_titles": len(titles), "promotions": len(promotions), "lateral_transfers": len(lateral), "deleted_jobs": len(deleted_jobs), "deleted_job_titles": len(deleted_titles), "retained_job_titles": len(retained_titles), "deleted_promotions": len(delete_manifest["promotions"]), "deleted_lateral_transfers": len(delete_manifest["lateral"]), "snapshot_prune": task.get("mode") == "snapshot", "preview": {"jobs": [{"job_key": x["job_key"], "title": x["row"].get("name"), "company": x["row"].get("company"), "capability": x["capability"]} for x in jobs[:10]], "promotions": promotions[:10], "lateral": lateral[:10], "deletes": {key: value[:10] for key, value in delete_manifest.items()}, "retained_job_titles": retained_titles[:10]}}
     return change_set, summary
 
 
@@ -163,6 +213,15 @@ def _plan_csv(task: dict[str, Any], *, kind: str, required: set[str], id_column:
     driver, database = _driver()
     with driver.session(database=database) as session:
         known_titles = {str(row["name"]) for row in session.run("MATCH (jt:JobTitle) RETURN jt.name AS name")}
+        label = "LearningResource" if kind == "learning_resource_import" else "Competition"
+        existing_ids = {
+            str(row["id"])
+            for row in session.run(
+                f"MATCH (n:{label} {{import_source_id:$source,import_managed:true}}) RETURN n.{id_column} AS id",
+                source=str(task.get("source_id") or "master_csv"),
+            )
+            if row.get("id")
+        }
     if not known_titles: raise TaskPlanningError("图谱中没有 JobTitle，请先完成岗位导入")
     allowed_difficulty = {"入门", "进阶", "高阶", ""}
     for row in records:
@@ -174,9 +233,12 @@ def _plan_csv(task: dict[str, Any], *, kind: str, required: set[str], id_column:
         if row.get("difficulty", "") not in allowed_difficulty: raise TaskPlanningError(f"{row[id_column]} difficulty 非法")
         url = str(row.get("resource_url") or row.get("official_url") or "").strip()
         if url and urlparse(url).scheme not in {"http", "https"}: raise TaskPlanningError(f"{row[id_column]} URL 必须使用 http/https")
-    change_set = {"version": 2, "kind": kind, "source_id": task.get("source_id") or "master_csv", "mode": task.get("mode") or "snapshot", "items": records}
+    delete_group = "learning_resources" if kind == "learning_resource_import" else "competitions"
+    input_ids = {str(row[id_column]) for row in records}
+    deletes = ([{"id": item_id, id_column: item_id, "source_id": task.get("source_id") or "master_csv", "reason": "missing_from_source_snapshot"} for item_id in sorted(existing_ids - input_ids)] if task.get("mode") == "snapshot" else [])
+    change_set = {"version": 2, "kind": kind, "source_id": task.get("source_id") or "master_csv", "mode": task.get("mode") or "snapshot", "items": records, "delete_manifest": {delete_group: deletes}}
     emit("validation", "CSV 校验和关系规划完成", {"items": len(records), "job_title_links": sum(len(x["job_titles"]) for x in records)})
-    return change_set, {"items": len(records), "job_title_links": sum(len(x["job_titles"]) for x in records), "snapshot_prune": task.get("mode") == "snapshot"}
+    return change_set, {"items": len(records), "job_title_links": sum(len(x["job_titles"]) for x in records), "delete_items": len(deletes), "snapshot_prune": task.get("mode") == "snapshot"}
 
 
 def _read_csv(task: dict[str, Any], required: set[str], role: str = "file") -> list[dict[str, Any]]:
@@ -259,12 +321,21 @@ def plan_promotions_import(task: dict[str, Any], emit=lambda *_args, **_kwargs: 
     driver, database = _driver()
     with driver.session(database=database) as session:
         titles = {str(row["name"]) for row in session.run("MATCH (jt:JobTitle) RETURN jt.name AS name")}
+        existing_ids = {
+            str(row["id"])
+            for row in session.run(
+                "MATCH (p:JobPromotion {generation_source:'curated',source_id:$source}) RETURN p.promotion_id AS id",
+                source=task.get("source_id"),
+            )
+            if row.get("id")
+        }
     unknown = sorted({row["job_title"].strip() for row in rows} - titles)
     if unknown: raise TaskPlanningError(f"晋升路线引用了不存在的 JobTitle: {unknown[:10]}")
     for row in rows:
         if not any(row.get(f"stage{i}", "").strip() for i in range(1, 4)): raise TaskPlanningError(f"{row['promotion_id']} 至少需要一个阶段")
+    deletes = ([{"promotion_id": item_id, "source_id": task.get("source_id"), "reason": "missing_from_source_snapshot"} for item_id in sorted(existing_ids - set(ids))] if task.get("mode") == "snapshot" else [])
     emit("validation", "晋升路线校验完成", {"items": len(rows)})
-    return {"version": 2, "kind": "job_promotion_import", "source_id": task.get("source_id"), "mode": task.get("mode"), "items": rows}, {"items": len(rows), "job_titles": len({x['job_title'] for x in rows}), "preview": rows[:10]}
+    return {"version": 2, "kind": "job_promotion_import", "source_id": task.get("source_id"), "mode": task.get("mode"), "items": rows, "delete_manifest": {"promotions": deletes}}, {"items": len(rows), "job_titles": len({x['job_title'] for x in rows}), "delete_items": len(deletes), "preview": rows[:10]}
 
 
 def plan_lateral_import(task: dict[str, Any], emit=lambda *_args, **_kwargs: None):
@@ -274,6 +345,15 @@ def plan_lateral_import(task: dict[str, Any], emit=lambda *_args, **_kwargs: Non
     driver, database = _driver()
     with driver.session(database=database) as session:
         titles = {str(row["name"]) for row in session.run("MATCH (jt:JobTitle) RETURN jt.name AS name")}
+        existing_pairs = {
+            (str(row["from_title"]), str(row["to_title"]))
+            for row in session.run(
+                """MATCH (a:JobTitle)-[r:SIMILAR_FOR_LATERAL {generation_source:'curated',source_id:$source}]->(b:JobTitle)
+                RETURN a.name AS from_title,b.name AS to_title""",
+                source=task.get("source_id"),
+            )
+            if row.get("from_title") and row.get("to_title")
+        }
     unknown = sorted({x for pair in pairs for x in pair} - titles)
     if unknown: raise TaskPlanningError(f"换岗关系引用了不存在的 JobTitle: {unknown[:10]}")
     for row in rows:
@@ -281,8 +361,9 @@ def plan_lateral_import(task: dict[str, Any], emit=lambda *_args, **_kwargs: Non
             row["score"] = float(row["score"]); row["cap_similarity"] = float(row["cap_similarity"]); row["rank"] = int(float(row["rank"] or 0))
             row["same_track"] = str(row["same_track"]).lower() in {"1", "true", "yes"}; row["promotion_linked"] = str(row["promotion_linked"]).lower() in {"1", "true", "yes"}
         except ValueError as exc: raise TaskPlanningError("换岗关系数值字段格式错误") from exc
-    emit("validation", "横向换岗校验完成", {"relationships": len(rows)})
-    return {"version": 2, "kind": "job_lateral_import", "source_id": task.get("source_id"), "mode": task.get("mode"), "items": rows}, {"relationships": len(rows), "preview": rows[:10]}
+    deletes = ([{"from": pair[0], "to": pair[1], "source_id": task.get("source_id"), "reason": "missing_from_source_snapshot"} for pair in sorted(existing_pairs - set(pairs))] if task.get("mode") == "snapshot" else [])
+    emit("validation", "横向换岗校验完成", {"relationships": len(rows), "delete_relationships": len(deletes)})
+    return {"version": 2, "kind": "job_lateral_import", "source_id": task.get("source_id"), "mode": task.get("mode"), "items": rows, "delete_manifest": {"lateral": deletes}}, {"relationships": len(rows), "delete_relationships": len(deletes), "preview": rows[:10]}
 
 
 def plan_recommendation_import(task: dict[str, Any], emit=lambda *_args, **_kwargs: None):
@@ -293,6 +374,22 @@ def plan_recommendation_import(task: dict[str, Any], emit=lambda *_args, **_kwar
         promos = {str(x["id"]) for x in session.run("MATCH (p:JobPromotion) RETURN p.promotion_id AS id")}
         resource_ids = {str(x["id"]) for x in session.run("MATCH (r:LearningResource) RETURN r.resource_id AS id")}
         competition_ids = {str(x["id"]) for x in session.run("MATCH (c:Competition) RETURN c.competition_id AS id")}
+        existing_resource_keys = {
+            (str(x["promotion_id"]), str(x["resource_id"]))
+            for x in session.run(
+                """MATCH (p:JobPromotion)-[rel:RECOMMENDS_RESOURCE {source_id:$source}]->(r:LearningResource)
+                RETURN p.promotion_id AS promotion_id,r.resource_id AS resource_id""",
+                source=task.get("source_id"),
+            )
+        }
+        existing_competition_keys = {
+            (str(x["promotion_id"]), str(x["competition_id"]))
+            for x in session.run(
+                """MATCH (p:JobPromotion)-[rel:RECOMMENDS_COMPETITION {source_id:$source}]->(c:Competition)
+                RETURN p.promotion_id AS promotion_id,c.competition_id AS competition_id""",
+                source=task.get("source_id"),
+            )
+        }
     missing = ({x["promotion_id"] for x in resources + competitions} - promos) | ({x["resource_id"] for x in resources} - resource_ids) | ({x["competition_id"] for x in competitions} - competition_ids)
     if missing: raise TaskPlanningError(f"推荐文件引用了不存在的节点: {sorted(missing)[:10]}")
     resource_keys = [(x["promotion_id"], x["resource_id"]) for x in resources]
@@ -304,8 +401,10 @@ def plan_recommendation_import(task: dict[str, Any], emit=lambda *_args, **_kwar
             row["stage"] = int(float(row["stage"])); row["rank"] = int(float(row["rank"])); row["score"] = float(row["score"])
             if row["stage"] < 1 or row["rank"] < 1 or not 0 <= row["score"] <= 1: raise ValueError
     except ValueError as exc: raise TaskPlanningError("推荐文件的 stage、rank 或 score 非法") from exc
-    emit("validation", "晋升推荐双文件校验完成", {"resources": len(resources), "competitions": len(competitions)})
-    return {"version": 2, "kind": "promotion_recommendation_import", "source_id": task.get("source_id"), "mode": task.get("mode"), "resource_recommendations": resources, "competition_recommendations": competitions}, {"resource_recommendations": len(resources), "competition_recommendations": len(competitions), "preview": {"resources": resources[:5], "competitions": competitions[:5]}}
+    delete_resources = ([{"promotion_id": key[0], "resource_id": key[1], "source_id": task.get("source_id"), "reason": "missing_from_source_snapshot"} for key in sorted(existing_resource_keys - set(resource_keys))] if task.get("mode") == "snapshot" else [])
+    delete_competitions = ([{"promotion_id": key[0], "competition_id": key[1], "source_id": task.get("source_id"), "reason": "missing_from_source_snapshot"} for key in sorted(existing_competition_keys - set(competition_keys))] if task.get("mode") == "snapshot" else [])
+    emit("validation", "晋升推荐双文件校验完成", {"resources": len(resources), "competitions": len(competitions), "delete_resources": len(delete_resources), "delete_competitions": len(delete_competitions)})
+    return {"version": 2, "kind": "promotion_recommendation_import", "source_id": task.get("source_id"), "mode": task.get("mode"), "resource_recommendations": resources, "competition_recommendations": competitions, "delete_manifest": {"resource_recommendations": delete_resources, "competition_recommendations": delete_competitions}}, {"resource_recommendations": len(resources), "competition_recommendations": len(competitions), "delete_resource_recommendations": len(delete_resources), "delete_competition_recommendations": len(delete_competitions), "preview": {"resources": resources[:5], "competitions": competitions[:5]}}
 
 
 def plan_salary_normalization(task: dict[str, Any], emit=lambda *_args, **_kwargs: None):
