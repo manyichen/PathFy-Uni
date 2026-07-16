@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import hashlib
-import json
 from pathlib import Path
 from uuid import uuid4
 
@@ -126,8 +125,7 @@ def guard_status():
 def _verify_change_set(task):
     change = task.get("change_set")
     if not change: raise GraphTaskError("任务没有可应用的变更集", 409)
-    encoded = json.dumps(change, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
-    if hashlib.sha256(encoded.encode()).hexdigest() != task.get("change_set_sha256"):
+    if not repo.verify_task_change_set(int(task["id"]), expected_sha256=task.get("change_set_sha256")):
         raise GraphTaskError("变更集校验失败，已拒绝提交", 409)
     return change
 

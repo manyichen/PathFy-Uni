@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Iterator
 from typing import Any
 from uuid import uuid4
 
 from app.db import db_cursor
+from app.domains.graph.change_storage import ChangeChunk, verify_chunk_rows
 
 FINAL_STATUSES = {"succeeded", "partial_failed", "failed", "rejected", "cancelled"}
 
@@ -19,12 +21,15 @@ def _decode(row: dict[str, Any] | None, *, include_change_set: bool = False):
     if not row:
         return None
     item = dict(row)
-    for key in ("options_json", "change_summary_json", "config_snapshot_json"):
+    for key in ("options_json", "change_summary_json", "config_snapshot_json", "change_manifest_json"):
         raw = item.pop(key, None)
         item[key.removesuffix("_json")] = json.loads(raw) if isinstance(raw, str) else raw
     raw_change = item.pop("change_set_json", None)
     if include_change_set:
-        item["change_set"] = json.loads(raw_change) if isinstance(raw_change, str) else raw_change
+        if int(item.get("change_storage_version") or 1) >= 2:
+            item["change_set"] = item.get("change_manifest") or {}
+        else:
+            item["change_set"] = json.loads(raw_change) if isinstance(raw_change, str) else raw_change
     else:
         item.pop("input_file_path", None)
     return item
@@ -244,7 +249,8 @@ def release_applying_lease(task_id: int, lease_token: str) -> bool:
 
 
 def prepare_task(task_id: int, *, base_revision: int, summary: dict[str, Any],
-                 change_set_json: str, change_set_sha256: str,
+                 change_set_sha256: str, change_manifest: dict[str, Any] | None = None,
+                 change_chunks: tuple[ChangeChunk, ...] = (), change_set_json: str | None = None,
                  lease_token: str | None = None) -> bool:
     with db_cursor() as (_, cur):
         guard = get_guard(for_update=True, cursor=cur)
@@ -265,15 +271,27 @@ def prepare_task(task_id: int, *, base_revision: int, summary: dict[str, Any],
                 (task_id,),
             )
             return False
+        storage_version = 2 if change_manifest is not None else 1
         cur.execute(
             """UPDATE graph_update_tasks SET status='awaiting_confirmation',change_summary_json=%s,
-               change_set_json=%s,change_set_sha256=%s,prepared_at=NOW(),worker_id=NULL,
+               change_set_json=%s,change_manifest_json=%s,change_storage_version=%s,
+               change_set_sha256=%s,prepared_at=NOW(),worker_id=NULL,
                lease_token=NULL,heartbeat_at=NULL,lease_expires_at=NULL
                WHERE id=%s AND status='running'""" + lease_clause,
-            (_json(summary), change_set_json, change_set_sha256, task_id, *lease_params),
+            (_json(summary), change_set_json, _json(change_manifest) if change_manifest is not None else None,
+             storage_version, change_set_sha256, task_id, *lease_params),
         )
         if cur.rowcount != 1:
             return False
+        cur.execute("DELETE FROM graph_update_task_change_chunks WHERE task_id=%s", (task_id,))
+        if change_chunks:
+            cur.executemany(
+                """INSERT INTO graph_update_task_change_chunks
+                   (task_id,group_name,chunk_no,item_count,chunk_sha256,payload_json)
+                   VALUES (%s,%s,%s,%s,%s,%s)""",
+                [(task_id, chunk.group_name, chunk.chunk_no, chunk.item_count,
+                  chunk.sha256, chunk.payload_json) for chunk in change_chunks],
+            )
         cur.execute("UPDATE graph_write_guard SET locked_task_id=%s,locked_at=NOW() WHERE id=1", (task_id,))
         cur.execute(
             "INSERT INTO graph_update_task_events (task_id,event_type,stage,message,detail_json) VALUES (%s,'prepared','confirmation','变更集已生成，等待管理员确认',%s)",
@@ -353,7 +371,7 @@ def list_tasks(*, page: int, page_size: int, status: str | None = None,
         cur.execute("SELECT COUNT(*) AS total FROM graph_update_tasks" + where, params)
         total = int(cur.fetchone()["total"])
         cur.execute(
-            "SELECT id,task_uuid,task_type,status,requested_by,handled_by,input_file_name,input_file_size,input_sha256,source_id,mode,options_json,settings_revision,base_graph_revision,change_summary_json,change_set_sha256,error_message,rejection_reason,worker_id,heartbeat_at,lease_expires_at,attempt_count,next_retry_at,last_error_code,last_error_retryable,confirm_requested_at,neo4j_committed_at,projection_status,projection_attempts,projection_error,projection_next_retry_at,created_at,started_at,prepared_at,handled_at,finished_at FROM graph_update_tasks" + where + " ORDER BY created_at DESC,id DESC LIMIT %s OFFSET %s",
+            "SELECT id,task_uuid,task_type,status,requested_by,handled_by,input_file_name,input_file_size,input_sha256,source_id,mode,options_json,settings_revision,base_graph_revision,change_summary_json,change_set_sha256,change_storage_version,error_message,rejection_reason,worker_id,heartbeat_at,lease_expires_at,attempt_count,next_retry_at,last_error_code,last_error_retryable,confirm_requested_at,neo4j_committed_at,projection_status,projection_attempts,projection_error,projection_next_retry_at,created_at,started_at,prepared_at,handled_at,finished_at FROM graph_update_tasks" + where + " ORDER BY created_at DESC,id DESC LIMIT %s OFFSET %s",
             (*params, page_size, (page - 1) * page_size),
         )
         items = [_decode(r) for r in cur.fetchall()]
@@ -364,7 +382,7 @@ def list_tasks(*, page: int, page_size: int, status: str | None = None,
 
 def get_task(task_id: int, *, include_change_set: bool = False) -> dict[str, Any] | None:
     with db_cursor() as (_, cur):
-        columns = "*" if include_change_set else "id,task_uuid,task_type,status,requested_by,handled_by,input_file_name,input_file_size,input_sha256,source_id,mode,options_json,settings_revision,config_snapshot_json,base_graph_revision,change_summary_json,change_set_sha256,error_message,rejection_reason,worker_id,heartbeat_at,lease_expires_at,attempt_count,next_retry_at,last_error_code,last_error_retryable,confirm_requested_at,neo4j_committed_at,projection_status,projection_attempts,projection_error,projection_next_retry_at,created_at,started_at,prepared_at,handled_at,finished_at"
+        columns = "*" if include_change_set else "id,task_uuid,task_type,status,requested_by,handled_by,input_file_name,input_file_size,input_sha256,source_id,mode,options_json,settings_revision,config_snapshot_json,base_graph_revision,change_summary_json,change_set_sha256,change_storage_version,error_message,rejection_reason,worker_id,heartbeat_at,lease_expires_at,attempt_count,next_retry_at,last_error_code,last_error_retryable,confirm_requested_at,neo4j_committed_at,projection_status,projection_attempts,projection_error,projection_next_retry_at,created_at,started_at,prepared_at,handled_at,finished_at"
         cur.execute(f"SELECT {columns} FROM graph_update_tasks WHERE id=%s", (task_id,))
         task = _decode(cur.fetchone(), include_change_set=include_change_set)
         if not task:
@@ -392,25 +410,123 @@ def get_task_file(task_id: int, role: str) -> dict[str, Any] | None:
 
 
 def task_changes(task_id: int, *, group: str | None, page: int, page_size: int) -> dict[str, Any] | None:
+    with db_cursor() as (_, cur):
+        cur.execute("SELECT change_storage_version FROM graph_update_tasks WHERE id=%s", (task_id,))
+        task_row = cur.fetchone()
+        if not task_row:
+            return None
+        if int(task_row.get("change_storage_version") or 1) < 2:
+            return _legacy_task_changes(task_id, group=group, page=page, page_size=page_size)
+        cur.execute(
+            """SELECT group_name,SUM(item_count) AS total,MIN(id) AS first_id
+               FROM graph_update_task_change_chunks WHERE task_id=%s
+               GROUP BY group_name ORDER BY first_id""",
+            (task_id,),
+        )
+        group_rows = list(cur.fetchall())
+        groups = {str(row["group_name"]): int(row["total"] or 0) for row in group_rows}
+        selected = group if group in groups else (next(iter(groups), None) if not group else None)
+        total = groups.get(selected, 0) if selected else 0
+        items: list[Any] = []
+        start = (page - 1) * page_size
+        end = min(start + page_size, total)
+        if selected and start < total:
+            cur.execute(
+                """SELECT payload_json,item_count,offset_before FROM (
+                     SELECT payload_json,item_count,chunk_no,
+                       COALESCE(SUM(item_count) OVER (
+                         ORDER BY chunk_no ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING
+                       ),0) AS offset_before
+                     FROM graph_update_task_change_chunks
+                     WHERE task_id=%s AND group_name=%s
+                   ) AS chunks
+                   WHERE offset_before < %s AND offset_before + item_count > %s
+                   ORDER BY chunk_no""",
+                (task_id, selected, end, start),
+            )
+            for row in cur.fetchall():
+                chunk = json.loads(row["payload_json"])
+                offset = int(row["offset_before"])
+                items.extend(chunk[max(0, start - offset):max(0, end - offset)])
+        return {"group": selected, "groups": groups, "items": items, "total": total,
+                "page": page, "page_size": page_size}
+
+
+def _legacy_task_changes(task_id: int, *, group: str | None, page: int, page_size: int) -> dict[str, Any] | None:
     task = get_task(task_id, include_change_set=True)
     if not task:
         return None
     change = task.get("change_set") or {}
     groups = {key: value for key, value in change.items() if isinstance(value, list)}
-    for manifest_name in ("delete_manifest", "retained_manifest"):
+    for manifest_name, prefix in (("delete_manifest", "delete"), ("retained_manifest", "retained")):
         manifest = change.get(manifest_name)
-        if not isinstance(manifest, dict):
-            continue
-        prefix = "delete" if manifest_name == "delete_manifest" else "retained"
-        for key, value in manifest.items():
-            if isinstance(value, list):
-                groups[f"{prefix}.{key}"] = value
+        if isinstance(manifest, dict):
+            groups.update({f"{prefix}.{key}": value for key, value in manifest.items() if isinstance(value, list)})
     selected = group if group in groups else (next(iter(groups), None) if not group else None)
     rows = groups.get(selected, []) if selected else []
     start = (page - 1) * page_size
     return {"group": selected, "groups": {key: len(value) for key, value in groups.items()},
             "items": rows[start:start + page_size], "total": len(rows),
             "page": page, "page_size": page_size}
+
+
+def verify_task_change_set(task_id: int, *, expected_sha256: str | None = None) -> bool:
+    """Verify either a legacy LONGTEXT document or every stored chunk without rebuilding it."""
+    with db_cursor() as (_, cur):
+        cur.execute(
+            """SELECT change_storage_version,change_manifest_json,change_set_json,change_set_sha256
+               FROM graph_update_tasks WHERE id=%s""",
+            (task_id,),
+        )
+        row = cur.fetchone()
+        if not row:
+            return False
+        stored_sha = str(row.get("change_set_sha256") or "")
+        if expected_sha256 and stored_sha != expected_sha256:
+            return False
+        if int(row.get("change_storage_version") or 1) < 2:
+            raw = row.get("change_set_json")
+            if not isinstance(raw, str):
+                return False
+            try:
+                canonical = _json(json.loads(raw))
+                # Legacy digests were generated with sorted keys.
+                canonical = json.dumps(json.loads(canonical), ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+            except (TypeError, json.JSONDecodeError):
+                return False
+            import hashlib
+            return hashlib.sha256(canonical.encode("utf-8")).hexdigest() == stored_sha
+        raw_manifest = row.get("change_manifest_json")
+        try:
+            manifest = json.loads(raw_manifest) if isinstance(raw_manifest, str) else None
+        except json.JSONDecodeError:
+            return False
+        if not isinstance(manifest, dict):
+            return False
+        cur.execute(
+            """SELECT group_name,chunk_no,item_count,chunk_sha256,payload_json
+               FROM graph_update_task_change_chunks WHERE task_id=%s
+               ORDER BY group_name,chunk_no""",
+            (task_id,),
+        )
+        return verify_chunk_rows(manifest, cur, stored_sha)
+
+
+def iter_change_group_chunks(task_id: int, group_name: str) -> Iterator[list[Any]]:
+    with db_cursor() as (_, cur):
+        cur.execute(
+            """SELECT payload_json FROM graph_update_task_change_chunks
+               WHERE task_id=%s AND group_name=%s ORDER BY chunk_no""",
+            (task_id, group_name),
+        )
+        while True:
+            row = cur.fetchone()
+            if not row:
+                break
+            items = json.loads(row["payload_json"])
+            if not isinstance(items, list):
+                raise RuntimeError(f"变更分块 {group_name} 格式无效")
+            yield items
 
 
 def clear_task_file_paths(task_id: int) -> None:
@@ -556,9 +672,13 @@ def reject_task(task_id: int, user_id: int, reason: str) -> bool:
         guard = get_guard(for_update=True, cursor=cur)
         if int(guard.get("locked_task_id") or 0) != task_id:
             return False
-        cur.execute("UPDATE graph_update_tasks SET status='rejected',handled_by=%s,rejection_reason=%s,change_set_json=NULL,input_file_path=NULL,handled_at=NOW(),finished_at=NOW() WHERE id=%s AND status='awaiting_confirmation'", (user_id, reason, task_id))
+        cur.execute("""UPDATE graph_update_tasks SET status='rejected',handled_by=%s,
+          rejection_reason=%s,change_set_json=NULL,change_manifest_json=NULL,input_file_path=NULL,
+          handled_at=NOW(),finished_at=NOW() WHERE id=%s AND status='awaiting_confirmation'""",
+          (user_id, reason, task_id))
         if cur.rowcount != 1:
             return False
+        cur.execute("DELETE FROM graph_update_task_change_chunks WHERE task_id=%s", (task_id,))
         cur.execute("UPDATE graph_write_guard SET locked_task_id=NULL,locked_at=NULL WHERE id=1")
         cur.execute("INSERT INTO graph_update_task_events (task_id,event_type,stage,message) VALUES (%s,'rejected','confirmation',%s)", (task_id, reason[:500]))
         return True

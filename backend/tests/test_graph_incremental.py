@@ -72,38 +72,8 @@ def test_source_id_is_path_safe_and_stable():
     assert normalize_source_id("/data/2026 七月岗位.xls") == "2026-七月岗位.xls"
 
 
-def test_prune_is_strictly_scoped_to_source_and_run():
-    class Result:
-        def single(self):
-            return {"total": 2}
-
-    class Session:
-        def __enter__(self):
-            return self
-
-        def __exit__(self, *_args):
-            return False
-
-        def run(self, query, **params):
-            self.query = query
-            self.params = params
-            return Result()
-
-    class Driver:
-        def __init__(self):
-            self.value = Session()
-
-        def session(self, *, database):
-            assert database == "neo4j"
-            return self.value
-
-    driver = Driver()
-    assert repository.prune_missing_jobs(
-        driver, "neo4j", run_id="run-2", source_id="feed-a"
-    ) == 2
-    assert "import_source_id: $source_id" in driver.value.query
-    assert "last_seen_run_id" in driver.value.query
-    assert driver.value.params == {"run_id": "run-2", "source_id": "feed-a"}
+def test_direct_snapshot_prune_writer_has_been_removed():
+    assert not hasattr(repository, "prune_missing_jobs")
 
 
 def test_graph_write_lock_is_released(monkeypatch):

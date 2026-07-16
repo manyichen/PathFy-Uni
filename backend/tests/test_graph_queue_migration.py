@@ -7,6 +7,7 @@ MIGRATION = Path(__file__).parents[1] / "migrations/versions/20260713_0002_graph
 CATALOG_MIGRATION = Path(__file__).parents[1] / "migrations/versions/20260714_0003_graph_task_catalog.py"
 LEASE_MIGRATION = Path(__file__).parents[1] / "migrations/versions/20260715_0006_graph_worker_leases.py"
 PROJECTION_MIGRATION = Path(__file__).parents[1] / "migrations/versions/20260715_0007_graph_projection_state.py"
+CHUNK_MIGRATION = Path(__file__).parents[1] / "migrations/versions/20260716_0008_graph_change_chunks.py"
 
 
 def test_graph_queue_migration_contains_durable_models():
@@ -55,3 +56,14 @@ def test_graph_projection_migration_is_reversible():
         assert f"ADD COLUMN {column}" in source
         assert f'"{column}"' in source
     assert "ix_graph_tasks_projection_due" in source
+
+
+def test_graph_change_chunk_migration_is_reversible():
+    source = CHUNK_MIGRATION.read_text(encoding="utf-8")
+    assert 'down_revision = "20260715_0007"' in source
+    assert "CREATE TABLE graph_update_task_change_chunks" in source
+    assert "uq_graph_task_change_chunk" in source
+    assert "ADD COLUMN change_manifest_json" in source
+    assert "ADD COLUMN change_storage_version" in source
+    assert "DROP TABLE IF EXISTS graph_update_task_change_chunks" in source
+    assert "DROP COLUMN change_manifest_json" in source

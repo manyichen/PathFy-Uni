@@ -3,8 +3,6 @@
 from __future__ import annotations
 
 import argparse
-import hashlib
-import json
 import os
 import socket
 import threading
@@ -14,8 +12,9 @@ from flask import current_app
 
 from app import create_app
 from app.domains.graph import task_repository as repo
+from app.domains.graph.change_storage import encode_change_set
 from app.domains.graph.task_planner import TaskPlanningError, build_change_set
-from app.domains.graph.task_apply import apply_change_set, is_task_applied
+from app.domains.graph.task_apply import apply_change_set, ensure_graph_schema, is_task_applied
 from app.domains.graph.locking import GraphOperationBusy, graph_write_lock
 from app.domains.graph.task_projection import project_task, projection_required
 from app.domains.settings.service import use_settings
@@ -104,13 +103,13 @@ def process_one(*, worker_id: str | None = None, lease_seconds: int | None = Non
             with use_settings(task.get("config_snapshot") or {}):
                 change_set, summary = build_change_set(task, emit)
             heartbeat.ensure_owned()
-            encoded = json.dumps(change_set, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
-            digest = hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+            encoded = encode_change_set(change_set)
             try:
                 with graph_write_lock():
                     prepared = repo.prepare_task(
                         task["id"], base_revision=int(task["base_graph_revision"]), summary=summary,
-                        change_set_json=encoded, change_set_sha256=digest, lease_token=lease_token,
+                        change_manifest=encoded.manifest, change_chunks=encoded.chunks,
+                        change_set_sha256=encoded.sha256, lease_token=lease_token,
                     )
                     if not prepared:
                         heartbeat.lost.set()
@@ -133,9 +132,7 @@ def _verify_task_change_set(task: dict) -> dict:
     change = task.get("change_set")
     if not isinstance(change, dict) or not change:
         raise RuntimeError("任务没有可应用的变更集")
-    encoded = json.dumps(change, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
-    digest = hashlib.sha256(encoded.encode("utf-8")).hexdigest()
-    if digest != task.get("change_set_sha256"):
+    if not repo.verify_task_change_set(int(task["id"]), expected_sha256=task.get("change_set_sha256")):
         raise RuntimeError("变更集 SHA-256 校验失败")
     return change
 
@@ -163,10 +160,16 @@ def process_applying_one(*, worker_id: str | None = None, lease_seconds: int | N
                     with graph_write_lock(allowed_task_id=task_id):
                         heartbeat.ensure_owned()
                         if not is_task_applied(task["task_uuid"]):
+                            group_loader = (
+                                (lambda group: repo.iter_change_group_chunks(task_id, group))
+                                if int(task.get("change_storage_version") or 1) >= 2
+                                else None
+                            )
                             apply_change_set(
                                 change,
                                 task_uuid=task["task_uuid"],
                                 change_sha256=task["change_set_sha256"],
+                                group_loader=group_loader,
                             )
                         committed = True
                         heartbeat.ensure_owned()
@@ -238,6 +241,7 @@ def main() -> None:
     parser.add_argument("--once", action="store_true", help="process at most one task and exit")
     args = parser.parse_args(); app = create_app()
     with app.app_context():
+        ensure_graph_schema()
         repo.recover_expired_tasks()
         while True:
             repo.recover_expired_tasks()

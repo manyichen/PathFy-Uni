@@ -22,6 +22,7 @@ def _prepared_task(change=None):
 def test_confirm_only_verifies_and_enqueues_async_apply(monkeypatch):
     task = _prepared_task(); calls = []
     monkeypatch.setattr(task_service.repo, "get_task", lambda *_args, **_kwargs: task)
+    monkeypatch.setattr(task_service.repo, "verify_task_change_set", lambda *_args, **_kwargs: True)
     monkeypatch.setattr(task_service.repo, "set_applying", lambda task_id, user_id, **kwargs: calls.append((task_id, user_id, kwargs)) or task)
     result = task_service.confirm_task(3, 9)
     assert result == {"task_id": 3, "status": "applying", "accepted": True}
@@ -31,6 +32,7 @@ def test_confirm_only_verifies_and_enqueues_async_apply(monkeypatch):
 def test_confirm_rejects_tampered_change_set(monkeypatch):
     task = _prepared_task(); task["change_set"]["items"].append({"changed": True})
     monkeypatch.setattr(task_service.repo, "get_task", lambda *_args, **_kwargs: task)
+    monkeypatch.setattr(task_service.repo, "verify_task_change_set", lambda *_args, **_kwargs: False)
     monkeypatch.setattr(task_service.repo, "set_applying", lambda *_args, **_kwargs: pytest.fail("tampered task must not be accepted"))
     with pytest.raises(task_service.GraphTaskError, match="校验失败"):
         task_service.confirm_task(3, 9)
@@ -53,6 +55,6 @@ def test_change_preview_exposes_delete_and_retained_manifests(monkeypatch):
             "retained_manifest": {"job_titles": [{"name": "策展岗位"}]},
         }
     })
-    result = task_repository.task_changes(1, group="delete.jobs", page=1, page_size=20)
+    result = task_repository._legacy_task_changes(1, group="delete.jobs", page=1, page_size=20)
     assert result["groups"] == {"jobs": 1, "delete.jobs": 1, "retained.job_titles": 1}
     assert result["items"] == [{"job_key": "old"}]

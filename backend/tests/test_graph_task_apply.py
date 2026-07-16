@@ -91,5 +91,19 @@ def test_v2_snapshot_without_manifest_never_derives_resource_deletes():
     )
     queries = [query for query, _ in tx.queries]
     assert not any("NOT r.resource_id IN" in query for query in queries)
-    explicit = next((params for query, params in tx.queries if "item.resource_id" in query), None)
-    assert explicit == {"rows": [], "source": "feed-a"}
+    assert not any("DETACH DELETE r" in query for query in queries)
+
+
+def test_chunk_loader_uses_one_unwind_per_chunk_not_per_item():
+    tx = FakeTx()
+    chunks = {
+        "jobs": [
+            [{"job_key": "j1", "capability": {"cap_req_theory": 70}},
+             {"job_key": "j2", "capability": {"cap_req_theory": 80}}],
+            [{"job_key": "j3", "capability": {"cap_req_theory": 90}}],
+        ]
+    }
+    task_apply._apply_capabilities(tx, {"version": 2}, "run", lambda group: chunks.get(group, []))
+    assert len(tx.queries) == 2
+    assert all("UNWIND $rows" in query for query, _ in tx.queries)
+    assert [len(params["rows"]) for _, params in tx.queries] == [2, 1]
