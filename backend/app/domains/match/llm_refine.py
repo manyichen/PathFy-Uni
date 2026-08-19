@@ -8,7 +8,7 @@ import json
 import re
 from typing import Any, Dict, List, Optional, Tuple
 
-from openai import OpenAI
+from openai import BadRequestError, OpenAI
 
 _SYSTEM = """你是就业人岗匹配顾问。输入包含学生八维供给分（0-100）与若干岗位的八维需求分及粗排分数。
 你必须只从给定 candidates 的 job_id 中选择并排序，禁止编造不存在的岗位。
@@ -20,6 +20,11 @@ overall_fit_0_100 须与八维差距和学生经历潜力一致；岗位 cap_con
 重要：strengths、gaps 每条必须用纯中文定性描述（如「明显强于岗位期望」「与岗位要求基本匹配」「仍有提升空间」），
 禁止写具体分数、禁止「XX分」「（数字分）」、禁止「学生A分对岗位B分」式对比；分数信息仅体现在 overall_fit_0_100 字段即可。
 不要输出 Markdown 代码块。"""
+
+_JSON_EXAMPLE = """输出 JSON 结构示例（字段与类型必须保持一致）：
+{"top5":[{"job_id":"候选中的真实ID","rank":1,"overall_fit_0_100":82,
+"one_line":"推荐理由","strengths":["优势一","优势二"],
+"gaps":["缺口一","缺口二"],"risks":[]}]}"""
 
 _SYSTEM_STRETCH = """你是就业人岗匹配顾问（冲刺高质岗位模式）。输入包含学生八维供给分与若干岗位的八维需求分及粗排分数。
 你必须只从给定 candidates 的 job_id 中选择并排序，禁止编造不存在的岗位。
@@ -218,6 +223,7 @@ def refine_top5_deepseek(
     goal = (match_goal or "fit").strip().lower()
     is_stretch = goal == "stretch"
     system_content = _SYSTEM_STRETCH if is_stretch else _SYSTEM
+    system_content = f"{system_content}\n{_JSON_EXAMPLE}"
     privacy_notice = llm_privacy_notice()
     if privacy_notice:
         system_content = f"{system_content}\n{privacy_notice}"
@@ -242,7 +248,14 @@ def refine_top5_deepseek(
     }
     user_text = json.dumps(user_obj, ensure_ascii=False)
 
-    client = OpenAI(api_key=api_key.strip(), base_url="https://api.deepseek.com", timeout=timeout)
+    # 关闭 SDK 隐式网络重试，避免一次交互请求被成倍拉长；仅在服务端明确
+    # 拒绝 response_format 时，才降级为普通 JSON 提示重试一次。
+    client = OpenAI(
+        api_key=api_key.strip(),
+        base_url="https://api.deepseek.com",
+        timeout=timeout,
+        max_retries=0,
+    )
 
     kwargs: Dict[str, Any] = {
         "model": model,
@@ -251,26 +264,38 @@ def refine_top5_deepseek(
             {"role": "user", "content": user_text},
         ],
         "temperature": 0.35,
+        "max_tokens": 3200,
+        # DeepSeek V4 defaults to thinking mode. Ranking JSON does not need a
+        # long hidden reasoning pass; disabling it avoids spending the output
+        # budget before message.content is produced.
+        "extra_body": {"thinking": {"type": "disabled"}},
     }
     try:
         resp = client.chat.completions.create(
             **kwargs,
             response_format={"type": "json_object"},
         )
-    except Exception as first:  # noqa: BLE001
+    except BadRequestError as first:
         try:
             resp = client.chat.completions.create(**kwargs)
         except Exception as second:  # noqa: BLE001
             return None, f"deepseek_http_error:{first!r};retry:{second!r}"
+    except Exception as exc:  # noqa: BLE001
+        return None, f"deepseek_http_error:{exc!r}"
 
     try:
-        content = resp.choices[0].message.content or ""
+        choice = resp.choices[0]
+        content = choice.message.content or ""
+        finish_reason = str(getattr(choice, "finish_reason", "") or "")
     except (AttributeError, IndexError) as e:
         return None, f"empty_response:{e}"
 
+    if not content.strip():
+        return None, f"empty_response:finish_reason={finish_reason or 'unknown'}"
+
     parsed, err = _parse_llm_payload(content)
     if err or not parsed:
-        return None, err or "parse_failed"
+        return None, f"{err or 'parse_failed'};finish_reason={finish_reason or 'unknown'};content_length={len(content)}"
 
     raw_items = parsed.get("top5")
     if not isinstance(raw_items, list):

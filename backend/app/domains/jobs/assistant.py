@@ -35,6 +35,11 @@ ALLOWED_FILTER_KEYS = {
 }
 
 
+def _configured_result_limit() -> int:
+    """Server-owned result window; 20 is only a UI page size, not a search cap."""
+    return max(1, min(int(setting("AI_MAX_RETURN_JOBS", 40)), 100))
+
+
 def _coerce_float(value: Any, default: float) -> float:
     try:
         return float(value)
@@ -120,18 +125,17 @@ def _safe_int(value: Any, default: int) -> int:
         return default
 
 
-def _normalize_filters(raw_filters: Dict[str, Any]) -> Dict[str, Any]:
+def _normalize_filters(raw_filters: Dict[str, Any], *, sparse: bool = False) -> Dict[str, Any]:
     filters: Dict[str, Any] = {}
     for key in ALLOWED_FILTER_KEYS:
         if key not in raw_filters:
             continue
         filters[key] = raw_filters[key]
 
-    filters["keywords"] = _clean_text_list(filters.get("keywords"), max_items=8)
-    filters["locations"] = _clean_text_list(filters.get("locations"), max_items=4)
-    filters["company"] = _clean_text_list(filters.get("company"), max_items=3)
-    filters["industry"] = _clean_text_list(filters.get("industry"), max_items=3)
-    filters["salary_text"] = _clean_text_list(filters.get("salary_text"), max_items=3)
+    list_limits = {"keywords": 8, "locations": 4, "company": 3, "industry": 3, "salary_text": 3}
+    for key, max_items in list_limits.items():
+        if key in filters or not sparse:
+            filters[key] = _clean_text_list(filters.get(key), max_items=max_items)
 
     exp_min = _safe_int(filters.get("experience_min"), -1)
     exp_max = _safe_int(filters.get("experience_max"), -1)
@@ -144,9 +148,10 @@ def _normalize_filters(raw_filters: Dict[str, Any]) -> Dict[str, Any]:
     else:
         filters.pop("experience_max", None)
 
-    limit = _safe_int(filters.get("limit"), 20)
-    cfg_max = int(setting("AI_MAX_RETURN_JOBS", 40))
-    filters["limit"] = max(1, min(limit, max(1, cfg_max)))
+    cfg_max = _configured_result_limit()
+    if "limit" in filters or not sparse:
+        limit = _safe_int(filters.get("limit"), cfg_max)
+        filters["limit"] = max(1, min(limit, cfg_max))
     return filters
 
 
@@ -157,19 +162,16 @@ def _merge_filters(previous: Dict[str, Any], current: Dict[str, Any]) -> Dict[st
     return _normalize_filters(merged)
 
 
-def _fallback_parse_filters(message: str) -> Dict[str, Any]:
-    filters: Dict[str, Any] = {
-        "keywords": [],
-        "locations": [],
-        "company": [],
-        "industry": [],
-        "salary_text": [],
-        "limit": 20,
-    }
+def _fallback_parse_filters(message: str, *, has_previous_results: bool = False) -> Dict[str, Any]:
+    filters: Dict[str, Any] = {}
     text = message.strip()
     if not text:
         return {"intent": "qa", "operation": "merge", "filters": filters}
-    filters["keywords"] = [text[:30]]
+    if has_previous_results and re.search(r"(这些|刚才|上面|结果|比较|区别|哪个|哪一个|为什么|分析|解释)", text):
+        return {"intent": "qa", "operation": "merge", "filters": filters}
+    keyword_text = re.sub(r"^(请|麻烦)?(帮我|给我)?(找|搜索|筛选|推荐|看看)\s*", "", text)
+    keyword_text = re.sub(r"(相关)?(岗位|职位|工作)(有哪些|有什么|吗|呢)?$", "", keyword_text).strip(" ，。！？")
+    filters["keywords"] = [keyword_text[:30] or text[:30]]
     return {"intent": "both", "operation": "merge", "filters": filters}
 
 
@@ -177,7 +179,8 @@ def _parse_intent_filters(
     message: str,
     previous_filters: Dict[str, Any],
     context_messages: List[Dict[str, Any]],
-    domain_examples: List[Dict[str, str]],
+    *,
+    has_previous_results: bool = False,
 ) -> Dict[str, Any]:
     try:
         result = call_ark_json(
@@ -187,34 +190,34 @@ def _parse_intent_filters(
                 "输出字段: intent, operation, filters。"
                 "intent 仅允许 filter|qa|both。operation 仅允许 merge|replace。"
                 "filters 只允许这些键: keywords,locations,company,industry,experience_min,experience_max,salary_text,limit。"
+                "只输出本轮用户明确新增、修改或清空的条件；未提及的键必须省略，由服务端继承上一轮。"
+                "仅当用户明确要求结果数量（如‘给我10个’）时才输出 limit，否则省略 limit。"
+                "单纯找岗位用 filter；基于上一轮结果提问、比较或解释用 qa；既筛选又要求分析用 both。"
             ),
             payload={
                 "message": message,
                 "previous_filters": previous_filters,
                 "context_messages": context_messages[-6:],
-                "domain_examples": domain_examples,
                 "output_schema_example": {
                     "intent": "both",
                     "operation": "merge",
                     "filters": {
                         "keywords": ["科研人员"],
                         "locations": ["杭州"],
-                        "company": [],
-                        "industry": [],
                         "experience_min": 1,
                         "experience_max": 5,
                         "salary_text": ["2-3万"],
-                        "limit": 20,
                     },
                 },
             },
             required=True,
+            thinking="disabled",
         )
     except Exception:
-        result = _fallback_parse_filters(message)
+        result = _fallback_parse_filters(message, has_previous_results=has_previous_results)
 
     if not result:
-        result = _fallback_parse_filters(message)
+        result = _fallback_parse_filters(message, has_previous_results=has_previous_results)
 
     intent = str(result.get("intent") or "both").strip().lower()
     if intent not in {"filter", "qa", "both"}:
@@ -223,9 +226,9 @@ def _parse_intent_filters(
     if operation not in {"merge", "replace"}:
         operation = "merge"
 
-    filters = _normalize_filters(_coerce_json(result.get("filters"), {}))
+    filters = _normalize_filters(_coerce_json(result.get("filters"), {}), sparse=True)
     if operation == "replace":
-        merged = filters
+        merged = _normalize_filters(filters)
     else:
         merged = _merge_filters(previous_filters, filters)
     return {"intent": intent, "filters": merged, "operation": operation}
@@ -236,16 +239,15 @@ def _build_filter_cypher(filters: Dict[str, Any]) -> Tuple[str, Dict[str, Any]]:
     params: Dict[str, Any] = {}
 
     keywords = filters.get("keywords") or []
-    for idx, kw in enumerate(keywords):
-        key = f"kw_{idx}"
-        params[key] = str(kw).lower()
+    if keywords:
+        params["keywords"] = [str(kw).lower() for kw in keywords]
         where_parts.append(
-            "("
-            f"toLower(coalesce(j.title, j.name, '')) CONTAINS ${key} OR "
-            f"toLower(coalesce(j.company, '')) CONTAINS ${key} OR "
-            f"toLower(coalesce(j.location, '')) CONTAINS ${key} OR "
-            f"toLower(coalesce(j.demand, '')) CONTAINS ${key} OR "
-            f"toLower(coalesce(j.industry, '')) CONTAINS ${key}"
+            "any(kw IN $keywords WHERE "
+            "toLower(coalesce(j.title, j.name, '')) CONTAINS kw OR "
+            "toLower(coalesce(j.company, '')) CONTAINS kw OR "
+            "toLower(coalesce(j.location, '')) CONTAINS kw OR "
+            "toLower(coalesce(j.demand, '')) CONTAINS kw OR "
+            "toLower(coalesce(j.industry, '')) CONTAINS kw"
             ")"
         )
 
@@ -281,7 +283,7 @@ def _build_filter_cypher(filters: Dict[str, Any]) -> Tuple[str, Dict[str, Any]]:
         params["experience_max"] = int(filters["experience_max"])
         where_parts.append("coalesce(toFloat(j.experience_years), 0.0) <= toFloat($experience_max)")
 
-    params["limit"] = int(filters.get("limit") or 20)
+    params["limit"] = int(filters.get("limit") or _configured_result_limit())
     where_clause = " AND ".join(where_parts)
     query = f"""
     MATCH (j:Job)
@@ -340,7 +342,7 @@ def _query_jobs_with_salary_expansion(
     filters: Dict[str, Any],
     salary_expansion: Dict[str, Any],
 ) -> List[Dict[str, Any]]:
-    limit = int(filters.get("limit") or 20)
+    limit = int(filters.get("limit") or _configured_result_limit())
     if not salary_expansion:
         return _query_jobs(filters)
 
@@ -428,48 +430,9 @@ def _build_fact_summary(jobs: List[Dict[str, Any]]) -> Dict[str, Any]:
     }
 
 
-def _sample_domain_examples(limit: int = 4) -> List[Dict[str, str]]:
-    uri, user, password, database = neo4j_settings()
-    if not password:
-        return []
-    query = f"""
-    MATCH (j:Job)
-    WHERE (j.source IS NULL OR trim(toString(j.source)) = '')
-    WITH j ORDER BY rand()
-    LIMIT $limit
-    RETURN
-      coalesce(j.title, j.name, '未命名岗位') AS title,
-      coalesce(j.company, '未知公司') AS company,
-      coalesce(j.location, '未知地点') AS location,
-      {_SALARY_DISP},
-      {_SALARY_RAW},
-      coalesce(j.industry, '') AS industry,
-      coalesce(j.experience_text, '') AS experience_text,
-      coalesce(j.demand, '') AS demand
-    """
-    driver = neo4j_driver(uri, user, password)
-    with driver.session(database=database) as session:
-        rows = [dict(r) for r in session.run(query, {"limit": max(1, min(limit, 8))})]
-    examples: List[Dict[str, str]] = []
-    for row in rows:
-        examples.append(
-            {
-                "title": str(row.get("title") or ""),
-                "company": str(row.get("company") or ""),
-                "location": str(row.get("location") or ""),
-                "salary": str(row.get("salary") or ""),
-                "industry": str(row.get("industry") or ""),
-                "experience_text": str(row.get("experience_text") or ""),
-                "demand_excerpt": str(row.get("demand") or "")[:160],
-            }
-        )
-    return examples
-
-
 def _expand_salary_semantics(
     message: str,
     filters: Dict[str, Any],
-    domain_examples: List[Dict[str, str]],
 ) -> Dict[str, Any]:
     raw_salary_hints = _clean_text_list(filters.get("salary_text"), max_items=4)
     if not raw_salary_hints and not re.search(r"(薪|工资|月薪|年薪|日薪|k|K|万|元/天|面议)", message):
@@ -494,9 +457,9 @@ def _expand_salary_semantics(
             payload={
                 "message": message,
                 "filters": filters,
-                "domain_examples": domain_examples,
                 "fallback": fallback,
             },
+            thinking="disabled",
         )
     except Exception:
         result = fallback
@@ -612,8 +575,9 @@ def _build_answer_text(
     filters: Dict[str, Any],
     jobs: List[Dict[str, Any]],
     context_messages: List[Dict[str, Any]],
-    domain_examples: List[Dict[str, str]],
     factual_summary: Dict[str, Any],
+    *,
+    use_llm: bool = True,
 ) -> str:
     summary_jobs = [
         {
@@ -628,36 +592,37 @@ def _build_answer_text(
     top_locations = factual_summary.get("top_locations") or []
     top_titles = factual_summary.get("top_titles") or []
     salary_summary = factual_summary.get("salary_summary") or {}
-    try:
-        result = call_ark_json(
-            system_prompt=(
-                "你是岗位检索助手，请根据用户问题和筛选命中结果给出简明回答。"
-                "必须严格以 factual_summary 中的统计事实为准，不得臆造数量、分布、薪资范围。"
-                "如果 factual_summary 没有的事实，宁可不说。"
-                "不要使用“主要集中在”“大多是”“只有X个”这类未经统计明确定义的绝对化表述；"
-                "除非 factual_summary 中存在对应统计字段且能直接支撑该结论。"
-                "优先输出：本轮返回数量、已知地点分布、已知标题分布、已知薪资范围。"
-                "仅输出 JSON：answer,bullet_points。"
-                "answer 用简洁中文，bullet_points 最多 4 条。"
-            ),
-            payload={
-                "question": question,
-                "filters": filters,
-                "matched_count": len(jobs),
-                "factual_summary": factual_summary,
-                "matched_jobs": summary_jobs,
-                "context_messages": context_messages[-6:],
-                "domain_examples": domain_examples,
-            },
-        )
-        answer = str(result.get("answer") or "").strip()
-        bullets = _clean_text_list(result.get("bullet_points"), max_items=4)
-        if bullets:
-            answer = answer + "\n" + "\n".join([f"- {b}" for b in bullets])
-        if answer:
-            return answer
-    except Exception:
-        pass
+    if use_llm:
+        try:
+            result = call_ark_json(
+                system_prompt=(
+                    "你是岗位检索助手，请根据用户问题和筛选命中结果给出简明回答。"
+                    "必须严格以 factual_summary 中的统计事实为准，不得臆造数量、分布、薪资范围。"
+                    "如果 factual_summary 没有的事实，宁可不说。"
+                    "不要使用“主要集中在”“大多是”“只有X个”这类未经统计明确定义的绝对化表述；"
+                    "除非 factual_summary 中存在对应统计字段且能直接支撑该结论。"
+                    "优先输出：本轮返回数量、已知地点分布、已知标题分布、已知薪资范围。"
+                    "仅输出 JSON：answer,bullet_points。"
+                    "answer 用简洁中文，bullet_points 最多 4 条。"
+                ),
+                payload={
+                    "question": question,
+                    "filters": filters,
+                    "matched_count": len(jobs),
+                    "factual_summary": factual_summary,
+                    "matched_jobs": summary_jobs,
+                    "context_messages": context_messages[-6:],
+                },
+                thinking="disabled",
+            )
+            answer = str((result or {}).get("answer") or "").strip()
+            bullets = _clean_text_list((result or {}).get("bullet_points"), max_items=4)
+            if bullets:
+                answer = answer + "\n" + "\n".join([f"- {b}" for b in bullets])
+            if answer:
+                return answer
+        except Exception:
+            pass
 
     if not jobs:
         return "本次没有筛到符合条件的岗位。建议放宽城市、经验或薪资条件后再试。"
@@ -691,11 +656,11 @@ def _build_answer_text(
     return "\n".join(lines)
 
 
-def _extract_previous_filters(session_id: int) -> Dict[str, Any]:
+def _extract_previous_state(session_id: int) -> Tuple[Dict[str, Any], List[str]]:
     with db_cursor() as (_, cursor):
         cursor.execute(
             """
-            SELECT filters_json
+            SELECT filters_json, result_job_ids_json
             FROM ai_chat_messages
             WHERE session_id = %s AND role = 'assistant' AND filters_json IS NOT NULL
             ORDER BY id DESC
@@ -704,7 +669,10 @@ def _extract_previous_filters(session_id: int) -> Dict[str, Any]:
             (session_id,),
         )
         row = cursor.fetchone()
-    return _normalize_filters(_coerce_json((row or {}).get("filters_json"), {}))
+    filters = _normalize_filters(_coerce_json((row or {}).get("filters_json"), {}))
+    raw_ids = _coerce_json((row or {}).get("result_job_ids_json"), [])
+    job_ids = [str(value) for value in raw_ids if str(value).strip()] if isinstance(raw_ids, list) else []
+    return filters, job_ids
 
 
 def _create_or_load_session(user_id: int, session_id: Optional[int], first_text: str) -> int:
@@ -764,22 +732,37 @@ def chat():
         user_message_id = int(cursor.lastrowid)
 
     context_messages = _build_context_messages(session_id)
-    domain_examples = _sample_domain_examples(limit=4)
-    previous_filters = _extract_previous_filters(session_id)
+    if (
+        context_messages
+        and context_messages[-1].get("role") == "user"
+        and context_messages[-1].get("content") == message
+    ):
+        context_messages = context_messages[:-1]
+    previous_filters, previous_result_ids = _extract_previous_state(session_id)
     parse_result = _parse_intent_filters(
         message,
         previous_filters,
         context_messages,
-        domain_examples,
+        has_previous_results=bool(previous_result_ids),
     )
     merged_filters = parse_result["filters"]
 
     intent = parse_result["intent"]
     matched_jobs: List[Dict[str, Any]] = []
     salary_expansion: Dict[str, Any] = {}
-    if intent in {"filter", "both"}:
-        salary_expansion = _expand_salary_semantics(message, merged_filters, domain_examples)
-        matched_jobs = _query_jobs_with_salary_expansion(merged_filters, salary_expansion)
+    try:
+        if intent in {"filter", "both"}:
+            salary_expansion = _expand_salary_semantics(message, merged_filters)
+            matched_jobs = _query_jobs_with_salary_expansion(merged_filters, salary_expansion)
+        elif previous_result_ids:
+            matched_jobs = _query_jobs_by_ids(
+                previous_result_ids[: int(merged_filters.get("limit") or _configured_result_limit())]
+            )
+        elif any(merged_filters.get(key) for key in ("keywords", "locations", "company", "industry")):
+            matched_jobs = _query_jobs(merged_filters)
+    except Exception:  # noqa: BLE001
+        current_app.logger.exception("jobs_assistant_query_failed")
+        return jsonify({"ok": False, "message": "岗位数据服务暂时不可用，请稍后重试"}), 503
     factual_summary = _build_fact_summary(matched_jobs)
 
     answer_text = _build_answer_text(
@@ -787,8 +770,8 @@ def chat():
         merged_filters,
         matched_jobs,
         context_messages,
-        domain_examples,
         factual_summary,
+        use_llm=intent in {"qa", "both"},
     )
     result_ids = [str(item.get("id")) for item in matched_jobs if item.get("id")]
 

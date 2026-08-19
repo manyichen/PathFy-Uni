@@ -1,6 +1,6 @@
 # PathFy Nuxt 前端
 
-正式前端使用 Nuxt 4、Vue 3、Nuxt UI，采用静态 SPA 输出并由 Nginx 托管。旧 Astro/Svelte 实现保存在 `../frontend.old/`，仅供查阅和紧急回退。
+正式前端使用 Nuxt 4、Vue 3、Nuxt UI，采用静态 SPA 输出并由 Nginx 托管。旧 Astro/Svelte 实现保存在 `../frontend.old/`，仅供只读查阅；它不兼容当前图谱接口，不能用于生产发布或回滚。生产回滚必须切换到上一版 Nuxt 静态产物。
 
 ```bash
 pnpm install

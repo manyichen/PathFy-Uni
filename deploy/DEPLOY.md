@@ -395,11 +395,12 @@ pnpm install
 pnpm typecheck
 pnpm test
 pnpm generate
+pnpm bundle:check
 ```
 
-构建产物位于 `frontend/.output/public/`。Nuxt 以 `ssr: false` 生成静态 SPA。
+构建产物位于 `frontend/.output/public/`。Nuxt 以 `ssr: false` 生成静态 SPA。正式发布时将该目录复制到 `releases/frontend/<release-id>/`，再原子切换 `frontend-current` 软链接，详细步骤见 [`docs/FRONTEND_RELEASE_RUNBOOK.md`](../docs/FRONTEND_RELEASE_RUNBOOK.md)。
 
-也可在本地 Windows 构建后，仅上传 `dist/` 目录到服务器对应路径。
+也可在本地 Windows 构建后，仅上传 `.output/public/` 内容到新的版本目录；禁止直接覆盖当前线上目录。
 
 ### 9.3 构建失败排查
 
@@ -417,7 +418,7 @@ pnpm generate
 | 项 | 值 |
 |----|-----|
 | 域名 | `suilli.top`、`www.suilli.top` |
-| 根目录 | `/www/wwwroot/pathfy-uni/frontend/.output/public` |
+| 根目录 | `/www/wwwroot/pathfy-uni/frontend-current` |
 | PHP | 纯静态（不创建 PHP） |
 
 ### 10.2 申请 SSL 证书
@@ -570,7 +571,7 @@ curl -s https://suilli.top/api/health
 | 4 | `/profile` | 上传简历、生成能力画像 |
 | 5 | `/jobs` | 岗位列表有数据（需 Neo4j 已导入） |
 | 6 | `/match` | 人岗匹配可返回结果 |
-| 7 | `/report` | 生涯报告可生成（需 AI Key） |
+| 7 | `/report` | 基础报告快速生成；AI Key 可用时后台增强，失败不影响基础报告 |
 
 ### 14.3 安全抽查
 
@@ -592,8 +593,8 @@ git pull
 # 后端依赖有变更时
 cd backend && source .venv/bin/activate && pip install -r requirements.txt
 
-# 前端有变更时
-cd ../frontend && pnpm install --frozen-lockfile && pnpm generate
+# 前端有变更时：构建后按发布手册创建版本目录并原子切换
+cd ../frontend && pnpm install --frozen-lockfile && pnpm typecheck && pnpm test && pnpm generate && pnpm bundle:check
 
 # 数据库迁移后启动/重启图谱任务 worker
 cd ../backend && alembic upgrade head

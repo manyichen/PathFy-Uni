@@ -1,6 +1,6 @@
-"""人岗匹配 HTTP 路由。"""
+"""Person-job matching HTTP routes."""
 
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, current_app, jsonify, request
 
 from app.core.security import get_bearer_user_id
 from app.domains.match.services import run_match_preview
@@ -17,6 +17,13 @@ def _require_user():
     return uid, None
 
 
+def _schema_error_message(action: str, exc: Exception) -> str:
+    text = str(exc)
+    if "Unknown column" in text or "doesn't exist" in text or "1146" in text or "1054" in text:
+        return f"{action}失败：数据库结构未升级，请先执行 alembic upgrade head 或运行 schema 体检"
+    return f"{action}失败: {exc}"
+
+
 @match_bp.get("/history")
 def list_match_history():
     uid, err = _require_user()
@@ -30,7 +37,8 @@ def list_match_history():
     try:
         items = list_user_match_history(user_id=uid, limit=limit)
     except Exception as exc:  # noqa: BLE001
-        return jsonify({"ok": False, "message": f"加载匹配历史失败: {exc}"}), 500
+        current_app.logger.exception("match_history_failed")
+        return jsonify({"ok": False, "message": _schema_error_message("加载匹配历史", exc)}), 500
     return jsonify({"ok": True, "data": {"items": items}})
 
 
@@ -39,7 +47,11 @@ def get_match_history_detail(run_id: int):
     uid, err = _require_user()
     if err:
         return err
-    data = fetch_match_run_detail(user_id=uid, run_id=run_id)
+    try:
+        data = fetch_match_run_detail(user_id=uid, run_id=run_id)
+    except Exception as exc:  # noqa: BLE001
+        current_app.logger.exception("match_history_detail_failed")
+        return jsonify({"ok": False, "message": _schema_error_message("加载匹配详情", exc)}), 500
     if not data:
         return jsonify({"ok": False, "message": "记录不存在或无权访问"}), 404
     return jsonify({"ok": True, "data": data})
@@ -55,10 +67,15 @@ def match_preview():
     overrides = {key: body[key] for key in ("match_goal", "refine_with_llm") if key in body}
     resolved = effective_preferences(jwt_user_id, request_overrides=overrides, system_snapshot=system)
     body.setdefault("match_goal", resolved["effective"]["default_match_goal"])
+    if not resolved["effective"].get("use_personality_in_match", True):
+        body["preference_mode"] = "off"
+    else:
+        body.setdefault("preference_mode", resolved["effective"].get("default_preference_mode", "explain"))
     body["refine_with_llm"] = resolved["effective"]["default_refine_with_llm"]
     snapshot = dict(system["settings"])
     snapshot["MATCH_TOP_K_RETURN"] = resolved["effective"]["match_result_count"]
-    body["_settings_revision"] = system.get("revision"); body["_config_snapshot"] = snapshot
+    body["_settings_revision"] = system.get("revision")
+    body["_config_snapshot"] = snapshot
     with use_settings(snapshot):
         data_out, err, status = run_match_preview(body, jwt_user_id)
     if err:

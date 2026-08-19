@@ -274,7 +274,10 @@ def resolve_replan_mode(
     all_passed: bool,
     failed_codes: List[str],
     consecutive_fail_months: int,
+    has_evidence: bool = True,
 ) -> str:
+    if not has_evidence:
+        return "insufficient"
     if all_passed and not failed_codes:
         return "continue"
     if consecutive_fail_months >= 2:
@@ -290,6 +293,7 @@ def apply_replan_after_review(
     review_anchor_month: float,
     replan_mode: str,
     metric_eval: Dict[str, Any],
+    target_job_ids: List[str] | None = None,
 ) -> None:
     """写回 plans_by_target.next_month_plan，并刷新 development_lines.adjustments。"""
     if not adjust_detail.get("triggered"):
@@ -311,7 +315,19 @@ def apply_replan_after_review(
     if not isinstance(submitted_adj, dict):
         submitted_adj = {}
     ev_lr = lr.get("evaluation") or {}
-    pass_adj = float((ev_lr or {}).get("pass_rate") or 0.0)
+    raw_pass_adj = (ev_lr or {}).get("pass_rate")
+    try:
+        pass_adj = float(raw_pass_adj) if raw_pass_adj not in (None, "") else None
+    except (TypeError, ValueError):
+        pass_adj = None
+    action_completion = lr.get("action_completion") or (ev_lr or {}).get("action_completion") or {}
+    if not isinstance(action_completion, dict):
+        action_completion = {}
+    raw_action_rate = action_completion.get("completion_rate")
+    try:
+        action_rate = float(raw_action_rate) if raw_action_rate not in (None, "") else None
+    except (TypeError, ValueError):
+        action_rate = None
     failed_rows = [r for r in (metric_eval.get("rows") or []) if isinstance(r, dict) and not r.get("passed")]
 
     am_int = int(min(12, max(0, int(round(float(review_anchor_month))))))
@@ -328,6 +344,7 @@ def apply_replan_after_review(
         adjustments = []
         dev_lines["adjustments"] = adjustments
     existing_adjust_ids = {str(x.get("id") or "") for x in adjustments if isinstance(x, dict)}
+    scoped_ids = {str(value).strip() for value in (target_job_ids or []) if str(value).strip()}
 
     for li, line in enumerate(lines):
         if not isinstance(line, dict):
@@ -335,6 +352,8 @@ def apply_replan_after_review(
         line_id = str(line.get("line_id") or "").strip()
         job_id = str(line.get("target_job_id") or "").strip()
         if not line_id or not job_id:
+            continue
+        if scoped_ids and job_id not in scoped_ids:
             continue
         plan = find_plan_for_job_id(report_obj, job_id)
         if not plan:
@@ -369,6 +388,7 @@ def apply_replan_after_review(
             pass_rate=pass_adj,
             prev_progress=prev_progress,
             month_span=month_span,
+            action_completion_rate=action_rate,
         )
         phase_key = next_plan.get("phase_key") or phase_key_for_plan_month(plan_month)
         stage = _PHASE_TO_STAGE.get(str(phase_key), "short_term")

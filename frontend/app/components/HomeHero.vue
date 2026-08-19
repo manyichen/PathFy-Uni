@@ -1,4 +1,7 @@
 <script setup lang="ts">
+const { isAuthenticated } = useAuth()
+const journey = useAuthJourney()
+
 const metrics = [
   { label: '岗位样本', value: '10,000+', icon: 'i-lucide-briefcase-business' },
   { label: '画像维度', value: '8 维', icon: 'i-lucide-radar' },
@@ -6,11 +9,18 @@ const metrics = [
 ]
 
 const workflow = [
-  { title: '探索岗位', desc: '理解真实市场要求', icon: 'i-lucide-search' },
-  { title: '生成画像', desc: '定位优势与短板', icon: 'i-lucide-scan-face' },
-  { title: '匹配分析', desc: '拆解差距原因', icon: 'i-lucide-git-compare' },
-  { title: '行动计划', desc: '沉淀阶段任务', icon: 'i-lucide-list-checks' }
+  { title: '整理材料', desc: '建立能力证据', icon: 'i-lucide-folder-check' },
+  { title: '生成画像', desc: '定位优势短板', icon: 'i-lucide-scan-face' },
+  { title: '匹配岗位', desc: '比较真实要求', icon: 'i-lucide-git-compare' },
+  { title: '行动计划', desc: '拆解阶段任务', icon: 'i-lucide-list-checks' },
+  { title: '持续复盘', desc: '用结果校准', icon: 'i-lucide-refresh-cw' }
 ]
+
+const entryActions = computed(() => [
+  { to: '/profile', label: isAuthenticated.value ? '继续能力画像' : '开始能力画像', icon: 'i-lucide-radar', primary: true },
+  { to: '/jobs', label: isAuthenticated.value ? '继续岗位探索' : '浏览岗位库', icon: 'i-lucide-search', primary: false },
+  { to: '/report', label: isAuthenticated.value ? '继续生涯报告' : '生成生涯报告', icon: 'i-lucide-file-chart-column', primary: false }
+])
 
 const focusItems = [
   { label: '实践能力', value: 82 },
@@ -55,31 +65,34 @@ const radarPolygon = computed(() => radarAxes.map((axis, index) => {
 </script>
 
 <template>
-  <section class="home-hero overflow-hidden" aria-labelledby="home-hero-title">
+  <section class="home-hero overflow-hidden" :class="{ 'is-auth-revealing': journey.isRevealing.value }" aria-labelledby="home-hero-title">
     <img
       src="https://images.unsplash.com/photo-1552664730-d307ca884978?auto=format&fit=crop&w=1800&q=82"
       alt=""
       aria-hidden="true"
+      width="1800"
+      height="1000"
+      fetchpriority="high"
+      decoding="async"
       class="hero-image"
     >
     <div class="hero-overlay" />
 
     <div class="hero-content">
       <div class="max-w-3xl">
-        <UBadge color="primary" variant="soft" icon="i-lucide-route" label="大学生职业规划工作台" />
-        <h1 id="home-hero-title" class="mt-5 max-w-3xl text-4xl font-bold leading-tight text-white sm:text-6xl">
+        <UBadge class="hero-enter hero-enter-badge" color="primary" variant="soft" icon="i-lucide-route" label="大学生职业规划工作台" />
+        <h1 id="home-hero-title" class="hero-enter hero-enter-title mt-5 max-w-3xl text-4xl font-bold leading-tight text-white sm:text-6xl">
           职业规划智能体
         </h1>
-        <p class="mt-5 max-w-2xl text-base leading-7 text-white/80 sm:text-lg sm:leading-8">
-          把岗位数据、能力画像、人岗匹配和生涯报告放进同一条工作流，让职业方向变成可解释、可执行、可复盘的行动计划。
+        <p class="hero-enter hero-enter-copy mt-5 max-w-2xl text-base leading-7 text-white/80 sm:text-lg sm:leading-8">
+          把岗位数据、能力证据、工作偏好、人岗匹配和生涯报告放进同一条工作流，让职业方向变成可解释、可执行、可复盘的行动计划。
         </p>
-        <div class="mt-7 flex flex-wrap gap-3">
-          <UButton to="/profile" size="xl" color="neutral" icon="i-lucide-upload-cloud">开始能力画像</UButton>
-          <UButton to="/jobs" size="xl" color="neutral" variant="outline" icon="i-lucide-search">浏览岗位库</UButton>
+        <div class="hero-enter hero-enter-actions mt-7 grid gap-3 sm:grid-cols-3" aria-label="规划快捷入口">
+          <UButton v-for="action in entryActions" :key="action.to" :to="action.to" size="xl" color="neutral" :variant="action.primary ? 'solid' : 'outline'" :icon="action.icon">{{ action.label }}</UButton>
         </div>
       </div>
 
-      <div class="mt-8 grid gap-4 lg:grid-cols-[1.08fr_0.92fr]">
+      <div class="hero-enter hero-enter-console mt-8 grid gap-4 lg:grid-cols-[1.08fr_0.92fr]">
         <div class="hero-panel">
           <div class="flex flex-wrap items-center justify-between gap-3">
             <div>
@@ -97,7 +110,7 @@ const radarPolygon = computed(() => radarAxes.map((axis, index) => {
             </div>
           </div>
 
-          <div class="mt-4 hidden gap-2 sm:grid sm:grid-cols-2 lg:grid-cols-4">
+          <div class="mt-4 hidden gap-2 sm:grid sm:grid-cols-2 lg:grid-cols-5">
             <div v-for="(step, index) in workflow" :key="step.title" class="workflow-tile">
               <div class="grid size-8 place-items-center rounded-lg bg-white/12 text-cyan-100">
                 <UIcon :name="step.icon" class="size-5" />
@@ -207,5 +220,34 @@ const radarPolygon = computed(() => radarAxes.map((axis, index) => {
   border-radius: 0.65rem;
   background: rgb(255 255 255 / 0.08);
   padding: 0.75rem;
+}
+
+.is-auth-revealing .hero-enter {
+  animation: auth-home-enter 1.9s cubic-bezier(.22, 1, .36, 1) both;
+}
+
+.is-auth-revealing .hero-image {
+  animation: auth-home-surface-enter 2.35s cubic-bezier(.22, 1, .36, 1) both;
+}
+
+.is-auth-revealing .hero-enter-badge { animation-delay: 1.05s; }
+.is-auth-revealing .hero-enter-title { animation-delay: 1.15s; }
+.is-auth-revealing .hero-enter-copy { animation-delay: 1.27s; }
+.is-auth-revealing .hero-enter-actions { animation-delay: 1.39s; }
+.is-auth-revealing .hero-enter-console { animation-delay: 1.52s; }
+
+@keyframes auth-home-enter {
+    from { opacity: 0; filter: blur(7px); transform: translateX(-76px) scale(.992); }
+    to { opacity: 1; filter: blur(0); transform: translateX(0) scale(1); }
+}
+
+@keyframes auth-home-surface-enter {
+    from { opacity: .38; filter: saturate(.72) blur(3px); transform: translateX(-4.5%) scale(1.055); }
+    to { opacity: .74; filter: saturate(1) blur(0); transform: translateX(0) scale(1); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .is-auth-revealing .hero-enter,
+  .is-auth-revealing .hero-image { animation: none; }
 }
 </style>

@@ -1,0 +1,1 @@
+<template><NuxtLink to="/" class="brand-link" aria-label="PathFy 首页"><span class="brand-mark"><img src="/assets/home/fu.svg" alt="" class="size-7"></span><span class="brand-copy"><span class="brand-name">PathFy</span><span class="brand-subtitle">职业规划智能体</span></span></NuxtLink></template>

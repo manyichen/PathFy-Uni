@@ -1,5 +1,6 @@
 """分岗动态规划：阶段月份与下月计划写回。"""
 from app.domains.report.replan_by_target import (
+    apply_replan_after_review,
     build_next_month_plan_for_job,
     ensure_next_month_plans_for_report,
     phase_key_for_plan_month,
@@ -56,6 +57,44 @@ def test_resolve_replan_mode():
     assert resolve_replan_mode(all_passed=True, failed_codes=[], consecutive_fail_months=0) == "continue"
     assert resolve_replan_mode(all_passed=False, failed_codes=["x"], consecutive_fail_months=1) == "light"
     assert resolve_replan_mode(all_passed=False, failed_codes=["x"], consecutive_fail_months=2) == "strong"
+    assert resolve_replan_mode(all_passed=False, failed_codes=[], consecutive_fail_months=0, has_evidence=False) == "insufficient"
+
+
+def test_replan_only_mutates_scoped_target():
+    first = _sample_plan()
+    second = {**_sample_plan(), "job_id": "j2"}
+    report = {
+        "plans_by_target": [first, second],
+        "evaluation": {"latest_review": {"submitted_metrics": {}, "evaluation": {"pass_rate": 0.5}}},
+        "development_lines": {
+            "lines": [
+                {"line_id": "line_1", "target_job_id": "j1", "timeline": []},
+                {"line_id": "line_2", "target_job_id": "j2", "timeline": []},
+            ],
+            "adjustments": [],
+        },
+    }
+    adjustment = {
+        "triggered": True,
+        "extra_actions": ["完成一个可展示项目"],
+        "focus_dimensions": ["cap_req_practice"],
+        "focus_labels": ["实践"],
+        "by_job": [],
+    }
+
+    apply_replan_after_review(
+        report,
+        adjustment,
+        stamp="20260819010101",
+        review_anchor_month=1,
+        replan_mode="light",
+        metric_eval={"rows": []},
+        target_job_ids=["j1"],
+    )
+
+    assert first.get("current_plan_month") == 2
+    assert second.get("current_plan_month") is None
+    assert [item["target_job_id"] for item in report["development_lines"]["adjustments"]] == ["j1"]
 
 
 def test_build_next_month_plan_uses_mid_phase():

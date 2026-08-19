@@ -58,6 +58,10 @@ __pycache__/
 *.pyd
 *.so
 .pytest_cache/
+.tmp/
+backend/.pytest-*/
+frontend/test-results/
+frontend/playwright-report/
 .idea/
 backend/app/static
 

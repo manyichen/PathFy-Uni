@@ -1,11 +1,13 @@
 """Pure job-list behavior retained while the jobs router is split."""
 
 from app.domains.jobs.listing import (
+    job_row_from_properties,
     jobs_order_clause,
     jobs_page_payload,
     jobs_shuffle_key,
     normalize_jobs_sort,
 )
+from app.infrastructure.neo4j import CONF_KEYS, DIM_KEYS
 
 
 def _row(job_id: str, score: float = 50.0) -> dict:
@@ -49,3 +51,39 @@ def test_page_payload_preserves_shape_and_bounds_page():
     assert payload["total_pages"] == 2
     assert payload["seed"] == "fixed"
     assert [row["id"] for row in payload["jobs"]] == ["c"]
+
+
+def test_property_map_normalization_preserves_the_job_card_contract():
+    row = job_row_from_properties(
+        {
+            "job_key": "job-1",
+            "title": "数据分析师",
+            "salary": "15-20K",
+            "company": "示例公司",
+            "location": "上海",
+            "cap_req_digital": 88,
+            "cap_conf_digital": 0.82,
+            "workstyle_interaction": 78,
+            "workstyle_conf_interaction": 0.8,
+            "workstyle_evidence_json": '{"interaction_intensity":[{"text":"需要跨团队沟通"}]}',
+        },
+        "node-1",
+    )
+
+    assert row["id"] == "job-1"
+    assert row["title"] == "数据分析师"
+    assert row["salary"] == "15-20K"
+    assert row["cap_req_digital"] == 88
+    assert row["cap_conf_digital"] == 0.82
+    assert row["workstyle"]["axes"][0]["value"] == 78
+    assert all(key in row for key in (*DIM_KEYS, *CONF_KEYS))
+
+
+def test_property_map_normalization_has_display_fallbacks():
+    row = job_row_from_properties({}, "node-fallback")
+
+    assert row["id"] == "node-fallback"
+    assert row["title"] == "未命名岗位"
+    assert row["salary"] == "薪资面议"
+    assert row["company"] == "未知公司"
+    assert row["location"] == "未知地点"

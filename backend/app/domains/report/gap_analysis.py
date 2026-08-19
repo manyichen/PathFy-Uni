@@ -132,8 +132,10 @@ def compute_review_gap_metrics(
     report_obj: Dict[str, Any],
     profile: Dict[str, Any],
     job_cards: List[Dict[str, Any]],
+    *,
+    target_job_id: str | None = None,
 ) -> Dict[str, float]:
-    """用当前画像重算相对主目标 JD 的缺口，对比报告基线。"""
+    """用当前画像重算指定目标（默认主目标）的缺口，对比报告基线。"""
     eval_block = report_obj.get("evaluation") if isinstance(report_obj.get("evaluation"), dict) else {}
     baseline = eval_block.get("gap_baseline") if isinstance(eval_block.get("gap_baseline"), dict) else {}
     if not baseline:
@@ -145,9 +147,11 @@ def compute_review_gap_metrics(
     student_scores = profile.get("scores") or {}
     student_conf = profile.get("confidences") or {}
 
-    primary_id = str(baseline.get("primary_job_id") or "").strip()
+    primary_id = str(target_job_id or baseline.get("primary_job_id") or "").strip()
+    baseline_by_job = baseline.get("by_job_id") if isinstance(baseline.get("by_job_id"), dict) else {}
+    scoped_baseline = baseline_by_job.get(primary_id) if isinstance(baseline_by_job.get(primary_id), dict) else baseline
     card = next((c for c in job_cards if str(c.get("id") or "") == primary_id), None)
-    if not card and job_cards:
+    if not card and not target_job_id and job_cards:
         card = job_cards[0]
 
     out: Dict[str, float] = {}
@@ -161,11 +165,11 @@ def compute_review_gap_metrics(
             shape_weight=shape_w,
         )
         out["dim_gap_reduction"] = _pct_reduction(
-            float(baseline.get("weighted_gap_job") or 0),
+            float(scoped_baseline.get("weighted_gap") or scoped_baseline.get("weighted_gap_job") or 0),
             float(wg_now),
         )
         out["match_score_change"] = round(
-            float(ms) - float(baseline.get("match_score") or 0),
+            float(ms) - float(scoped_baseline.get("match_score") or 0),
             2,
         )
     return out

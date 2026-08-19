@@ -13,16 +13,41 @@ from typing import Any, Dict, List, Tuple
 from flask import current_app
 from app.db import db_cursor
 from app.infrastructure.neo4j import CONF_KEYS, DIM_KEYS, neo4j_driver, neo4j_settings, serialize_job_row
-from app.infrastructure.salary import cypher_job_salary_display, cypher_job_salary_raw
-
-_SALARY_DISP = cypher_job_salary_display()
-_SALARY_RAW = cypher_job_salary_raw()
 from app.domains.match.capability_profile import serialize_capability_profile
 from app.domains.match.llm_refine import refine_top5_deepseek
+from app.domains.match.preference_fit import (
+    PREFERENCE_FIT_ALGORITHM_VERSION,
+    build_preference_fit,
+)
+from app.domains.match.preference_ranking import (
+    PREFERENCE_EXPERIMENT_KEY,
+    PREFERENCE_RANKING_VERSION,
+    apply_preference_tie_break,
+    experiment_variant,
+)
 from app.domains.match.snapshots import persist_match_snapshot
+from app.domains.jobs.workstyle import WORKSTYLE_PROPERTY_KEYS, WORKSTYLE_SNAPSHOT_VERSION, build_job_workstyle
+from app.domains.personality.preference_profile import preference_context_summary, resolve_preference_profile
 from app.domains.settings.service import setting, settings_view
 
 _DIM_TO_CONF: Dict[str, str] = {d: c for d, c in zip(DIM_KEYS, CONF_KEYS)}
+_INTERACTIVE_LLM_POOL_CAP = 20
+_INTERACTIVE_LLM_TIMEOUT_CAP_SECONDS = 90.0
+_PRIMARY_LLM_TIMEOUT_CAP_SECONDS = 55.0
+_FALLBACK_LLM_POOL_CAP = 10
+_FALLBACK_LLM_TIMEOUT_CAP_SECONDS = 30.0
+_RETRYABLE_LLM_ERROR_CODES = {"timeout", "network", "rate_limit", "invalid_response"}
+
+_DIM_LABELS = {
+    "cap_req_theory": "专业理论",
+    "cap_req_cross": "交叉学科",
+    "cap_req_practice": "实践技能",
+    "cap_req_digital": "数字素养",
+    "cap_req_innovation": "创新创业",
+    "cap_req_teamwork": "团队协作",
+    "cap_req_social": "社会网络",
+    "cap_req_growth": "学习成长",
+}
 
 
 def _json_dumps(obj: Any) -> str:
@@ -108,7 +133,12 @@ def _fetch_jobs_for_match(
     cap: int,
 ) -> List[Dict[str, Any]]:
     uri, user, password, database = neo4j_settings()
-    query = f"""
+    # Keep the Cypher projection deliberately small. The production Neo4j
+    # instance resets its Bolt connection when the text predicates and 23
+    # individual capability projections are compiled in the same query.
+    # Returning the property map is equivalent for this read path; Python does
+    # the inexpensive fallback/alias normalization below.
+    query = """
     MATCH (j:Job)
     WHERE (j.source IS NULL OR trim(toString(j.source)) = '')
       AND (
@@ -121,35 +151,36 @@ def _fetch_jobs_for_match(
         $loc = '' OR
         toLower(coalesce(j.location, '')) CONTAINS toLower($loc)
       )
-    RETURN
-      coalesce(j.job_key, j.job_code, j.name, j.title, elementId(j)) AS id,
-      coalesce(j.title, j.name, '未命名岗位') AS title,
-      {_SALARY_DISP},
-      {_SALARY_RAW},
-      coalesce(j.company, '未知公司') AS company,
-      coalesce(j.location, '未知地点') AS location,
-      coalesce(j.cap_risk_flags, []) AS risk_flags,
-      coalesce(j.cap_req_theory, 0.0) AS cap_req_theory,
-      coalesce(j.cap_req_cross, 0.0) AS cap_req_cross,
-      coalesce(j.cap_req_practice, 0.0) AS cap_req_practice,
-      coalesce(j.cap_req_digital, 0.0) AS cap_req_digital,
-      coalesce(j.cap_req_innovation, 0.0) AS cap_req_innovation,
-      coalesce(j.cap_req_teamwork, 0.0) AS cap_req_teamwork,
-      coalesce(j.cap_req_social, 0.0) AS cap_req_social,
-      coalesce(j.cap_req_growth, 0.0) AS cap_req_growth,
-      coalesce(j.cap_conf_theory, 0.0) AS cap_conf_theory,
-      coalesce(j.cap_conf_cross, 0.0) AS cap_conf_cross,
-      coalesce(j.cap_conf_practice, 0.0) AS cap_conf_practice,
-      coalesce(j.cap_conf_digital, 0.0) AS cap_conf_digital,
-      coalesce(j.cap_conf_innovation, 0.0) AS cap_conf_innovation,
-      coalesce(j.cap_conf_teamwork, 0.0) AS cap_conf_teamwork,
-      coalesce(j.cap_conf_social, 0.0) AS cap_conf_social,
-      coalesce(j.cap_conf_growth, 0.0) AS cap_conf_growth
+    OPTIONAL MATCH (j)-[:HAS_TITLE]->(jt:JobTitle)
+    WITH j, head(collect(jt)) AS jt
+    RETURN properties(j) AS job, properties(jt) AS job_title, elementId(j) AS element_id
     LIMIT $cap
     """
     driver = neo4j_driver(uri, user, password)
     with driver.session(database=database) as session:
-        return [dict(r) for r in session.run(query, {"q": q, "loc": location_q, "cap": int(cap)})]
+        records = session.run(query, {"q": q, "loc": location_q, "cap": int(cap)})
+        return [_job_properties_to_match_row(r["job"], r["element_id"], r.get("job_title")) for r in records]
+
+
+def _job_properties_to_match_row(properties: Any, element_id: Any, job_title_properties: Any = None) -> Dict[str, Any]:
+    """Normalize a Neo4j Job property map to the existing match row contract."""
+    props = dict(properties or {})
+    fallback_id = str(element_id or "")
+    row: Dict[str, Any] = {
+        "id": props.get("job_key") or props.get("job_code") or props.get("name") or props.get("title") or fallback_id,
+        "title": props.get("title") or props.get("name") or "未命名岗位",
+        "salary": props.get("salary_norm") or props.get("salary") or "薪资面议",
+        "salary_raw": props.get("salary") or "",
+        "company": props.get("company") or "未知公司",
+        "location": props.get("location") or "未知地点",
+        "risk_flags": props.get("cap_risk_flags") or [],
+    }
+    for key in (*DIM_KEYS, *CONF_KEYS):
+        row[key] = props.get(key) or 0.0
+    for key in WORKSTYLE_PROPERTY_KEYS:
+        row[key] = props.get(key)
+    row["workstyle"] = build_job_workstyle(props, dict(job_title_properties or {}))
+    return row
 
 
 def _student_row_to_serialized_profile(row: Dict[str, Any]) -> Dict[str, Any]:
@@ -236,6 +267,202 @@ def _clamp_int(value: int, lo: int, hi: int) -> int:
     return max(lo, min(hi, int(value)))
 
 
+def _effective_llm_pool_k(configured: int) -> int:
+    return min(_INTERACTIVE_LLM_POOL_CAP, _clamp_int(configured, 5, 100))
+
+
+def _effective_llm_timeout(configured: float) -> float:
+    return min(_INTERACTIVE_LLM_TIMEOUT_CAP_SECONDS, max(10.0, float(configured)))
+
+
+def _llm_error_code(error: str | None) -> str:
+    text = str(error or "").lower()
+    if any(token in text for token in ("apitimeouterror", "timed out", "timeout")):
+        return "timeout"
+    if any(token in text for token in ("ratelimiterror", "rate limit", "status_code=429", " 429")):
+        return "rate_limit"
+    if any(token in text for token in ("authenticationerror", "invalid api key", "status_code=401", " 401")):
+        return "authentication"
+    if any(token in text for token in ("insufficient balance", "insufficient_balance", "余额不足", "quota")):
+        return "quota"
+    if any(token in text for token in ("apiconnectionerror", "connecterror", "connection refused", "network")):
+        return "network"
+    if any(token in text for token in ("json_decode_error", "missing_top5", "parse_failed", "empty_response")):
+        return "invalid_response"
+    if "badrequesterror" in text or "status_code=400" in text:
+        return "bad_request"
+    return "unknown"
+
+
+def _llm_public_error(code: str) -> str:
+    messages = {
+        "timeout": "AI 精排两次响应均超时，可能是服务繁忙；完整粗排结果不受影响。",
+        "rate_limit": "AI 精排请求触发服务限流，请稍后再试；完整粗排结果不受影响。",
+        "authentication": "AI 精排服务鉴权失败，请检查 DeepSeek 密钥；完整粗排结果不受影响。",
+        "quota": "AI 精排服务额度不足，请检查账户余额；完整粗排结果不受影响。",
+        "network": "服务器暂时无法连接 AI 精排服务；完整粗排结果不受影响。",
+        "invalid_response": "AI 返回内容格式异常，请重试；完整粗排结果不受影响。",
+        "bad_request": "AI 精排请求未被模型接受，请检查模型配置；完整粗排结果不受影响。",
+        "unknown": "AI 精排服务暂时不可用；完整粗排结果不受影响。",
+    }
+    return messages.get(code, messages["unknown"])
+
+
+def _refine_with_timeout_fallback(
+    profile: Dict[str, Any],
+    pool: List[Dict[str, Any]],
+    *,
+    api_key: str,
+    model: str,
+    configured_timeout: float,
+    match_goal: str,
+) -> Tuple[Dict[str, Any] | None, Dict[str, Any]]:
+    """Run a bounded refinement and retry transient failures with a smaller prompt."""
+    effective_timeout = _effective_llm_timeout(configured_timeout)
+    primary_timeout = min(_PRIMARY_LLM_TIMEOUT_CAP_SECONDS, effective_timeout)
+    payload, error = refine_top5_deepseek(
+        profile,
+        pool,
+        api_key=api_key,
+        model=model,
+        timeout=primary_timeout,
+        match_goal=match_goal,
+    )
+    if payload:
+        return payload, {
+            "retry_attempted": False,
+            "degraded": False,
+            "initial_pool_size": len(pool),
+        }
+
+    primary_code = _llm_error_code(error)
+    if primary_code not in _RETRYABLE_LLM_ERROR_CODES or len(pool) <= _FALLBACK_LLM_POOL_CAP:
+        return None, {
+            "error_code": primary_code,
+            "error": _llm_public_error(primary_code),
+            "diagnostic": error,
+            "retry_attempted": False,
+            "degraded": False,
+            "initial_pool_size": len(pool),
+        }
+
+    fallback_pool = pool[:_FALLBACK_LLM_POOL_CAP]
+    fallback_timeout = min(_FALLBACK_LLM_TIMEOUT_CAP_SECONDS, effective_timeout)
+    fallback_payload, fallback_error = refine_top5_deepseek(
+        profile,
+        fallback_pool,
+        api_key=api_key,
+        model=model,
+        timeout=fallback_timeout,
+        match_goal=match_goal,
+    )
+    if fallback_payload:
+        return fallback_payload, {
+            "retry_attempted": True,
+            "degraded": True,
+            "fallback_reason": primary_code,
+            "initial_pool_size": len(pool),
+            "fallback_pool_size": len(fallback_pool),
+        }
+
+    fallback_code = _llm_error_code(fallback_error)
+    return None, {
+        "error_code": fallback_code,
+        "error": _llm_public_error(fallback_code),
+        "diagnostic": fallback_error,
+        "retry_attempted": True,
+        "degraded": True,
+        "fallback_reason": primary_code,
+        "initial_pool_size": len(pool),
+        "fallback_pool_size": len(fallback_pool),
+    }
+
+
+def _dimension_comparison_lines(
+    student_scores: Dict[str, Any],
+    job_scores: Dict[str, Any],
+) -> Tuple[List[str], List[str]]:
+    """Build concise, evidence-based strengths and gaps for local refinement."""
+    comparisons: List[Tuple[str, float, float, float]] = []
+    for key in DIM_KEYS:
+        student = float(student_scores.get(key) or 0.0)
+        required = float(job_scores.get(key) or 0.0)
+        comparisons.append((key, student - required, student, required))
+
+    strengths: List[str] = []
+    for key, delta, student, required in sorted(comparisons, key=lambda row: row[1], reverse=True):
+        if delta < -2 and strengths:
+            break
+        label = _DIM_LABELS.get(key, key)
+        if delta >= 3:
+            strengths.append(f"{label}高于岗位要求 {delta:.0f} 分（{student:.0f} / {required:.0f}）")
+        elif delta >= -2:
+            strengths.append(f"{label}与岗位要求基本持平（{student:.0f} / {required:.0f}）")
+        if len(strengths) >= 3:
+            break
+
+    gaps: List[str] = []
+    for key, delta, student, required in sorted(comparisons, key=lambda row: row[1]):
+        if delta >= -3:
+            break
+        label = _DIM_LABELS.get(key, key)
+        gaps.append(f"{label}尚差 {abs(delta):.0f} 分（{student:.0f} / {required:.0f}），建议优先补强")
+        if len(gaps) >= 3:
+            break
+
+    if not strengths:
+        strengths.append("能力轮廓与岗位方向接近，可从现有优势维度切入准备")
+    if not gaps:
+        gaps.append("暂无显著能力短板，下一步重点补充项目证据与岗位案例")
+    return strengths, gaps
+
+
+def _local_refine_top5(
+    profile: Dict[str, Any],
+    pool: List[Dict[str, Any]],
+    *,
+    match_goal: str,
+) -> Dict[str, Any]:
+    """Deterministic local fallback so external LLM failures never empty Top 5."""
+    student_scores = profile.get("scores") or {}
+    rows: List[Dict[str, Any]] = []
+    for rank, job in enumerate(pool[:5], start=1):
+        preview = job.get("match_preview") or {}
+        score = round(float(preview.get("match_score") or 0.0), 1)
+        strengths, gaps = _dimension_comparison_lines(student_scores, job.get("scores") or {})
+        conf_avg = float(job.get("conf_avg") or 0.0)
+        risks: List[str] = []
+        if conf_avg < 45:
+            risks.append(f"岗位能力要求证据置信度仅 {conf_avg:.0f}%，建议结合岗位详情复核")
+        if match_goal == "stretch":
+            one_line = f"冲刺价值排序第 {rank}；当前八维匹配度 {score:.0f}，优先验证关键能力缺口。"
+        else:
+            one_line = f"综合八维轮廓与能力缺口，本地增强匹配度为 {score:.0f}。"
+        rows.append(
+            {
+                "job_id": str(job.get("id") or ""),
+                "rank": rank,
+                "overall_fit_0_100": score,
+                "one_line": one_line,
+                "strengths": strengths,
+                "gaps": gaps,
+                "risks": risks,
+                "llm_fallback": True,
+                "title": job.get("title"),
+                "company": job.get("company"),
+                "location": job.get("location"),
+                "salary": job.get("salary"),
+                "scores": job.get("scores") or {},
+                "coarse_match_score": score,
+            }
+        )
+    return {
+        "top5": rows,
+        "model": "local-capability-ranker-v1",
+        "pool_size": len(pool),
+    }
+
+
 def _truthy_refine_llm(body: Dict[str, Any]) -> bool:
     v = body.get("refine_with_llm")
     if v is True:
@@ -251,6 +478,37 @@ def _parse_match_goal(body: Dict[str, Any]) -> str:
     if v in ("stretch", "high", "premium", "challenge", "冲刺"):
         return "stretch"
     return "fit"
+
+
+def _resolve_preference_mode(body: Dict[str, Any]) -> tuple[str, str | None]:
+    mode = str(body.get("preference_mode") or "off").strip().lower()
+    if mode not in {"off", "explain", "tie_break"}:
+        return "off", "preference_mode 仅支持 off、explain 或 tie_break"
+    return mode, None
+
+
+def _preference_fit_unavailable(context: Dict[str, Any]) -> Dict[str, Any]:
+    """Return an explicit state when a preference calculation cannot run."""
+    mode = str(context.get("mode") or "off")
+    status = str(context.get("status") or "missing")
+    if mode == "off":
+        fit_status = "not_enabled"
+    elif status == "measured":
+        fit_status = "insufficient_job_evidence"
+    elif status == "disabled":
+        fit_status = "personalization_disabled"
+    elif status == "legacy":
+        fit_status = "legacy_user_profile"
+    else:
+        fit_status = "missing_user_profile"
+    return {
+        "status": fit_status,
+        "score": None,
+        "confidence": None,
+        "axes": [],
+        "influenced_ranking": False,
+        "algorithm_version": PREFERENCE_FIT_ALGORITHM_VERSION,
+    }
 
 
 def _sort_ranked_for_goal(ranked: List[Dict[str, Any]], match_goal: str) -> None:
@@ -285,9 +543,30 @@ def run_match_preview(body: Dict[str, Any], jwt_user_id: int | None) -> Tuple[Di
     if err or not profile:
         return None, err or "画像解析失败", 400
 
+    preference_mode, preference_mode_error = _resolve_preference_mode(body)
+    if preference_mode_error:
+        return None, preference_mode_error, 400
+    requested_personality_id = _safe_int_or_none(body.get("personality_profile_id"))
+    if preference_mode in {"explain", "tie_break"}:
+        resolved_preference = resolve_preference_profile(
+            int(jwt_user_id or 0),
+            profile_id=requested_personality_id,
+            require_personalization_enabled=True,
+        )
+        if requested_personality_id is not None and resolved_preference.get("status") == "missing":
+            return None, "人格偏好画像不存在或无权使用", 403
+    else:
+        resolved_preference = {"status": "off", "snapshot": None}
+    preference_context = preference_context_summary(
+        resolved_preference,
+        mode=preference_mode,
+    )
+
     top_k = _clamp_int(int(setting("MATCH_TOP_K_RETURN", 30)), 1, 100)
-    llm_pool_k_cfg = _clamp_int(int(setting("MATCH_LLM_POOL_K", 40)), 5, 100)
-    llm_pool_k = max(llm_pool_k_cfg, top_k)
+    llm_pool_k_cfg = _clamp_int(int(setting("MATCH_LLM_POOL_K", 20)), 5, 100)
+    # 精排池独立于粗排返回数。粗排可以返回 30～100 条，但送给模型的候选
+    # 固定封顶 20 条，避免大提示导致交互请求频繁超时。
+    llm_pool_k = _effective_llm_pool_k(llm_pool_k_cfg)
 
     scan_cap = max(
         llm_pool_k,
@@ -304,7 +583,8 @@ def run_match_preview(body: Dict[str, Any], jwt_user_id: int | None) -> Tuple[Di
     try:
         rows = _fetch_jobs_for_match(q=q, location_q=location_q, cap=scan_cap)
     except Exception as exc:  # noqa: BLE001
-        return None, f"Neo4j 查询失败: {exc}", 500
+        current_app.logger.exception("match_preview_neo4j_query_failed")
+        return None, "岗位数据服务暂时不可用，请稍后重试", 503
 
     student_scores = profile["scores"]
     student_conf = profile["confidences"]
@@ -339,6 +619,64 @@ def run_match_preview(body: Dict[str, Any], jwt_user_id: int | None) -> Tuple[Di
         )
 
     _sort_ranked_for_goal(ranked, match_goal)
+    min_axes = int(setting("MATCH_PREFERENCE_MIN_AXES", 2))
+    min_confidence = float(setting("MATCH_PREFERENCE_MIN_CONFIDENCE", 0.4))
+    preference_available_count = 0
+    workstyle_evidence_count = 0
+    for card in ranked:
+        preview = card.get("match_preview")
+        if isinstance(preview, dict):
+            workstyle = card.get("workstyle") if isinstance(card.get("workstyle"), dict) else None
+            if workstyle and int(workstyle.get("evidenced_axis_count") or 0) > 0:
+                workstyle_evidence_count += 1
+            if preference_mode in {"explain", "tie_break"} and resolved_preference.get("status") == "measured":
+                preference_fit = build_preference_fit(
+                    resolved_preference.get("snapshot"),
+                    workstyle,
+                    min_axes=min_axes,
+                    min_confidence=min_confidence,
+                )
+            else:
+                preference_fit = _preference_fit_unavailable(preference_context)
+            preview["preference_fit"] = preference_fit
+            if preference_fit.get("status") == "available":
+                preference_available_count += 1
+    coverage = preference_available_count / len(ranked) if ranked else 0.0
+    ranking_enabled = bool(setting("MATCH_PREFERENCE_TIE_BREAK_ENABLED", False))
+    coverage_threshold = float(setting("MATCH_PREFERENCE_TIE_BREAK_MIN_COVERAGE", 0.6))
+    max_ability_gap = float(setting("MATCH_PREFERENCE_TIE_BREAK_MAX_ABILITY_GAP", 3.0))
+    experiment_percent = int(setting("MATCH_PREFERENCE_TIE_BREAK_EXPERIMENT_PERCENT", 50))
+    variant, bucket = experiment_variant(int(jwt_user_id or 0), experiment_percent)
+    ranking_diff: Dict[str, Any] = {
+        "version": PREFERENCE_RANKING_VERSION,
+        "original_ability_order": [str(card.get("id") or "") for card in ranked],
+        "preference_order": [str(card.get("id") or "") for card in ranked],
+        "changes": [],
+        "changed_jobs": 0,
+        "max_ability_gap": max_ability_gap,
+    }
+    ranking_reason = "not_requested"
+    ranking_eligible = False
+    if preference_mode == "tie_break":
+        if not ranking_enabled:
+            ranking_reason = "system_disabled"
+        elif resolved_preference.get("status") != "measured":
+            ranking_reason = "missing_user_profile"
+        elif coverage < coverage_threshold:
+            ranking_reason = "insufficient_workstyle_coverage"
+        elif variant != "tie_break":
+            ranking_reason = "experiment_control"
+            ranking_eligible = True
+        else:
+            ranking_eligible = True
+            ranking_reason = "applied"
+            ranking_diff = apply_preference_tie_break(ranked, max_ability_gap=max_ability_gap)
+    else:
+        for index, card in enumerate(ranked, start=1):
+            preview = card.get("match_preview") or {}
+            preview["ability_rank"] = index
+            preview["preference_rank"] = index
+
     top = ranked[:top_k]
 
     llm_pool = ranked[: min(llm_pool_k, len(ranked))]
@@ -380,31 +718,82 @@ def run_match_preview(body: Dict[str, Any], jwt_user_id: int | None) -> Tuple[Di
             "llm_pool_size": len(llm_pool),
         },
         "jobs": top,
+        "preference_context": {
+            **preference_context,
+            "algorithm_version": PREFERENCE_FIT_ALGORITHM_VERSION,
+            "workstyle_snapshot_version": WORKSTYLE_SNAPSHOT_VERSION,
+            "minimum_evidenced_axes": min_axes,
+            "minimum_fit_confidence": min_confidence,
+            "jobs_with_workstyle_evidence": workstyle_evidence_count,
+            "jobs_with_preference_fit": preference_available_count,
+            "workstyle_coverage": round(coverage, 4),
+            "tie_break": {
+                "requested": preference_mode == "tie_break",
+                "eligible": ranking_eligible,
+                "applied": ranking_reason == "applied",
+                "reason": ranking_reason,
+                "system_enabled": ranking_enabled,
+                "minimum_coverage": coverage_threshold,
+                "max_ability_gap": max_ability_gap,
+                "experiment_key": PREFERENCE_EXPERIMENT_KEY,
+                "experiment_variant": variant,
+                "experiment_bucket": bucket,
+                "ranking_version": PREFERENCE_RANKING_VERSION,
+                **ranking_diff,
+            },
+            "influenced_ranking": ranking_reason == "applied" and bool(ranking_diff.get("changes")),
+        },
     }
 
     refine_with_llm = _truthy_refine_llm(body)
     if refine_with_llm:
         api_key = str(setting("DEEPSEEK_API_KEY", "") or "").strip()
         if not api_key:
+            local_payload = _local_refine_top5(profile, llm_pool, match_goal=match_goal)
             data_out["llm"] = {
-                "ok": False,
-                "error": "未配置 DEEPSEEK_API_KEY，无法精排。请在 backend/.env 中配置。",
+                "ok": bool(local_payload["top5"]),
+                "error_code": "not_configured",
+                "error": "云端 AI 精排尚未配置，已自动切换为本地八维增强排序。",
+                "notice": "云端 AI 精排尚未配置；当前 Top 5 由本地八维差距算法生成，可正常比较岗位。",
+                "fallback_mode": "local",
+                "model": local_payload["model"],
+                "pool_size": local_payload["pool_size"],
+                "top5": local_payload["top5"],
+                "retry_attempted": False,
+                "degraded": True,
+                "fallback_reason": "not_configured",
             }
         else:
             model = str(setting("MATCH_DEEPSEEK_MODEL", "deepseek-v4-flash"))
-            timeout = float(setting("MATCH_LLM_TIMEOUT_SECONDS", 120.0))
-            llm_payload, llm_err = refine_top5_deepseek(
+            llm_payload, llm_meta = _refine_with_timeout_fallback(
                 profile,
                 llm_pool,
                 api_key=api_key,
                 model=model,
-                timeout=timeout,
+                configured_timeout=float(setting("MATCH_LLM_TIMEOUT_SECONDS", 90.0)),
                 match_goal=match_goal,
             )
-            if llm_err or not llm_payload:
+            if not llm_payload:
+                current_app.logger.warning(
+                    "match_llm_refine_failed code=%s retry=%s diagnostic=%s",
+                    llm_meta.get("error_code"),
+                    llm_meta.get("retry_attempted"),
+                    llm_meta.get("diagnostic"),
+                )
+                local_payload = _local_refine_top5(profile, llm_pool, match_goal=match_goal)
                 data_out["llm"] = {
-                    "ok": False,
-                    "error": llm_err or "unknown_llm_error",
+                    "ok": bool(local_payload["top5"]),
+                    **{key: value for key, value in llm_meta.items() if key != "diagnostic"},
+                    "notice": (
+                        f"{llm_meta.get('error')}系统已自动切换为本地八维增强排序；"
+                        "推荐仍可使用，稍后可重试云端 AI 文案。"
+                    ),
+                    "fallback_mode": "local",
+                    "fallback_reason": llm_meta.get("error_code") or "unknown",
+                    "model": local_payload["model"],
+                    "pool_size": local_payload["pool_size"],
+                    "top5": local_payload["top5"],
+                    "degraded": True,
                 }
             else:
                 data_out["llm"] = {
@@ -413,20 +802,24 @@ def run_match_preview(body: Dict[str, Any], jwt_user_id: int | None) -> Tuple[Di
                     "pool_size": llm_payload.get("pool_size"),
                     "top5": llm_payload.get("top5") or [],
                     "raw_snippet": llm_payload.get("raw_snippet"),
+                    **llm_meta,
                 }
 
-    # 自动落库：保存本次匹配快照（用于报告页优先复用）
-    try:
-        persist_match_snapshot(
-            jwt_user_id=jwt_user_id,
-            resume_id=_safe_int_or_none(body.get("resume_id")),
-            data_out=data_out,
-            refine_with_llm=refine_with_llm,
-            settings_revision=body.get("_settings_revision"),
-            config_snapshot=body.get("_config_snapshot") or {},
-        )
-    except Exception as exc:  # noqa: BLE001
-        # 不影响主流程返回，错误仅透出到 llm block 旁注
-        data_out["snapshot_warning"] = f"match_snapshot_persist_failed:{exc}"
+    # 两阶段前端会先请求一次不落库的粗排，避免同一次匹配产生两条历史记录。
+    if body.get("persist_snapshot", True) is not False:
+        try:
+            persist_match_snapshot(
+                jwt_user_id=jwt_user_id,
+                resume_id=_safe_int_or_none(body.get("resume_id")),
+                data_out=data_out,
+                refine_with_llm=refine_with_llm,
+                settings_revision=body.get("_settings_revision"),
+                config_snapshot=body.get("_config_snapshot") or {},
+                preference_snapshot=resolved_preference.get("snapshot"),
+                preference_context=data_out.get("preference_context") or preference_context,
+            )
+        except Exception as exc:  # noqa: BLE001
+            # 不影响主流程返回，错误仅透出到 llm block 旁注
+            data_out["snapshot_warning"] = f"match_snapshot_persist_failed:{exc}"
 
     return data_out, None, 200

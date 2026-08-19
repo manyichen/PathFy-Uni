@@ -1,0 +1,42 @@
+import { expect, test } from '@playwright/test'
+
+test('registers, creates a profile, matches a job and generates a report through Flask', async ({ page }) => {
+  test.setTimeout(60_000)
+  await page.goto('/register')
+  await page.getByLabel('用户名').fill('集成测试用户')
+  await page.getByLabel('邮箱').fill('integration@example.com')
+  await page.getByLabel('密码').fill('integration-pass')
+  await page.getByRole('button', { name: '注册', exact: true }).click()
+  await expect(page).toHaveURL(/\/$/)
+
+  await page.goto('/profile')
+  await page.getByLabel('姓名').fill('集成测试用户')
+  await page.getByLabel('专业').fill('计算机科学与技术')
+  await page.getByPlaceholder('补充课程、项目、竞赛或职业目标').fill('完成过 Python 数据分析项目和 SQL 课程。')
+  await page.getByRole('button', { name: '生成能力画像' }).click()
+  await expect(page.getByText('画像 #1', { exact: true })).toBeVisible()
+  await expect(page.getByText('稳定 fixture 表明画像链路工作正常。')).toBeVisible()
+
+  await page.goto('/match')
+  await page.getByLabel('能力画像').click()
+  await page.getByRole('option', { name: /集成测试用户/ }).click()
+  await page.getByPlaceholder('如：数据分析').fill('数据分析')
+  await page.getByRole('button', { name: '开始匹配' }).click()
+  await expect(page.getByRole('heading', { name: '数据分析师' })).toBeVisible()
+  await expect(page.getByText('稳定 fixture 验证八维匹配链路。')).toBeVisible()
+
+  await page.goto('/report')
+  await page.getByRole('button', { name: /导入匹配数据/ }).click()
+  await page.getByRole('dialog', { name: '从人岗匹配导入' }).getByRole('button', { name: /集成测试用户/ }).click()
+  await expect(page.getByText('数据分析师', { exact: true }).first()).toBeVisible()
+  await page.getByRole('button', { name: '生成 / 重新生成报告' }).click()
+  const reportLead = page.getByRole('region', { name: '报告首屏摘要' })
+  await expect(reportLead.getByRole('heading', { name: '数据分析师' })).toBeVisible()
+  await expect(reportLead.getByText('提交一次案例复盘')).toBeVisible()
+  await expect(page.getByRole('tab', { name: /数据分析师/ })).toBeVisible()
+  await expect(page.getByText('AI 增强正在后台执行')).toBeVisible()
+  await expect(page.getByRole('button', { name: 'AI 增强', exact: true })).toBeVisible({ timeout: 7_000 })
+
+  const state = await page.request.get('http://127.0.0.1:5011/__test__/state').then(response => response.json())
+  expect(state).toMatchObject({ users: 1, profiles: 1, matches: 1, reports: 1, enrichment_polls: 2 })
+})

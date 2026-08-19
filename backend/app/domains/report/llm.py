@@ -104,28 +104,22 @@ def _build_llm_summary(
         "推荐内容须基于提供的图谱资源列表。"
     )
 
-    try:
-        api_key = str(cfg.get("ARK_API_KEY") or "").strip()
-        if not api_key:
-            raise RuntimeError("missing ARK_API_KEY")
-        text = _call_openai_compatible(
-            api_key=api_key,
-            base_url=str(cfg.get("ARK_BASE_URL") or "https://ark.cn-beijing.volces.com/api/v3"),
-            model=str(cfg.get("CAREER_ARK_MODEL") or cfg.get("ARK_MODEL") or "doubao-seed-2-0-lite-260215"),
-            timeout=timeout,
-            system_prompt=system_prompt,
-            user_prompt=user_prompt,
-        )
-        return {"provider": "doubao", "text": text}
-    except Exception as exc:  # noqa: BLE001
-        return {
-            "provider": "doubao",
-            "text": (
-                "你当前最优策略是先完成短期关键能力补齐，再把中期任务聚焦到可证明的项目与岗位化实践。"
-                "每两周检查能力缺口和任务完成率，确保成长路径持续贴近目标岗位。"
-            ),
-            "error": str(exc),
-        }
+    target_lines = []
+    for target in brief_targets[:3]:
+        gap_text = "、".join(str(value) for value in target.get("top_gaps") or []) or "关键能力"
+        target_lines.append(f"{target.get('title') or '目标岗位'}（匹配 {target.get('match_score') or '待补充'}）：优先补齐 {gap_text}")
+    resource_names = [value["name"] for value in grounded if value.get("name")][:3]
+    resource_clause = f"可使用已核验资源：{'、'.join(resource_names)}。" if resource_names else "资源名称不足时不追加未经核验的推荐。"
+    return {
+        "provider": "grounded-template",
+        "text": (
+            "；".join(target_lines)
+            + "。本月计划以可查看的交付物、明确截止时间和验收标准为准。\n"
+            + resource_clause
+            + "月末仅根据完成记录、作品、证书或反馈调整下一轮计划。"
+        ),
+        "source": "profile+job+graph",
+    }
 
 
 def augment_plans_narrative_with_doubao(plans_by_target: List[Dict[str, Any]]) -> Dict[str, Any]:
@@ -246,3 +240,62 @@ def augment_plans_narrative_with_doubao(plans_by_target: List[Dict[str, Any]]) -
         return {"ok": updated > 0, "updated": updated, "provider": "doubao", "model": model}
     except Exception as exc:  # noqa: BLE001
         return {"ok": False, "reason": str(exc), "provider": "doubao", "model": model}
+
+
+def build_grounded_report_narratives(
+    plans_by_target: List[Dict[str, Any]],
+    target_insights: List[Dict[str, Any]],
+) -> tuple[Dict[str, Any], Dict[str, Any]]:
+    """Build evidence-dense copy from verified report fields without another model round trip."""
+    insight_by_id = {
+        str(value.get("id") or value.get("job_id") or ""): value
+        for value in target_insights
+        if isinstance(value, dict)
+    }
+    summaries: List[str] = []
+    updated = 0
+    for plan in plans_by_target:
+        if not isinstance(plan, dict):
+            continue
+        job_id = str(plan.get("job_id") or "")
+        insight = insight_by_id.get(job_id) or {}
+        title = str(plan.get("display_title") or insight.get("title") or "目标岗位")
+        score = (insight.get("match_preview") or {}).get("match_score") or plan.get("match_score")
+        gap_labels = [str(value) for value in plan.get("top_gap_labels") or [] if str(value)][:2]
+        nmp = plan.get("next_month_plan") if isinstance(plan.get("next_month_plan"), dict) else {}
+        actions = [
+            action
+            for item in nmp.get("items") or [] if isinstance(item, dict)
+            for action in item.get("custom_actions") or [] if isinstance(action, dict) and action.get("text")
+        ]
+        resources = [
+            str(value.get("resource_name") or value.get("competition_name") or "")
+            for value in ((plan.get("recommendations") or {}).get("learning_resources") or [])[:2]
+            if isinstance(value, dict)
+        ]
+        gap_text = "、".join(gap_labels) or "关键岗位能力"
+        first_action = str((actions[0] if actions else {}).get("text") or "完成首项可验收任务")
+        deliverable = str((actions[0] if actions else {}).get("deliverable") or first_action)
+        resource_text = "、".join(value for value in resources if value)
+        plan["narrative"] = {
+            **(plan.get("narrative") if isinstance(plan.get("narrative"), dict) else {}),
+            "path_advice": (
+                f"{title}当前匹配度为{score if score is not None else '待补充'}，优先收敛{gap_text}。"
+                f"本月先执行“{first_action}”，形成“{deliverable}”作为可核验证据"
+                + (f"，并结合{resource_text}补齐知识输入。" if resource_text else "。")
+            ),
+            "execution_reminder": "每周只检查行动是否交付、证据是否可查看；月末依据完成率和复盘结果调整下月任务，不以泛化自评替代成果。",
+            "provider": "grounded-template",
+            "source": "profile+job+graph+plan",
+        }
+        summaries.append(f"{title}：重点补齐{gap_text}，首要交付为{deliverable}")
+        updated += 1
+    summary_text = "；".join(summaries[:3])
+    narrative = {
+        "provider": "grounded-template",
+        "text": (
+            f"本报告按岗位缺口、图谱资源和可验收行动组织，而不是泛化职业建议。{summary_text}。\n"
+            "执行时保留作品、证书、反馈或活动记录；每月复盘只用已确认数据更新计划，信息不足处维持待验证状态。"
+        ),
+    }
+    return narrative, {"ok": updated > 0, "updated": updated, "provider": "grounded-template"}

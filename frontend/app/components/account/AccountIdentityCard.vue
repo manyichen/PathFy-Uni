@@ -1,0 +1,2 @@
+<script setup lang="ts">import type { AuthUser } from '~/types/api'; defineProps<{ user: AuthUser | null; admin: boolean }>()</script>
+<template><UCard><template #header><h2 class="font-semibold">账户信息</h2></template><div class="grid gap-3 sm:grid-cols-3"><div><span class="muted">用户名：</span>{{ user?.username || '未设置' }}</div><div><span class="muted">邮箱：</span>{{ user?.email || '未设置' }}</div><UBadge :label="admin ? '管理员' : '普通用户'" class="w-fit" /></div></UCard></template>

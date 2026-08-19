@@ -18,6 +18,7 @@ const qualityCoverage = computed(() => {
   if (!jobs.value) return 0
   return Math.max(0, Math.round((1 - Number(stats.value.capability_missing || 0) / jobs.value) * 100))
 })
+const workstyleCoverage = computed(() => Number(stats.value.workstyle_coverage_percent || 0))
 const queueTotal = computed(() => Object.values(counts.value).reduce((sum, value) => sum + value, 0))
 
 const queueItems = computed(() => [
@@ -31,7 +32,9 @@ const qualityItems = computed(() => [
   { label: '评分缺失', value: stats.value.capability_missing || 0, icon: 'i-lucide-circle-dashed', description: '尚未形成完整八维评分' },
   { label: '评分过期', value: stats.value.capability_stale || 0, icon: 'i-lucide-refresh-cw', description: '评估版本或输入指纹落后' },
   { label: '低置信度', value: stats.value.low_confidence || 0, icon: 'i-lucide-shield-alert', description: '任一维度置信度低于阈值' },
-  { label: '薪资待规范', value: stats.value.salary_stale || 0, icon: 'i-lucide-badge-dollar-sign', description: '缺少当前版本的薪资解析' }
+  { label: '薪资待规范', value: stats.value.salary_stale || 0, icon: 'i-lucide-badge-dollar-sign', description: '缺少当前版本的薪资解析' },
+  { label: '环境证据缺失', value: stats.value.workstyle_missing || 0, icon: 'i-lucide-panels-top-left', description: '没有岗位或岗位族工作环境证据' },
+  { label: '环境解释未就绪', value: Math.max(0, Number(stats.value.workstyle_evidenced || 0) - Number(stats.value.workstyle_ready || 0)), icon: 'i-lucide-shield-question', description: '已有证据但未达到至少两轴门槛' }
 ])
 
 const inventory = computed(() => [
@@ -171,7 +174,7 @@ onMounted(load)
         <template #header>
           <div class="flex flex-wrap items-center justify-between gap-3">
             <div><h2 class="font-semibold">岗位数据质量</h2><p class="mt-1 text-sm muted">{{ jobs.toLocaleString() }} 个岗位的评估与规范化状态</p></div>
-            <UBadge :label="`八维完整度 ${qualityCoverage}%`" :color="qualityCoverage >= 95 ? 'success' : qualityCoverage >= 80 ? 'warning' : 'error'" variant="soft" />
+            <div class="flex flex-wrap gap-2"><UBadge :label="`八维完整度 ${qualityCoverage}%`" :color="qualityCoverage >= 95 ? 'success' : qualityCoverage >= 80 ? 'warning' : 'error'" variant="soft" /><UBadge :label="`工作环境覆盖 ${workstyleCoverage}%`" :color="workstyleCoverage >= 80 ? 'success' : workstyleCoverage >= 40 ? 'warning' : 'error'" variant="soft" /></div>
           </div>
         </template>
         <div class="mb-5 h-2 overflow-hidden rounded-full bg-elevated">

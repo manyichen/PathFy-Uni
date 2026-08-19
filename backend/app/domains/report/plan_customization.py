@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Tuple
 
 from flask import current_app
@@ -16,17 +17,23 @@ from app.infrastructure.privacy import redact_payload
 _PHASE_KEYS = ("early", "mid", "late")
 
 
-def _brief_phase_items(items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def _brief_phase_items(items: List[Dict[str, Any]], *, job_id: str) -> List[Dict[str, Any]]:
     out: List[Dict[str, Any]] = []
-    for it in items or []:
+    for it in (items or [])[:2]:
         if not isinstance(it, dict):
             continue
         refs = it.get("learning_path_refs") or []
+        dimension = str(it.get("focus_dimension") or "")
         out.append(
             {
-                "focus_dimension": it.get("focus_dimension"),
+                "focus_dimension": dimension,
                 "focus_label": it.get("focus_label"),
                 "milestone": it.get("milestone"),
+                "allowed_fact_refs": [
+                    f"profile:{dimension}",
+                    f"job:{job_id}:{dimension}",
+                    f"gap:{job_id}:{dimension}",
+                ] if dimension else [],
                 "grounded_resource_ids": [
                     str(r.get("id") or "") for r in refs if isinstance(r, dict) and r.get("id")
                 ],
@@ -52,8 +59,11 @@ def _brief_plan_for_llm(plan: Dict[str, Any], insight: Dict[str, Any] | None) ->
         if x.get("competition_name")
     ]
     mp = (insight or {}).get("match_preview") or {}
+    job_id = str(plan.get("job_id") or "")
+    current_month = int(plan.get("current_plan_month") or 1)
+    current_phase = "early" if current_month <= 3 else "mid" if current_month <= 6 else "late"
     return {
-        "job_id": plan.get("job_id"),
+        "job_id": job_id,
         "display_title": plan.get("display_title"),
         "company": plan.get("company"),
         "location": plan.get("location"),
@@ -63,13 +73,14 @@ def _brief_plan_for_llm(plan: Dict[str, Any], insight: Dict[str, Any] | None) ->
         or [DIM_LABELS.get(d, d) for d in (plan.get("top_gaps") or [])],
         "dimension_gaps": plan.get("dimension_gaps") or mp.get("dimension_gaps") or {},
         "grounded_resources": lr_names + cp_names,
+        "current_phase": current_phase,
         "phases": {
             k: {
                 "label": (phases.get(k) or {}).get("label"),
                 "period": (phases.get(k) or {}).get("period"),
-                "items": _brief_phase_items((phases.get(k) or {}).get("items") or []),
+                "items": _brief_phase_items((phases.get(k) or {}).get("items") or [], job_id=job_id),
             }
-            for k in _PHASE_KEYS
+            for k in (current_phase,)
         },
     }
 
@@ -129,7 +140,7 @@ def apply_custom_plan_batch(
                 if ms:
                     target["milestone"] = sanitize_user_facing_text(ms)[:200]
                     touched = True
-                actions: List[Dict[str, str]] = []
+                actions: List[Dict[str, Any]] = []
                 for act in it_in.get("custom_actions") or []:
                     if not isinstance(act, dict):
                         continue
@@ -139,7 +150,48 @@ def apply_custom_plan_batch(
                     kind = str(act.get("kind") or "practice").strip().lower()
                     if kind not in ("learn", "practice", "deliverable"):
                         kind = "practice"
-                    actions.append({"kind": kind, "text": sanitize_user_facing_text(text)[:150]})
+                    normalized: Dict[str, Any] = {
+                        "kind": kind,
+                        "text": sanitize_user_facing_text(text)[:150],
+                    }
+                    deliverable = sanitize_user_facing_text(str(act.get("deliverable") or "").strip())[:180]
+                    deadline = str(act.get("deadline") or "").strip()[:10]
+                    acceptance_rule = sanitize_user_facing_text(str(act.get("acceptance_rule") or "").strip())[:220]
+                    try:
+                        effort_hours = max(0.5, min(20.0, float(act.get("effort_hours"))))
+                    except (TypeError, ValueError):
+                        effort_hours = None
+                    evidence_type = str(act.get("evidence_type") or "other").strip().lower()
+                    if evidence_type not in ("project", "certificate", "feedback", "event", "other"):
+                        evidence_type = "other"
+                    allowed_fact_refs = {
+                        f"profile:{dim}",
+                        f"job:{jid}:{dim}",
+                        f"gap:{jid}:{dim}",
+                    }
+                    fact_refs = [
+                        str(value)
+                        for value in act.get("fact_refs") or []
+                        if str(value) in allowed_fact_refs
+                    ]
+                    resource_refs = [
+                        str(value)
+                        for value in act.get("resource_refs") or []
+                        if str(value) in allowed_ids
+                    ]
+                    if deliverable:
+                        normalized["deliverable"] = deliverable
+                    if len(deadline) == 10 and deadline[4:5] == "-" and deadline[7:8] == "-":
+                        normalized["deadline"] = deadline
+                    if effort_hours is not None:
+                        normalized["effort_hours"] = effort_hours
+                    if acceptance_rule:
+                        normalized["acceptance_rule"] = acceptance_rule
+                    normalized["evidence_type"] = evidence_type
+                    normalized["linked_dimensions"] = [dim] if dim else []
+                    normalized["fact_refs"] = fact_refs
+                    normalized["resource_refs"] = resource_refs
+                    actions.append(normalized)
                 if actions:
                     target["custom_actions"] = actions[:4]
                     sanitize_plan_item_user_text(target)
@@ -205,6 +257,7 @@ def build_custom_plan_actions_batch(
         "plans": brief_plans,
         "rules": [
             "每个 job_id 必须输出一条",
+            "每个岗位只输出 current_phase 对应阶段，不要扩写其他阶段",
             "custom_actions 必须结合该公司/岗位/缺口，与同 title 其他公司区分",
             "禁止编造 grounded_resources 以外的课程或竞赛名称",
             "milestone 可验收、含时间或产出物与验收标准",
@@ -212,33 +265,46 @@ def build_custom_plan_actions_batch(
             "行动须写清「做完后如何提升匹配度/成果/短板收敛」",
             "禁止英文 code、匹配分数、「拉动完成率/贴合度」等开发术语，用自然中文",
             "use_resource_ids 只能从该维 grounded_resource_ids 中选，可不选",
+            "每条行动必须填写 deliverable、deadline、effort_hours、acceptance_rule、evidence_type",
+            "fact_refs 只能从该维 allowed_fact_refs 中选，resource_refs 只能从 grounded_resource_ids 中选",
+            "全部行动总投入应与一个月内可完成的学习量一致，不得承诺就业结果",
             "只输出 JSON 对象，禁止 markdown",
         ],
+        "today": datetime.now(timezone.utc).strftime("%Y-%m-%d"),
         "output_schema": {
             "items": [
                 {
                     "job_id": "string",
                     "phases": {
-                        "early": {
+                        "early|mid|late（仅 current_phase）": {
                             "line_one_liner": "string 30-50字",
                             "items": [
                                 {
                                     "focus_dimension": "string",
                                     "milestone": "string",
-                                    "custom_actions": [{"kind": "learn|practice|deliverable", "text": "string"}],
+                                    "custom_actions": [{
+                                        "kind": "learn|practice|deliverable",
+                                        "text": "string",
+                                        "deliverable": "string",
+                                        "deadline": "YYYY-MM-DD",
+                                        "effort_hours": 4,
+                                        "acceptance_rule": "string",
+                                        "evidence_type": "project|certificate|feedback|event|other",
+                                        "linked_dimensions": ["cap_req_practice"],
+                                        "fact_refs": ["string from allowed_fact_refs"],
+                                        "resource_refs": ["string from grounded_resource_ids"],
+                                    }],
                                     "use_resource_ids": ["string"],
                                 }
                             ],
                         },
-                        "mid": {"line_one_liner": "string", "items": []},
-                        "late": {"line_one_liner": "string", "items": []},
                     },
                 }
             ]
         },
     }
     model = str(cfg.get("CAREER_DEEPSEEK_MODEL") or "deepseek-v4-pro")
-    timeout = float(cfg.get("CAREER_LLM_TIMEOUT_SECONDS") or 120.0)
+    timeout = min(45.0, float(cfg.get("CAREER_LLM_TIMEOUT_SECONDS") or 45.0))
     try:
         text = _call_openai_compatible(
             api_key=api_key,

@@ -49,3 +49,17 @@ def test_capability_change_set_updates_jobs_in_same_transaction(monkeypatch):
     queries = [query for query, _ in driver.value.tx.queries]
     assert any("cap_updated_at" in query for query in queries)
     assert any("GraphTaskCommit" in query for query in queries)
+
+
+def test_workstyle_change_set_updates_job_and_job_title_with_audit_marker(monkeypatch):
+    driver = FakeDriver()
+    monkeypatch.setattr(task_apply, "neo4j_settings", lambda: ("bolt://test", "neo4j", "pw", "neo4j"))
+    monkeypatch.setattr(task_apply, "neo4j_driver", lambda *_args: driver)
+    monkeypatch.setattr(task_apply, "is_task_applied", lambda _uuid: False)
+    task_apply.apply_change_set({"version": 2, "kind": "job_workstyle_import", "items": [
+        {"target_type": "job", "target_id": "j1", "properties": {"workstyle_interaction": 80}},
+        {"target_type": "job_title", "target_id": "数据分析师", "properties": {"workstyle_structure": 70}},
+    ]}, task_uuid="e" * 32, change_sha256="f" * 64)
+    queries = [query for query, _ in driver.value.tx.queries]
+    assert any("Job {job_key:$id}" in query and "workstyle_updated_at" in query for query in queries)
+    assert any("JobTitle {name:$id}" in query and "workstyle_updated_at" in query for query in queries)

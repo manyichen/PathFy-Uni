@@ -75,7 +75,17 @@ def test_apply_custom_plan_batch_merges_actions():
                                 "focus_dimension": dim,
                                 "milestone": "2周内完成 1 个可演示页面",
                                 "custom_actions": [
-                                    {"kind": "practice", "text": "用公司技术栈复现岗位页面模块"},
+                                    {
+                                        "kind": "practice",
+                                        "text": "用公司技术栈复现岗位页面模块",
+                                        "deliverable": "可访问页面与源码链接",
+                                        "deadline": "2026-09-01",
+                                        "effort_hours": 6,
+                                        "acceptance_rule": "页面可访问且 README 写明个人贡献",
+                                        "evidence_type": "project",
+                                        "fact_refs": [f"gap:j1:{dim}", "invented-fact"],
+                                        "resource_refs": ["invented-resource"],
+                                    },
                                 ],
                             }
                         ],
@@ -89,3 +99,7 @@ def test_apply_custom_plan_batch_merges_actions():
     item = plans[0]["phases"]["early"]["items"][0]
     assert item["milestone"].startswith("2周内")
     assert item["custom_actions"][0]["text"]
+    assert item["custom_actions"][0]["deliverable"] == "可访问页面与源码链接"
+    assert item["custom_actions"][0]["effort_hours"] == 6
+    assert item["custom_actions"][0]["fact_refs"] == [f"gap:j1:{dim}"]
+    assert item["custom_actions"][0]["resource_refs"] == []

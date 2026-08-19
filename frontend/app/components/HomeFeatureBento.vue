@@ -2,6 +2,7 @@
 type ModuleItem = {
   to: string
   title: string
+  question: string
   verb: string
   desc: string
   icon: string
@@ -11,264 +12,120 @@ type ModuleItem = {
 }
 
 const modules: ModuleItem[] = [
-  {
-    to: '/jobs',
-    title: '岗位探索',
-    verb: '看市场',
-    desc: '从行业、城市、薪资和能力标签里找到真实存在的机会。',
-    icon: 'i-lucide-briefcase-business',
-    evidence: ['岗位样本', '薪资区间', '能力关键词'],
-    output: '候选方向清单',
-    tone: '#0891b2'
-  },
-  {
-    to: '/profile',
-    title: '能力画像',
-    verb: '看自己',
-    desc: '把简历、经历和技能拆成八维能力，减少纯主观判断。',
-    icon: 'i-lucide-radar',
-    evidence: ['简历材料', '八维评分', '能力证据'],
-    output: '个人能力底图',
-    tone: '#0f766e'
-  },
-  {
-    to: '/match',
-    title: '人岗匹配',
-    verb: '看差距',
-    desc: '比较岗位要求与个人画像，定位最该补齐的维度。',
-    icon: 'i-lucide-git-compare',
-    evidence: ['匹配分', '维度差距', '解释文本'],
-    output: '优先提升项',
-    tone: '#2563eb'
-  },
-  {
-    to: '/graph',
-    title: '职业图谱',
-    verb: '看路径',
-    desc: '查看晋升链、转岗路径和能力迁移关系。',
-    icon: 'i-lucide-network',
-    evidence: ['岗位节点', '路径关系', '资源密度'],
-    output: '发展路线判断',
-    tone: '#7c3aed'
-  },
-  {
-    to: '/report',
-    title: '生涯报告',
-    verb: '做计划',
-    desc: '把目标岗位拆成短中期行动，并支持导出和复盘。',
-    icon: 'i-lucide-file-text',
-    evidence: ['目标岗位', '行动计划', '复盘记录'],
-    output: '动态报告画布',
-    tone: '#b45309'
-  },
-  {
-    to: '/personality',
-    title: '性格测试',
-    verb: '补偏好',
-    desc: '理解沟通方式、偏好环境和职业适配性。',
-    icon: 'i-lucide-brain',
-    evidence: ['问卷回答', '类型结果', '偏好解释'],
-    output: '职业偏好补充',
-    tone: '#db2777'
-  }
+  { to: '/jobs', title: '岗位探索', question: '市场上有哪些真实机会？', verb: '看市场', desc: '从行业、城市、薪资和能力标签里筛选真实岗位，把“我想做什么”放进现实坐标。', icon: 'i-lucide-briefcase-business', evidence: ['岗位样本', '薪资区间', '能力关键词'], output: '候选方向清单', tone: '#0e7490' },
+  { to: '/profile', title: '个人职业画像', question: '我的优势和偏好是什么？', verb: '看自己', desc: '把经历拆成可追溯的八维能力，也把工作偏好作为并列信息呈现，不把性格误当成能力。', icon: 'i-lucide-radar', evidence: ['简历材料', '八维评分', '工作偏好'], output: '能力与偏好双层画像', tone: '#0f766e' },
+  { to: '/match', title: '人岗匹配', question: '我和目标之间差多少？', verb: '看差距', desc: '并排比较岗位要求与个人画像，找到最值得投入时间的提升项，并解释匹配依据。', icon: 'i-lucide-git-compare', evidence: ['匹配分', '维度差距', '解释文本'], output: '优先提升项', tone: '#2563eb' },
+  { to: '/graph', title: '职业图谱', question: '这条路还能走向哪里？', verb: '看路径', desc: '沿着晋升、转岗和能力迁移关系探索路线，不只盯住眼前的一个职位名称。', icon: 'i-lucide-network', evidence: ['岗位节点', '路径关系', '资源密度'], output: '发展路线判断', tone: '#7c3aed' },
+  { to: '/report', title: '生涯报告', question: '下个月具体做什么？', verb: '做计划', desc: '把目标岗位拆成短中期行动，保留目标来源、差距、证据和每一次复盘。', icon: 'i-lucide-file-text', evidence: ['目标岗位', '行动计划', '复盘记录'], output: '动态报告画布', tone: '#b45309' },
+  { to: '/personality', title: '工作偏好测评', question: '怎样的环境让我更自在？', verb: '补偏好', desc: '理解沟通方式、工作节奏和环境偏好，为能力与岗位判断补上一层人的感受。', icon: 'i-lucide-brain', evidence: ['问卷回答', '连续偏好', '人格指纹'], output: '工作偏好画像', tone: '#be185d' }
 ]
 
 const activeIndex = ref(0)
 const activeModule = computed(() => modules[activeIndex.value] ?? modules[0]!)
-
-function toneStyle(item: ModuleItem) {
-  return { '--tone': item.tone } as Record<string, string>
-}
+const sceneStyle = computed(() => ({ '--tone': activeModule.value.tone }))
 </script>
 
 <template>
-  <section class="module-router" aria-labelledby="feature-title">
-    <div class="module-heading">
-      <div>
-        <p class="text-xs font-semibold uppercase text-primary">Start Here</p>
-        <h2 id="feature-title" class="mt-2 text-2xl font-bold">选择一个入口，直接开始规划</h2>
-        <p class="mt-2 max-w-2xl text-sm leading-6 muted">
-          入口不再是割裂的页面：每一次浏览、上传、匹配或复盘，都会成为下一步报告判断的证据。
-        </p>
+  <section class="module-atlas" aria-labelledby="feature-title">
+    <header class="atlas-heading home-editorial-heading">
+      <div class="section-mark home-editorial-mark" aria-hidden="true"><span>02</span><i /></div>
+      <div class="home-editorial-title">
+        <p class="home-editorial-kicker">从你的问题出发</p>
+        <h2 id="feature-title">选择一个入口，直接开始规划</h2>
       </div>
-      <UButton to="/profile" color="neutral" variant="outline" trailing-icon="i-lucide-arrow-right">先试能力画像</UButton>
-    </div>
+      <p class="atlas-note home-editorial-note">不需要按固定顺序完成。选中此刻最困扰你的那个问题，其他材料会在后续自动汇合。</p>
+    </header>
 
-    <div class="module-shell" :style="toneStyle(activeModule)">
-      <div class="module-tabs" role="tablist" aria-label="规划模块">
+    <div class="module-browser" :style="sceneStyle">
+      <div class="module-index" role="tablist" aria-label="规划模块">
         <button
           v-for="(item, index) in modules"
+          :id="`module-tab-${index}`"
           :key="item.to"
           type="button"
-          class="module-tab"
-          :class="{ active: index === activeIndex }"
           role="tab"
+          :aria-controls="'module-stage'"
           :aria-selected="index === activeIndex"
+          :class="{ active: index === activeIndex }"
           @click="activeIndex = index"
         >
-          <UIcon :name="item.icon" class="size-4" />
-          <span>{{ item.verb }}</span>
+          <span class="index-number">{{ String(index + 1).padStart(2, '0') }}</span>
+          <span class="index-copy"><strong>{{ item.verb }}</strong><small>{{ item.title }}</small></span>
+          <UIcon name="i-lucide-arrow-up-right" class="size-4 index-arrow" />
         </button>
       </div>
 
-      <div class="module-preview">
-        <div class="module-stage">
-          <div class="stage-icon">
-            <UIcon :name="activeModule.icon" class="size-7" />
-          </div>
-          <div>
-            <p class="text-sm font-semibold" style="color: var(--tone)">{{ activeModule.verb }}</p>
-            <h3 class="mt-1 text-2xl font-bold">{{ activeModule.title }}</h3>
-            <p class="mt-3 max-w-xl text-sm leading-6 muted">{{ activeModule.desc }}</p>
-          </div>
-          <UButton :to="activeModule.to" color="primary" trailing-icon="i-lucide-arrow-right">
-            进入{{ activeModule.title }}
+      <article id="module-stage" class="module-stage" role="tabpanel" :aria-labelledby="`module-tab-${activeIndex}`">
+        <div class="stage-watermark" aria-hidden="true">{{ String(activeIndex + 1).padStart(2, '0') }}</div>
+        <div class="stage-orbit" aria-hidden="true">
+          <span /><span /><span />
+          <UIcon :name="activeModule.icon" class="orbit-icon" />
+        </div>
+
+        <div class="stage-copy">
+          <p class="stage-verb">{{ activeModule.verb }}</p>
+          <h3>{{ activeModule.question }}</h3>
+          <p class="stage-description">{{ activeModule.desc }}</p>
+          <UButton :to="activeModule.to" color="primary" size="lg" trailing-icon="i-lucide-arrow-up-right">
+            打开{{ activeModule.title }}
           </UButton>
         </div>
 
-        <div class="evidence-lane" aria-label="证据流">
-          <div v-for="item in activeModule.evidence" :key="item" class="evidence-node">
-            <UIcon name="i-lucide-dot" class="size-5" />
-            <span>{{ item }}</span>
-          </div>
-          <div class="evidence-output">
-            <span>输出</span>
-            <strong>{{ activeModule.output }}</strong>
-          </div>
+        <div class="evidence-thread">
+          <span class="thread-label">带入</span>
+          <div v-for="item in activeModule.evidence" :key="item" class="thread-node">{{ item }}</div>
+          <UIcon name="i-lucide-arrow-right" class="size-4" />
+          <div class="thread-output"><span>得到</span><strong>{{ activeModule.output }}</strong></div>
         </div>
-      </div>
+      </article>
     </div>
   </section>
 </template>
 
-<style scoped>
-.module-router {
-  display: grid;
-  gap: 1.25rem;
+<style>
+.module-atlas { display: grid; gap: 1.5rem; }
+.module-browser { --tone: var(--pathfy-capability); display: grid; grid-template-columns: minmax(12rem, .27fr) minmax(0, 1fr); min-height: 34rem; overflow: hidden; border: 1px solid var(--ui-border); border-radius: 1.75rem; background: color-mix(in srgb, var(--tone) 3%, var(--ui-bg)); box-shadow: 0 30px 70px -55px rgb(15 23 42 / .75); }
+.module-index { display: grid; align-content: center; padding: 1.5rem 0; background: color-mix(in srgb, var(--ui-bg-elevated) 82%, transparent); }
+.module-index button { display: grid; grid-template-columns: 2rem 1fr auto; gap: .75rem; align-items: center; border: 0; border-left: 3px solid transparent; background: transparent; padding: .9rem 1.25rem .9rem 1rem; color: var(--ui-text-muted); text-align: left; transition: background 180ms ease, color 180ms ease, border-color 180ms ease; }
+.module-index button:hover, .module-index button.active { border-left-color: var(--tone); background: color-mix(in srgb, var(--tone) 8%, transparent); color: var(--ui-text); }
+.index-number { color: var(--ui-text-muted); font: 800 .72rem/1 ui-monospace, SFMono-Regular, Menlo, monospace; }
+.index-copy { display: grid; gap: .08rem; }
+.index-copy strong { font-size: .88rem; }
+.index-copy small { color: var(--ui-text-muted); font-size: .7rem; font-weight: 600; }
+.index-arrow { opacity: 0; transform: translate(-.25rem, .25rem); transition: opacity 160ms ease, transform 160ms ease; }
+.module-index button.active .index-arrow { opacity: 1; transform: translate(0); }
+.module-stage { position: relative; display: grid; align-content: space-between; min-width: 0; overflow: hidden; padding: clamp(2rem, 5vw, 4.5rem); background: radial-gradient(circle at 76% 33%, color-mix(in srgb, var(--tone) 16%, transparent), transparent 28%), linear-gradient(135deg, color-mix(in srgb, var(--tone) 7%, transparent), transparent 44%); }
+.stage-watermark { position: absolute; top: -2.7rem; right: 1.5rem; color: color-mix(in srgb, var(--tone) 7%, transparent); font: 800 clamp(11rem, 22vw, 20rem)/1 ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: -.12em; user-select: none; }
+.stage-copy { position: relative; z-index: 2; max-width: 37rem; }
+.stage-verb { color: var(--tone); font-size: .78rem; font-weight: 850; letter-spacing: .1em; }
+.stage-copy h3 { margin-top: .75rem; font-size: clamp(2rem, 4vw, 3.7rem); font-weight: 780; letter-spacing: -.055em; line-height: 1.08; text-wrap: balance; }
+.stage-description { max-width: 34rem; margin: 1.2rem 0 1.7rem; color: var(--ui-text-muted); font-size: .92rem; line-height: 1.8; }
+.stage-orbit { position: absolute; top: 3rem; right: 4rem; width: 11rem; height: 11rem; border: 1px solid color-mix(in srgb, var(--tone) 22%, transparent); border-radius: 50%; }
+.stage-orbit span { position: absolute; inset: 18%; border: 1px solid color-mix(in srgb, var(--tone) 20%, transparent); border-radius: 50%; }
+.stage-orbit span:nth-child(2) { inset: 36%; }
+.stage-orbit span:nth-child(3) { top: 49%; right: -1.3rem; bottom: auto; left: auto; width: .55rem; height: .55rem; border: 0; background: var(--tone); box-shadow: 0 0 0 .35rem color-mix(in srgb, var(--tone) 12%, transparent); }
+.orbit-icon { position: absolute; top: 50%; left: 50%; width: 2rem; height: 2rem; color: var(--tone); transform: translate(-50%, -50%); }
+.evidence-thread { position: relative; z-index: 2; display: flex; flex-wrap: wrap; gap: .55rem; align-items: center; margin-top: 3rem; border-top: 1px solid var(--ui-border); padding-top: 1rem; }
+.thread-label { color: var(--ui-text-muted); font-size: .7rem; }
+.thread-node { border: 1px solid color-mix(in srgb, var(--tone) 25%, var(--ui-border)); border-radius: 999px; background: color-mix(in srgb, var(--tone) 6%, var(--ui-bg)); padding: .4rem .7rem; color: var(--ui-text-muted); font-size: .72rem; }
+.thread-output { display: flex; gap: .4rem; align-items: baseline; margin-left: auto; }
+.thread-output span { color: var(--ui-text-muted); font-size: .7rem; }
+.thread-output strong { color: color-mix(in srgb, var(--tone) 74%, var(--ui-text)); font-size: .82rem; }
+
+@media (max-width: 1023px) {
+  .module-browser { grid-template-columns: 1fr; min-height: auto; }
+  .module-index { grid-template-columns: repeat(6, minmax(7rem, 1fr)); overflow-x: auto; padding: 0; }
+  .module-index button { grid-template-columns: auto 1fr; border-left: 0; border-bottom: 3px solid transparent; padding: .9rem; }
+  .module-index button:hover, .module-index button.active { border-bottom-color: var(--tone); }
+  .index-copy small, .index-arrow { display: none; }
+  .module-stage { min-height: 29rem; }
 }
 
-.module-heading {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: end;
-  justify-content: space-between;
-  gap: 1rem;
-}
-
-.module-shell {
-  --tone: var(--ui-primary);
-  display: grid;
-  gap: 1rem;
-  border: 1px solid color-mix(in srgb, var(--tone) 24%, var(--ui-border));
-  border-radius: 1rem;
-  background:
-    radial-gradient(circle at top left, color-mix(in srgb, var(--tone) 14%, transparent), transparent 34%),
-    var(--ui-bg);
-  padding: 0.8rem;
-}
-
-.module-tabs {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 0.5rem;
-}
-
-.module-tab {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.35rem;
-  min-height: 2.6rem;
-  border: 1px solid var(--ui-border);
-  border-radius: 0.7rem;
-  background: color-mix(in srgb, var(--ui-bg) 88%, transparent);
-  color: var(--ui-text-muted);
-  font-size: 0.875rem;
-  font-weight: 700;
-  transition: border-color 160ms ease, background 160ms ease, color 160ms ease, transform 160ms ease;
-}
-
-.module-tab:hover,
-.module-tab.active {
-  border-color: color-mix(in srgb, var(--tone) 48%, var(--ui-border));
-  background: color-mix(in srgb, var(--tone) 10%, var(--ui-bg));
-  color: var(--ui-text);
-}
-
-.module-tab:active {
-  transform: translateY(1px);
-}
-
-.module-preview {
-  display: grid;
-  gap: 1rem;
-}
-
-.module-stage {
-  display: grid;
-  gap: 1rem;
-  align-items: center;
-  border-radius: 0.85rem;
-  background: color-mix(in srgb, var(--ui-bg-elevated) 82%, transparent);
-  padding: 1rem;
-}
-
-.stage-icon {
-  display: grid;
-  width: 3.4rem;
-  height: 3.4rem;
-  place-items: center;
-  border-radius: 0.8rem;
-  background: color-mix(in srgb, var(--tone) 14%, var(--ui-bg));
-  color: color-mix(in srgb, var(--tone) 75%, var(--ui-text));
-}
-
-.evidence-lane {
-  display: grid;
-  gap: 0.65rem;
-}
-
-.evidence-node,
-.evidence-output {
-  display: flex;
-  align-items: center;
-  gap: 0.45rem;
-  border-left: 3px solid color-mix(in srgb, var(--tone) 45%, var(--ui-border));
-  background: color-mix(in srgb, var(--tone) 6%, transparent);
-  padding: 0.75rem;
-}
-
-.evidence-node {
-  color: var(--ui-text-muted);
-  font-size: 0.875rem;
-}
-
-.evidence-output {
-  align-items: start;
-  flex-direction: column;
-  border-left-color: var(--tone);
-}
-
-.evidence-output span {
-  color: var(--ui-text-muted);
-  font-size: 0.75rem;
-}
-
-.evidence-output strong {
-  color: color-mix(in srgb, var(--tone) 72%, var(--ui-text));
-}
-
-@media (min-width: 768px) {
-  .module-tabs {
-    grid-template-columns: repeat(6, minmax(0, 1fr));
-  }
-
-  .module-stage {
-    grid-template-columns: auto minmax(0, 1fr) auto;
-  }
-
-  .evidence-lane {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-  }
+@media (max-width: 767px) {
+  .module-browser { border-radius: 1.2rem; }
+  .module-stage { min-height: 32rem; padding: 2rem 1.25rem; }
+  .stage-orbit { top: auto; right: -2rem; bottom: 4rem; opacity: .7; }
+  .stage-copy h3 { max-width: 18rem; }
+  .thread-output { width: 100%; margin-left: 0; }
 }
 </style>

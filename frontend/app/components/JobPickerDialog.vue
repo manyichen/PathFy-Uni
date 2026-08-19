@@ -1,4 +1,7 @@
 <script setup lang="ts">
+import { isAbortError } from '~/composables/useApi'
+import { createLatestRequestController, SEARCH_DEBOUNCE_MS } from '~/utils/request-performance'
+
 const props = withDefaults(defineProps<{
   open: boolean
   title?: string
@@ -17,17 +20,38 @@ const query = ref('')
 const page = ref(1)
 const loading = ref(false)
 const result = ref<any>({ jobs: [], total: 0, page_size: 20 })
+const requests = createLatestRequestController()
+let searchTimer: ReturnType<typeof setTimeout> | undefined
 
 async function load(reset = false) {
-  if (reset) page.value = 1
+  if (reset && page.value !== 1) {
+    page.value = 1
+    return
+  }
+  const ticket = requests.start()
   loading.value = true
   try {
     const params = new URLSearchParams({ page: String(page.value), page_size: '20' })
     if (query.value.trim()) params.set('q', query.value.trim())
-    result.value = await api.ok<any>(`/api/jobs/options?${params}`)
+    const data = await api.ok<any>(`/api/jobs/options?${params}`, { signal: ticket.signal })
+    if (ticket.isCurrent()) result.value = data
   } catch (error) {
+    if (isAbortError(error)) return
     toast.add({ title: error instanceof Error ? error.message : '岗位加载失败', color: 'error' })
-  } finally { loading.value = false }
+  } finally {
+    if (ticket.isCurrent()) loading.value = false
+  }
+}
+
+function submitSearch() {
+  if (searchTimer) clearTimeout(searchTimer)
+  load(true)
+}
+
+function scheduleSearch() {
+  if (!props.open) return
+  if (searchTimer) clearTimeout(searchTimer)
+  searchTimer = setTimeout(submitSearch, SEARCH_DEBOUNCE_MS)
 }
 
 function choose(job: any) {
@@ -35,15 +59,23 @@ function choose(job: any) {
   if (!props.multiple) emit('update:open', false)
 }
 
-watch(() => props.open, value => { if (value) load(true) })
+watch(() => props.open, (value) => {
+  if (value) load(true)
+  else requests.cancel()
+})
 watch(page, () => { if (props.open) load() })
+watch(query, scheduleSearch)
+onBeforeUnmount(() => {
+  if (searchTimer) clearTimeout(searchTimer)
+  requests.cancel()
+})
 </script>
 
 <template>
   <UModal :open="open" :title="title" :ui="{ content: 'sm:max-w-5xl' }" @update:open="emit('update:open', $event)">
     <template #body>
       <div class="grid gap-4">
-        <form class="flex gap-2" @submit.prevent="load(true)">
+        <form class="flex gap-2" @submit.prevent="submitSearch">
           <UInput v-model="query" class="flex-1" size="lg" icon="i-lucide-search" placeholder="搜索岗位名称、公司或地点" />
           <UButton type="submit" size="lg" :loading="loading">搜索</UButton>
         </form>

@@ -4,16 +4,18 @@ on:
   push:
     branches: [main, master]
   pull_request:
+  workflow_dispatch:
+  schedule:
+    - cron: "30 18 * * *"
 
 jobs:
-  backend:
+  backend-test:
     runs-on: ubuntu-latest
     defaults:
       run:
         working-directory: backend
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
@@ -21,42 +23,119 @@ jobs:
           cache-dependency-path: |
             backend/requirements.txt
             backend/requirements-dev.txt
-
-      - name: Install backend dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt -r requirements-dev.txt
-
-      - name: pytest
+      - run: python -m pip install --upgrade pip
+      - run: pip install -r requirements.txt -r requirements-dev.txt
+      - name: Run backend tests
         run: pytest tests/ -q
 
-  frontend:
+  frontend-type-unit:
     runs-on: ubuntu-latest
     defaults:
       run:
         working-directory: frontend
     steps:
       - uses: actions/checkout@v4
-
       - uses: pnpm/action-setup@v4
         with:
           version: 9
-
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
           cache: pnpm
           cache-dependency-path: frontend/pnpm-lock.yaml
-
-      - name: Install, check, test and generate frontend
+      - run: pnpm install --frozen-lockfile
+      - name: Type and unit/component gate
         run: |
-          pnpm install --frozen-lockfile
           pnpm typecheck
           pnpm test
+
+  frontend-build-budget:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - name: Generate and enforce bundle budget
+        run: |
           pnpm generate
+          pnpm bundle:check
+          pnpm experiment:ssr
+      - uses: actions/upload-artifact@v4
+        with:
+          name: frontend-build-and-bundle-report
+          path: |
+            frontend/.output/public
+            frontend/.output/bundle-report.json
+          retention-days: 7
 
-      - name: Install Playwright Chromium
-        run: pnpm exec playwright install --with-deps chromium
+  frontend-e2e:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec playwright install --with-deps chromium
+      - name: Run mock, accessibility and SSR E2E
+        run: |
+          pnpm generate
+          pnpm experiment:ssr:test
+          pnpm test:e2e
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: frontend-playwright-failures
+          path: |
+            frontend/test-results
+            frontend/playwright-report
+          retention-days: 7
 
-      - name: Run critical frontend E2E
-        run: pnpm test:e2e
+  integration-nightly:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install Flask
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec playwright install --with-deps chromium
+      - name: Run browser-to-Flask integration workflow
+        run: pnpm test:integration
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: integration-playwright-failures
+          path: frontend/test-results
+          retention-days: 7

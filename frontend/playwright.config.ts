@@ -5,6 +5,9 @@ const baseURL = `http://127.0.0.1:${port}`
 
 export default defineConfig({
   testDir: './tests/e2e',
+  testIgnore: ['**/visual-baseline.capture.ts'],
+  workers: process.env.CI ? 2 : 4,
+  expect: { timeout: 20_000 },
   use: { baseURL, trace: 'retain-on-failure' },
   webServer: { command: `pnpm exec nuxt dev --host 127.0.0.1 --port ${port}`, url: baseURL, reuseExistingServer: true, timeout: 120_000 }
 })

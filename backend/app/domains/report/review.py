@@ -33,6 +33,7 @@ def _evaluate_review_metrics(
 ) -> Dict[str, Any]:
     rows: List[Dict[str, Any]] = []
     failed_codes: List[str] = []
+    evaluated_count = 0
     submitted = submitted_metrics or {}
     for m in expected_metrics:
         code = str(m.get("code") or "").strip()
@@ -41,14 +42,16 @@ def _evaluate_review_metrics(
         target = parse_metric_target(str(m.get("target") or "0"))
         actual = to_float(submitted.get(code), float("nan"))
         if actual != actual:  # nan
-            passed = False
-            actual = 0.0
+            passed = None
             missing = True
+            status = "missing"
         else:
             passed = actual >= target
             missing = False
-        if not passed:
-            failed_codes.append(code)
+            status = "passed" if passed else "failed"
+            evaluated_count += 1
+            if not passed:
+                failed_codes.append(code)
         rows.append(
             {
                 "code": code,
@@ -56,17 +59,27 @@ def _evaluate_review_metrics(
                 "cycle": m.get("cycle") or "",
                 "target_raw": m.get("target") or "",
                 "target_value": round(target, 4),
-                "actual_value": round(actual, 4),
+                "actual_value": None if missing else round(actual, 4),
                 "passed": passed,
                 "missing": missing,
+                "status": status,
             }
         )
-    pass_rate = (len(rows) - len(failed_codes)) / len(rows) if rows else 0.0
+    pass_rate = (
+        (evaluated_count - len(failed_codes)) / evaluated_count
+        if evaluated_count
+        else None
+    )
+    evidence_complete = evaluated_count > 0 and evaluated_count == len(rows)
     return {
         "rows": rows,
         "failed_codes": failed_codes,
-        "pass_rate": round(pass_rate, 4),
-        "all_passed": len(failed_codes) == 0 and len(rows) > 0,
+        "pass_rate": round(pass_rate, 4) if pass_rate is not None else None,
+        "all_passed": evidence_complete and len(failed_codes) == 0,
+        "evaluated_count": evaluated_count,
+        "missing_count": len(rows) - evaluated_count,
+        "has_evidence": evaluated_count > 0,
+        "evidence_complete": evidence_complete,
     }
 
 
@@ -122,19 +135,23 @@ def _numeric_hints_from_review_text(review_text: str) -> Dict[str, Any]:
 def _heuristic_extract_metrics_from_text(review_text: str) -> Dict[str, float]:
     text = str(review_text or "").strip()
 
-    def pick(patterns: List[str], default: float = 0.0) -> float:
+    def pick(patterns: List[str]) -> float | None:
         for p in patterns:
             m = re.search(p, text, re.IGNORECASE)
             if m:
-                return to_float(m.group(1), default)
-        return default
+                return to_float(m.group(1), 0.0)
+        return None
 
-    return {
-        "dim_gap_reduction": pick([r"(?:缺口收敛率|能力缺口).*?(-?\d+(?:\.\d+)?)\s*%?"], 0.0),
-        "project_completion": pick([r"(?:项目完成率|任务完成率|完成率).*?(-?\d+(?:\.\d+)?)\s*%?"], 0.0),
-        "match_score_change": pick([r"(?:匹配度(?:变化)?|匹配分(?:变化)?).*?(-?\d+(?:\.\d+)?)\s*分?"], 0.0),
-        "delivery_output": pick([r"(?:成果数量|可展示成果).*?(-?\d+(?:\.\d+)?)\s*(?:项|个)?"], 0.0),
+    candidates = {
+        "dim_gap_reduction": pick([r"(?:缺口收敛率|能力缺口).*?(-?\d+(?:\.\d+)?)\s*%?"]),
+        "project_completion": pick([r"(?:项目完成率|任务完成率|完成率).*?(-?\d+(?:\.\d+)?)\s*%?"]),
+        "match_score_change": pick([r"(?:匹配度(?:变化)?|匹配分(?:变化)?).*?(-?\d+(?:\.\d+)?)\s*分?"]),
+        "delivery_output": pick([
+            r"(?:新增|完成|交付|产出)?\s*(-?\d+(?:\.\d+)?)\s*(?:项|个|份)\s*(?:可展示)?(?:成果|作品|交付物)",
+            r"(?:成果数量|可展示成果).*?(-?\d+(?:\.\d+)?)\s*(?:项|个|份)?",
+        ]),
     }
+    return {code: value for code, value in candidates.items() if value is not None}
 
 
 def _llm_extract_metrics_from_text(
@@ -143,13 +160,22 @@ def _llm_extract_metrics_from_text(
     review_text: str,
     review_cycle: str,
 ) -> Dict[str, Any]:
+    heuristic_metrics = _heuristic_extract_metrics_from_text(review_text)
+    if heuristic_metrics:
+        return {
+            "ok": True,
+            "metrics": heuristic_metrics,
+            "summary": f"已从复盘原文识别 {len(heuristic_metrics)} 项可核对指标",
+            "source": "heuristic",
+        }
+
     cfg = settings_view(base=current_app.config)
     api_key = str(cfg.get("DEEPSEEK_API_KEY") or "").strip()
     if not api_key:
         return {
             "ok": False,
             "error": "missing DEEPSEEK_API_KEY",
-            "metrics": _heuristic_extract_metrics_from_text(review_text),
+            "metrics": heuristic_metrics,
             "source": "heuristic_fallback",
         }
 
@@ -180,17 +206,17 @@ def _llm_extract_metrics_from_text(
         "numeric_hints_from_text": numeric_hints,
         "metrics_schema": metrics_brief,
         "rules": [
-            "四个数字必须尽量贴合正文与 numeric_hints；正文没有写到的不要拍脑袋凑成 5/10/15/20 这种整齐数。",
+            "仅提取正文有明确数字证据的指标；没有写到的字段必须返回 null，禁止猜测。",
             "dim_gap_reduction、project_completion 用百分比，尽量保留 1 位小数（如 11.4、76.8）；只有正文明确整数时才用整数。",
             "match_score_change 表示相对上一周期的匹配分变化，可为负；尽量 1 位小数。",
-            "delivery_output 为成果个数，非负整数；可参考 quantity_phrases_found；能数出几条写几条，数不出则写 0。",
-            "若信息严重不足，宁可给偏低的小数也不要默认 80、50、10 这类常见凑数。",
+            "delivery_output 为成果个数，非负整数；可参考 quantity_phrases_found；数不出则返回 null。",
+            "信息不足不是失败，不允许用偏低数值代替缺失状态。",
         ],
         "required_output": {
-            "dim_gap_reduction": "number 百分比",
-            "project_completion": "number 百分比",
-            "match_score_change": "number 分值变化, 可为负数",
-            "delivery_output": "number 本周期新增成果项数",
+            "dim_gap_reduction": "number|null 百分比",
+            "project_completion": "number|null 百分比",
+            "match_score_change": "number|null 分值变化, 可为负数",
+            "delivery_output": "number|null 本周期新增成果项数",
             "summary": "string 一句话总结<=60字",
         },
     }
@@ -200,7 +226,10 @@ def _llm_extract_metrics_from_text(
         f"{json.dumps(redact_payload(prompt_obj), ensure_ascii=False)}"
     )
     model = str(cfg.get("CAREER_DEEPSEEK_MODEL") or "deepseek-v4-pro")
-    timeout = float(cfg.get("CAREER_LLM_TIMEOUT_SECONDS") or 120.0)
+    # Draft creation is an interactive operation. Keep the optional extraction
+    # call short and fall back to deterministic parsing instead of holding the
+    # whole request for the report-generation timeout (normally 120 seconds).
+    timeout = min(15.0, max(3.0, float(cfg.get("CAREER_LLM_TIMEOUT_SECONDS") or 15.0)))
     extract_temp = float(cfg.get("CAREER_REVIEW_EXTRACT_TEMPERATURE") or 0.55)
     try:
         text = _call_openai_compatible(
@@ -210,7 +239,7 @@ def _llm_extract_metrics_from_text(
             timeout=timeout,
             system_prompt=(
                 "你将复盘文本映射为可评估指标，只输出 JSON。"
-                "禁止为省事输出全是 5 的倍数；估计要依据正文，可用一位小数；"
+                "缺少明确数字证据时输出 null；禁止猜测或用 0 补位；"
                 "若正文出现百分比或分数，必须与之一致或能解释的差异。"
             ),
             user_prompt=user_prompt,
@@ -219,15 +248,12 @@ def _llm_extract_metrics_from_text(
         parsed = json.loads(strip_json_fence(text))
         if not isinstance(parsed, dict):
             raise RuntimeError("llm_root_not_object")
-        metrics = {
-            "dim_gap_reduction": to_float(parsed.get("dim_gap_reduction"), 0.0),
-            "project_completion": to_float(parsed.get("project_completion"), 0.0),
-            "match_score_change": to_float(parsed.get("match_score_change"), 0.0),
-            "delivery_output": to_float(parsed.get("delivery_output"), 0.0),
-        }
-        metrics["delivery_output"] = max(0.0, round(metrics.get("delivery_output", 0.0)))
-        for k in ("dim_gap_reduction", "project_completion", "match_score_change"):
-            metrics[k] = round(to_float(metrics.get(k), 0.0), 2)
+        metrics: Dict[str, float] = {}
+        for key in ("dim_gap_reduction", "project_completion", "match_score_change"):
+            if parsed.get(key) is not None:
+                metrics[key] = round(to_float(parsed.get(key), 0.0), 2)
+        if parsed.get("delivery_output") is not None:
+            metrics["delivery_output"] = max(0.0, round(to_float(parsed.get("delivery_output"), 0.0)))
         summary = str(parsed.get("summary") or "").strip()[:120]
         return {
             "ok": True,
@@ -241,7 +267,7 @@ def _llm_extract_metrics_from_text(
         return {
             "ok": False,
             "error": str(exc),
-            "metrics": _heuristic_extract_metrics_from_text(review_text),
+            "metrics": heuristic_metrics,
             "source": "heuristic_fallback",
         }
 
@@ -251,10 +277,15 @@ def _build_auto_adjustment(
     failed_codes: List[str],
     *,
     replan_mode: str = "light",
+    target_job_ids: List[str] | None = None,
+    allow_llm: bool = True,
 ) -> Dict[str, Any]:
     targets = report_obj.get("targets") or []
+    scoped_ids = {str(value).strip() for value in (target_job_ids or []) if str(value).strip()}
     gap_counter: Dict[str, float] = defaultdict(float)
     for t in targets:
+        if scoped_ids and str((t or {}).get("id") or "").strip() not in scoped_ids:
+            continue
         gaps = ((t or {}).get("match_preview") or {}).get("dimension_gaps") or {}
         for k, v in gaps.items():
             gap_counter[str(k)] += to_float(v, 0.0)
@@ -276,13 +307,14 @@ def _build_auto_adjustment(
         "error": None,
     }
 
-    if replan_mode in ("strong", "light"):
+    if allow_llm and replan_mode in ("strong", "light"):
         llm_payload = _llm_auto_replan_payload(
             report_obj,
             failed_codes,
             top_dims,
             actions[:3],
             replan_mode=replan_mode,
+            target_job_ids=target_job_ids,
         )
         if llm_payload.get("ok"):
             llm_data = llm_payload.get("data") or {}
@@ -312,6 +344,8 @@ def _build_auto_adjustment(
             llm_meta["error"] = llm_payload.get("error") or "llm_unavailable"
     else:
         actions = actions[:1]
+        if not allow_llm:
+            llm_meta.update({"enabled": False, "error": "action_evidence_uses_deterministic_replan"})
 
     graph_hints = pick_replan_resource_hints(report_obj, top_dims)
     if graph_hints and replan_mode != "continue":
@@ -342,6 +376,7 @@ def _llm_auto_replan_payload(
     fallback_actions: List[str],
     *,
     replan_mode: str = "light",
+    target_job_ids: List[str] | None = None,
 ) -> Dict[str, Any]:
     if not bool(setting("CAREER_ENABLE_REPLAN_LLM", True)):
         return {"ok": False, "error": "CAREER_ENABLE_REPLAN_LLM disabled"}
@@ -366,9 +401,12 @@ def _llm_auto_replan_payload(
             }
         )
 
+    scoped_ids = {str(value).strip() for value in (target_job_ids or []) if str(value).strip()}
     target_top = []
     for t in (report_obj.get("targets") or [])[:5]:
         if not isinstance(t, dict):
+            continue
+        if scoped_ids and str(t.get("id") or "").strip() not in scoped_ids:
             continue
         gaps = (t.get("match_preview") or {}).get("dimension_gaps") or {}
         gap_items = sorted(
@@ -408,6 +446,8 @@ def _llm_auto_replan_payload(
     plan_brief = []
     for p in (report_obj.get("plans_by_target") or [])[:5]:
         if not isinstance(p, dict):
+            continue
+        if scoped_ids and str(p.get("job_id") or "").strip() not in scoped_ids:
             continue
         pm = int(p.get("current_plan_month") or 1) + 1
         pk = phase_key_for_plan_month(pm)
@@ -571,6 +611,8 @@ def _apply_auto_adjustment_to_report(
     review_anchor_month: float | None = None,
     replan_mode: str = "light",
     metric_eval: Dict[str, Any] | None = None,
+    target_job_ids: List[str] | None = None,
+    include_global_growth: bool = True,
 ) -> None:
     if not adjust_detail.get("triggered"):
         return
@@ -586,9 +628,10 @@ def _apply_auto_adjustment_to_report(
         review_anchor_month=anchor,
         replan_mode=str(adjust_detail.get("replan_mode") or replan_mode),
         metric_eval=metric_eval or {},
+        target_job_ids=target_job_ids,
     )
 
-    if not actions:
+    if not actions or not include_global_growth:
         return
 
     growth_plan = report_obj.get("growth_plan")

@@ -21,7 +21,7 @@ test.beforeEach(async ({ page }) => {
     localStorage.setItem('auth_token', 'e2e-token')
     localStorage.setItem('auth_user', JSON.stringify({ id: 1, username: '测试用户', email: 'test@example.com' }))
   })
-  await page.route('**/api/**', route => {
+  await page.route('**://*/api/**', route => {
     const url = new URL(route.request().url())
     let data: any = { jobs: [], items: [], preferences }
 
@@ -57,6 +57,27 @@ test('home keeps the migrated visual entry points', async ({ page }) => {
   await expect(page.getByRole('button', { name: '外观设置' })).toBeVisible()
 })
 
+test('home reserves its LCP media and stays within the CLS budget', async ({ page }) => {
+  await page.addInitScript(() => {
+    const metrics = { cls: 0 }
+    ;(window as typeof window & { __pathfyMetrics?: typeof metrics }).__pathfyMetrics = metrics
+    new PerformanceObserver((list) => {
+      for (const entry of list.getEntries() as Array<PerformanceEntry & { hadRecentInput?: boolean; value?: number }>) {
+        if (!entry.hadRecentInput) metrics.cls += entry.value || 0
+      }
+    }).observe({ type: 'layout-shift', buffered: true })
+  })
+  await page.goto('/')
+  const heroImage = page.locator('.hero-image')
+  await expect(heroImage).toHaveAttribute('width', '1800')
+  await expect(heroImage).toHaveAttribute('height', '1000')
+  await expect(heroImage).toHaveAttribute('fetchpriority', 'high')
+  await expect(page.locator('.home-hero')).toHaveCSS('min-height', '672px')
+  await page.waitForTimeout(500)
+  const cls = await page.evaluate(() => (window as typeof window & { __pathfyMetrics?: { cls: number } }).__pathfyMetrics?.cls || 0)
+  expect(cls).toBeLessThanOrEqual(0.1)
+})
+
 test('appearance controls update local preferences', async ({ page }) => {
   await page.emulateMedia({ colorScheme: 'light' })
   await page.goto('/')
@@ -74,6 +95,22 @@ test('appearance controls update local preferences', async ({ page }) => {
     input.dispatchEvent(new Event('change', { bubbles: true }))
   })
   await expect.poll(() => page.evaluate(() => localStorage.getItem('hue'))).toBe('150')
+})
+
+test('quick dock uses a neutral hue-slider shell and shows team contact details', async ({ page }) => {
+  await page.goto('/')
+  await page.getByRole('button', { name: '快捷浮窗' }).click()
+
+  const dock = page.getByRole('complementary', { name: '快捷浮窗' })
+  await expect(dock.getByText('开发团队')).toBeVisible()
+  await expect(dock.getByText('suilli小队')).toBeVisible()
+  await expect(dock.getByRole('link', { name: '3374161455@qq.com' })).toHaveAttribute('href', 'mailto:3374161455@qq.com')
+  await expect(dock.getByText('把复杂的选择，做成清晰而有温度的成长路径。')).toBeVisible()
+
+  const slider = dock.getByLabel('快捷主题色相')
+  await expect(slider).toHaveCSS('display', 'block')
+  const shellColor = await slider.locator('..').evaluate(element => getComputedStyle(element).backgroundColor)
+  expect(shellColor).not.toBe('oklch(0.8 0.1 0)')
 })
 
 test('mobile navigation closes after a page switch', async ({ page }) => {
@@ -132,7 +169,7 @@ test('graph and report share the rich job picker', async ({ page }) => {
   await expect(page.getByRole('button', { name: /数据分析师.*示例科技|鏁版嵁.*绀轰緥/ }).first()).toBeVisible()
 })
 
-test('report keeps the development line chart and guidance copy', async ({ page }) => {
+test('report keeps the real-event path visualization and guidance copy', async ({ page }) => {
   const pageErrors: string[] = []
   page.on('pageerror', error => pageErrors.push(error.message))
   await page.addInitScript(() => {
@@ -148,6 +185,9 @@ test('report keeps the development line chart and guidance copy', async ({ page 
     }))
   })
   await page.goto('/report')
-  await expect(page.locator('canvas').first()).toBeVisible()
+  await page.getByRole('tab', { name: /路线/ }).click()
+  await expect(page.getByRole('heading', { name: '12 个月已验证成长轨迹' })).toBeVisible()
+  await expect(page.locator('canvas.report-path-canvas')).toBeVisible()
+  await expect(page.getByText(/没有复盘就不画线/)).toBeVisible()
   expect(pageErrors).toEqual([])
 })

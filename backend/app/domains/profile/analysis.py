@@ -57,6 +57,28 @@ DIMENSION_NAMES = {
     "cap_req_growth": "学习与发展潜力"
 }
 
+DIMENSION_OUTCOMES = {
+    "cap_req_theory": ("形成可复述的核心知识框架", "完成一份核心概念图并用真实问题验证", "核心知识点覆盖率达到 80%，能独立讲解 3 个关键概念"),
+    "cap_req_cross": ("把第二学科方法用于本专业问题", "完成一次跨学科案例拆解", "产出 1 份包含两类方法的案例报告并获得同伴反馈"),
+    "cap_req_practice": ("把知识转化为可演示成果", "完成一个端到端实践项目", "形成代码、过程记录和复盘齐全的作品集条目"),
+    "cap_req_digital": ("建立稳定的数字工具工作流", "用数据工具完成一次真实分析", "保留数据、脚本、图表和结论四类可核验证据"),
+    "cap_req_innovation": ("把想法推进到可验证原型", "围绕真实痛点完成一次方案验证", "完成原型并收集至少 5 条用户或评审反馈"),
+    "cap_req_teamwork": ("证明协作过程中的实际贡献", "在团队任务中承担明确角色", "沉淀分工、协作记录和一次团队复盘"),
+    "cap_req_social": ("建立可持续的职业连接", "参与行业交流并形成后续联系", "新增 5 位有效职业联系人并完成 2 次深度交流"),
+    "cap_req_growth": ("形成可复盘的持续学习闭环", "执行一个四周学习冲刺", "完成周计划、成果记录和 4 次复盘修订"),
+}
+
+DIMENSION_EVIDENCE_KEYWORDS = {
+    "cap_req_theory": ["课程", "论文", "研究", "理论", "专业", "成绩", "证书"],
+    "cap_req_cross": ["跨学科", "交叉", "产品", "业务", "设计", "经济", "管理"],
+    "cap_req_practice": ["项目", "实习", "实验", "开发", "作品", "竞赛", "实践"],
+    "cap_req_digital": ["Python", "Java", "SQL", "数据", "AI", "Git", "Excel", "编程"],
+    "cap_req_innovation": ["创新", "创业", "专利", "原型", "方案", "发明", "优化"],
+    "cap_req_teamwork": ["团队", "协作", "负责", "组织", "领导", "沟通", "协调"],
+    "cap_req_social": ["社团", "志愿", "社会实践", "会议", "交流", "协会", "导师"],
+    "cap_req_growth": ["学习", "自学", "培训", "复盘", "成长", "计划", "持续"],
+}
+
 # ===================== 能力提升建议库 =====================
 SKILL_IMPROVEMENT_SUGGESTIONS = {
     "cap_req_theory": {
@@ -199,58 +221,57 @@ def calculate_industry_match(scores):
     return results
 
 def generate_short_term_plan(scores):
-    """生成短期提升计划（3-6个月）"""
-    # 选择分数在40-70分之间的维度作为提升目标
-    improvement_targets = []
-    for dim, score in scores.items():
-        if 40 <= score <= 70:
-            improvement_targets.append((dim, score))
-
-    # 按分数升序排列，优先提升较低分数的维度
-    improvement_targets.sort(key=lambda x: x[1])
-
-    # 选择2-3个最需要提升的维度
-    top_targets = improvement_targets[:3]
-
+    """生成始终非空、可验证的 90 天提升计划。"""
+    top_targets = sorted(scores.items(), key=lambda item: item[1])[:3]
+    phases = [("第 1–30 天", "建立基线"), ("第 31–60 天", "完成实践"), ("第 61–90 天", "验证沉淀")]
     plan = []
-    for dim, score in top_targets:
+    for index, (dim, score) in enumerate(top_targets):
         suggestions = SKILL_IMPROVEMENT_SUGGESTIONS.get(dim, {}).get("短期", [])
+        outcome, deliverable, success_metric = DIMENSION_OUTCOMES.get(dim, ("提升关键能力", "形成一项可展示成果", "完成成果并获得一次外部反馈"))
+        timeframe, phase = phases[index]
         plan.append({
             "dimension": DIMENSION_NAMES.get(dim, dim),
             "current_score": score,
-            "suggestions": suggestions[:2]  # 每个维度提供2条短期建议
+            "target_score": min(100, max(score + 8, 70)),
+            "priority": index + 1,
+            "timeframe": timeframe,
+            "phase": phase,
+            "milestone": outcome,
+            "actions": suggestions[:2],
+            "suggestions": suggestions[:2],
+            "deliverable": deliverable,
+            "success_metric": success_metric,
         })
 
     return plan
 
 def generate_long_term_goals(scores):
-    """生成长期发展目标（1-2年）"""
-    # 选择分数低于50或高于70的维度
+    """生成优势深化与短板补齐并存的 1–3 年路线。"""
+    ranked = sorted(scores.items(), key=lambda item: item[1])
+    selected = ranked[:2]
+    strongest = ranked[-1] if ranked else None
+    if strongest and strongest not in selected:
+        selected.append(strongest)
+
     goals = []
-
-    for dim, score in scores.items():
-        if score < 50:
-            # 低分维度作为需要重点培养的能力
-            suggestions = SKILL_IMPROVEMENT_SUGGESTIONS.get(dim, {}).get("长期", [])
-            goals.append({
-                "dimension": DIMENSION_NAMES.get(dim, dim),
-                "current_score": score,
-                "goal_type": "重点培养",
-                "suggestions": suggestions[:2]
-            })
-        elif score > 80:
-            # 高分维度作为可以深化的优势
-            suggestions = SKILL_IMPROVEMENT_SUGGESTIONS.get(dim, {}).get("长期", [])
-            goals.append({
-                "dimension": DIMENSION_NAMES.get(dim, dim),
-                "current_score": score,
-                "goal_type": "深化优势",
-                "suggestions": suggestions[:2]
-            })
-
-    # 按分数升序排列
-    goals.sort(key=lambda x: x["current_score"])
-    return goals[:4]  # 最多返回4个目标
+    horizons = ["6–12 个月", "12–18 个月", "18–36 个月"]
+    for index, (dim, score) in enumerate(selected):
+        suggestions = SKILL_IMPROVEMENT_SUGGESTIONS.get(dim, {}).get("长期", [])
+        outcome, deliverable, success_metric = DIMENSION_OUTCOMES.get(dim, ("形成稳定竞争力", "形成持续更新的成果档案", "每季度新增一项可核验证据"))
+        is_strength = strongest == (dim, score)
+        goals.append({
+            "dimension": DIMENSION_NAMES.get(dim, dim),
+            "current_score": score,
+            "target_score": min(100, score + (8 if is_strength else 15)),
+            "goal_type": "深化优势" if is_strength else "补齐关键能力",
+            "timeframe": horizons[index],
+            "outcome": outcome,
+            "milestones": suggestions[:2],
+            "suggestions": suggestions[:2],
+            "portfolio_evidence": deliverable,
+            "success_metric": success_metric,
+        })
+    return goals
 
 def extract_resume_keywords(resume_text):
     """提取画像材料关键词并分析"""
@@ -314,6 +335,7 @@ def generate_detailed_analysis(scores, resume_text=""):
         "dimension_analysis": [],  # 各维度详细分析
         "advantage_dimensions": [],  # 优势维度
         "劣势_dimensions": [],  # 劣势维度
+        "weakness_dimensions": [],  # 兼容前端标准字段
         "overall_evaluation": "",  # 整体评价
         "short_term_plan": [],  # 短期提升计划
         "long_term_goals": [],  # 长期发展目标
@@ -321,14 +343,41 @@ def generate_detailed_analysis(scores, resume_text=""):
         "resume_analysis": {}  # 画像材料关键词分析
     }
 
-    # 1. 各维度详细分析
+    # 1. 各维度详细分析：加入相对位置、材料线索、差距、行动和验收标准。
+    avg_score = sum(scores.values()) / len(scores) if scores else 0
+    ranked_keys = [item[0] for item in sorted(scores.items(), key=lambda item: item[1], reverse=True)]
+    resume_lower = str(resume_text or "").lower()
     for dim, score in scores.items():
         dim_name = DIMENSION_NAMES.get(dim, dim)
+        rank = ranked_keys.index(dim) + 1
+        delta = round(score - avg_score, 1)
+        keywords = DIMENSION_EVIDENCE_KEYWORDS.get(dim, [])
+        evidence_clues = [keyword for keyword in keywords if keyword.lower() in resume_lower][:5]
+        outcome, deliverable, success_metric = DIMENSION_OUTCOMES.get(dim, ("形成稳定能力", "补充一项可展示成果", "完成成果并获得反馈"))
+        suggestions = SKILL_IMPROVEMENT_SUGGESTIONS.get(dim, {}).get("短期", [])[:2]
+        if score >= 75:
+            judgement = f"当前为第 {rank} 位能力，比八维均值高 {abs(delta):.1f} 分；重点不是继续堆分，而是把优势转化为可复用成果。"
+            gap = f"现有分数说明能力基础较强，但仍需用项目结果、公开作品或第三方评价证明“{outcome}”。"
+        else:
+            direction = "高" if delta >= 0 else "低"
+            judgement = f"当前为第 {rank} 位能力，比八维均值{direction} {abs(delta):.1f} 分；距离 75 分稳定优势线还有 {max(0, 75-score):.1f} 分。"
+            gap = f"当前主要缺口不是概念描述，而是缺少能够证明“{outcome}”的连续行为和结果证据。"
         analysis["dimension_analysis"].append({
+            "dimension_key": dim,
             "dimension": dim_name,
             "score": score,
             "level": "高" if score >= 75 else ("中" if score >= 50 else "低"),
-            "interpretation": get_dimension_interpretation(dim, score)
+            "stage": "优势已形成" if score >= 75 else ("基础可用" if score >= 60 else "优先补证"),
+            "rank": rank,
+            "average_score": round(avg_score, 1),
+            "relative_to_average": delta,
+            "interpretation": get_dimension_interpretation(dim, score),
+            "judgement": judgement,
+            "evidence_clues": evidence_clues,
+            "development_gap": gap,
+            "next_actions": suggestions,
+            "expected_evidence": deliverable,
+            "success_metric": success_metric,
         })
 
     # 2. 优势和劣势维度排序
@@ -341,9 +390,9 @@ def generate_detailed_analysis(scores, resume_text=""):
         {"dimension": DIMENSION_NAMES.get(dim, dim), "score": score}
         for dim, score in sorted_dims[-3:]
     ]
+    analysis["weakness_dimensions"] = list(analysis["劣势_dimensions"])
 
     # 3. 整体评价
-    avg_score = sum(scores.values()) / len(scores)
     analysis["overall_evaluation"] = generate_overall_evaluation(scores, avg_score)
 
     # 4. 生成发展计划

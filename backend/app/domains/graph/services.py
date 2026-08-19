@@ -583,6 +583,31 @@ def get_stats() -> Dict[str, Any]:
         """, cap_version=str(setting("GRAPH_CAP_VERSION", "job-cap-v2")), salary_version="v1").single()
         if row:
             stats.update({key: int(value or 0) for key, value in dict(row).items()})
+        workstyle_row = session.run("""
+        MATCH (j:Job)
+        OPTIONAL MATCH (j)-[:HAS_TITLE]->(jt:JobTitle)
+        WITH j, head(collect(jt)) AS jt
+        WITH j, jt,
+          CASE WHEN (j.workstyle_evidence_json IS NOT NULL OR jt.workstyle_evidence_json IS NOT NULL) THEN 1 ELSE 0 END AS evidenced,
+          CASE WHEN j.workstyle_evidence_json IS NULL AND jt.workstyle_evidence_json IS NOT NULL THEN 1 ELSE 0 END AS inherited,
+          reduce(axis_count = 0, present IN [
+            coalesce(j.workstyle_interaction, jt.workstyle_interaction) IS NOT NULL AND coalesce(j.workstyle_conf_interaction, jt.workstyle_conf_interaction) IS NOT NULL,
+            coalesce(j.workstyle_abstraction, jt.workstyle_abstraction) IS NOT NULL AND coalesce(j.workstyle_conf_abstraction, jt.workstyle_conf_abstraction) IS NOT NULL,
+            coalesce(j.workstyle_analytical, jt.workstyle_analytical) IS NOT NULL AND coalesce(j.workstyle_conf_analytical, jt.workstyle_conf_analytical) IS NOT NULL,
+            coalesce(j.workstyle_structure, jt.workstyle_structure) IS NOT NULL AND coalesce(j.workstyle_conf_structure, jt.workstyle_conf_structure) IS NOT NULL
+          ] | axis_count + CASE WHEN present THEN 1 ELSE 0 END) AS axis_count
+        RETURN count(j) AS workstyle_total,
+               sum(evidenced) AS workstyle_evidenced,
+               sum(CASE WHEN evidenced = 1 AND axis_count >= 2 THEN 1 ELSE 0 END) AS workstyle_ready,
+               sum(inherited) AS workstyle_inherited
+        """).single()
+        if workstyle_row:
+            workstyle_stats = {key: int(value or 0) for key, value in dict(workstyle_row).items()}
+            total = workstyle_stats.get("workstyle_total", 0)
+            ready = workstyle_stats.get("workstyle_ready", 0)
+            workstyle_stats["workstyle_missing"] = max(0, total - workstyle_stats.get("workstyle_evidenced", 0))
+            workstyle_stats["workstyle_coverage_percent"] = round(ready * 100 / total) if total else 0
+            stats.update(workstyle_stats)
     return stats
 
 

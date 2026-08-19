@@ -7,7 +7,7 @@ from app.domains.graph import capability_service, task_registry, task_service
 
 def test_task_catalog_covers_all_queue_operations():
     assert task_registry.TASK_TYPES == {
-        "job_import", "job_capability_evaluation", "job_capability_result_import",
+        "job_import", "job_capability_evaluation", "job_capability_result_import", "job_workstyle_import", "job_workstyle_evaluation",
         "learning_resource_import", "competition_import", "job_promotion_import",
         "job_lateral_import", "promotion_recommendation_import", "salary_normalization",
         "inferred_job_cleanup", "emergency_clear",
@@ -16,6 +16,7 @@ def test_task_catalog_covers_all_queue_operations():
     assert [item.role for item in recommendation.files] == ["learning_file", "competition_file"]
     assert task_registry.task_spec("inferred_job_cleanup").dangerous is True
     assert task_registry.normalize_options("job_capability_evaluation", {"scope": "all", "capability_batch_size": 999})["capability_batch_size"] == 50
+    assert task_registry.normalize_options("job_workstyle_evaluation", {"scope": "stale"})["scope"] == "stale"
 
 
 def test_capability_normalization_requires_all_eight_dimensions():

@@ -26,6 +26,9 @@ class Config:
     NEO4J_USER = os.getenv("NEO4J_USER", "neo4j")
     NEO4J_PASSWORD = os.getenv("NEO4J_PASSWORD", "")
     NEO4J_DATABASE = os.getenv("NEO4J_DATABASE", "neo4j")
+    NEO4J_CONNECTION_TIMEOUT_SECONDS = float(os.getenv("NEO4J_CONNECTION_TIMEOUT_SECONDS", "5"))
+    NEO4J_QUERY_TIMEOUT_SECONDS = float(os.getenv("NEO4J_QUERY_TIMEOUT_SECONDS", "12"))
+    JOBS_TRANSITION_LLM_ENABLED = _env_bool("JOBS_TRANSITION_LLM_ENABLED", "false")
 
     ARK_API_KEY = os.getenv("ARK_API_KEY", "")
     ARK_BASE_URL = os.getenv("ARK_BASE_URL", "https://ark.cn-beijing.volces.com/api/v3")

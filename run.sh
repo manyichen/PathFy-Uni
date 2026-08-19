@@ -61,6 +61,9 @@ start_backend() {
     log "Installing backend dependencies..."
     python -m pip install -r requirements.txt
 
+    log "Applying database migrations..."
+    python -m alembic upgrade head
+
     log "Starting Flask backend: http://127.0.0.1:5000"
     exec python run.py
   ) &

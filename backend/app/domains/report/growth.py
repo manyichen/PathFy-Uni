@@ -97,40 +97,64 @@ def _build_growth_plan(
 
 def _review_achievement_score(
     submitted: Dict[str, Any],
-    pass_rate: float,
+    pass_rate: float | None,
+    action_completion_rate: float | None = None,
 ) -> float:
-    """本周期达成度 0–100（无人工底数，全 0 即为 0）。"""
-    dg = float((submitted or {}).get("dim_gap_reduction") or 0)
-    pc = float((submitted or {}).get("project_completion") or 0)
-    msc = float((submitted or {}).get("match_score_change") or 0)
-    dl = float((submitted or {}).get("delivery_output") or 0)
-    if msc <= 0:
+    """本周期达成度 0–100；缺失指标不按 0 分，已完成行动作为独立执行证据。"""
+    source = submitted if isinstance(submitted, dict) else {}
+
+    def observed_number(key: str) -> float | None:
+        raw = source.get(key)
+        if raw in (None, ""):
+            return None
+        try:
+            return float(raw)
+        except (TypeError, ValueError):
+            return None
+
+    dg = observed_number("dim_gap_reduction")
+    pc = observed_number("project_completion")
+    msc = observed_number("match_score_change")
+    dl = observed_number("delivery_output")
+    weighted_components: List[Tuple[float, float]] = []
+    if dg is not None:
+        weighted_components.append((0.30, max(0.0, min(100.0, dg))))
+    if pc is not None:
+        weighted_components.append((0.35, max(0.0, min(100.0, pc))))
+    if msc is None or msc <= 0:
         msc_norm = 0.0
     else:
         msc_norm = max(0.0, min(100.0, msc / 10.0 * 100.0))
-    dl_norm = max(0.0, min(100.0, min(dl, 5.0) * 20.0))
-    metric_score = (
-        0.30 * max(0.0, min(100.0, dg))
-        + 0.35 * max(0.0, min(100.0, pc))
-        + 0.20 * msc_norm
-        + 0.15 * dl_norm
-    )
+    if msc is not None:
+        weighted_components.append((0.20, msc_norm))
+    if dl is not None:
+        weighted_components.append((0.15, max(0.0, min(100.0, min(dl, 5.0) * 20.0))))
+    observed_weight = sum(weight for weight, _ in weighted_components)
+    metric_score = sum(weight * value for weight, value in weighted_components) / observed_weight if observed_weight else 0.0
+    has_metric_signal = observed_weight > 0 or pass_rate is not None
     pr = max(0.0, min(1.0, float(pass_rate or 0.0)))
-    return max(0.0, min(100.0, 0.50 * metric_score + 0.50 * (pr * 100.0)))
+    metric_achievement = 0.50 * metric_score + 0.50 * (pr * 100.0)
+    if action_completion_rate is None:
+        return max(0.0, min(100.0, metric_achievement))
+    action_score = max(0.0, min(1.0, float(action_completion_rate))) * 100.0
+    if not has_metric_signal:
+        return action_score
+    return max(0.0, min(100.0, 0.70 * metric_achievement + 0.30 * action_score))
 
 
 def timeline_progress_after_review(
     *,
     submitted: Dict[str, Any],
-    pass_rate: float,
+    pass_rate: float | None,
     prev_progress: float,
     month_span: float,
+    action_completion_rate: float | None = None,
 ) -> float:
     """根据上一节点与月份跨度，计算本次复盘后的累计进步度（严格按月封顶）。"""
     span = max(0.0, float(month_span))
     if span <= 0:
         return round(max(0.0, min(100.0, float(prev_progress))), 2)
-    achievement = _review_achievement_score(submitted, pass_rate)
+    achievement = _review_achievement_score(submitted, pass_rate, action_completion_rate)
     max_gain = TIMELINE_MAX_PROGRESS_GAIN_PER_MONTH * span
     month_gain = (achievement / 100.0) * max_gain
     month_gain = min(month_gain, max_gain)
@@ -139,7 +163,7 @@ def timeline_progress_after_review(
 
 def _review_point_progress(
     submitted: Dict[str, Any],
-    pass_rate: float,
+    pass_rate: float | None,
     line_idx: int,
     target: Dict[str, Any],
 ) -> float:
@@ -312,7 +336,7 @@ def _build_development_lines(
             "x_label": "时间（月）",
             "y_min": 0.0,
             "y_max": 100.0,
-            "y_label": "复盘进步度",
+            "y_label": "已验证成长指数",
         },
         "lines": lines,
         "adjustments": [],
@@ -340,7 +364,19 @@ def _rebuild_development_timelines(report_obj: Dict[str, Any], reviews_asc: List
         ]
         prev_month = 0.0
         prev_progress = 0.0
-        for i, rev in enumerate(reviews_asc):
+        scoped_reviews = [
+            rev
+            for rev in reviews_asc
+            if str(rev.get("review_cycle") or "monthly") == "monthly"
+            and (
+                str(rev.get("scope") or "all") == "all"
+                or (
+                    str(rev.get("scope") or "") == "target"
+                    and str(rev.get("job_id") or "") == tid
+                )
+            )
+        ]
+        for i, rev in enumerate(scoped_reviews):
             met = rev.get("metrics") or {}
             if not isinstance(met, dict):
                 met = {}
@@ -350,8 +386,21 @@ def _rebuild_development_timelines(report_obj: Dict[str, Any], reviews_asc: List
             ev = met.get("evaluation") or {}
             if not isinstance(ev, dict):
                 ev = {}
-            pr = float(ev.get("pass_rate") or 0.0)
-            rid = int(rev.get("review_id") or 0)
+            raw_pass_rate = ev.get("pass_rate")
+            try:
+                pr = float(raw_pass_rate) if raw_pass_rate not in (None, "") else None
+            except (TypeError, ValueError):
+                pr = None
+            action_completion = met.get("action_completion") or ev.get("action_completion") or {}
+            if not isinstance(action_completion, dict):
+                action_completion = {}
+            raw_action_rate = action_completion.get("completion_rate")
+            try:
+                action_rate = float(raw_action_rate) if raw_action_rate not in (None, "") else None
+            except (TypeError, ValueError):
+                action_rate = None
+            raw_review_id = rev.get("review_id")
+            rid = int(raw_review_id) if raw_review_id not in (None, "") else None
             # 横轴按自然月：第 1 次复盘在第 1 月，第 2 次在第 2 月…（上限 12）
             month = float(min(12, i + 1))
             month_span = max(0.0, month - prev_month)
@@ -360,6 +409,7 @@ def _rebuild_development_timelines(report_obj: Dict[str, Any], reviews_asc: List
                 pass_rate=pr,
                 prev_progress=prev_progress,
                 month_span=month_span if month_span > 0 else 1.0,
+                action_completion_rate=action_rate,
             )
             llm_ex = met.get("llm_extract") or {}
             if not isinstance(llm_ex, dict):
@@ -368,8 +418,18 @@ def _rebuild_development_timelines(report_obj: Dict[str, Any], reviews_asc: List
                 "review_text": str(met.get("review_text") or "")[:4000],
                 "submitted": submitted,
                 "llm_summary": str(llm_ex.get("summary") or "")[:800],
-                "pass_rate": round(pr, 4),
+                "pass_rate": round(pr, 4) if pr is not None else None,
                 "all_passed": bool(ev.get("all_passed")),
+                "cycle_score": round(_review_achievement_score(submitted, pr, action_rate), 2),
+                "evidence_count": len([value for value in submitted.values() if value not in (None, "")]),
+                "action_completion": action_completion,
+                "progress_basis": (
+                    "confirmed_metrics_and_actions"
+                    if submitted and action_rate is not None
+                    else "confirmed_actions"
+                    if action_rate is not None
+                    else "confirmed_review_metrics"
+                ),
             }
             pts.append(
                 {
@@ -393,7 +453,7 @@ def _rebuild_development_timelines(report_obj: Dict[str, Any], reviews_asc: List
             "x_label": "时间（月）",
             "y_min": 0.0,
             "y_max": 100.0,
-            "y_label": "复盘进步度",
+            "y_label": "已验证成长指数",
         }
     dev["display_mode"] = "single"
 

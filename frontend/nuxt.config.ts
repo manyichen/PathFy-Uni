@@ -3,6 +3,9 @@ export default defineNuxtConfig({
   devtools: { enabled: false },
   ssr: false,
   modules: ['@nuxt/ui'],
+  icon: {
+    serverBundle: { collections: ['lucide'] }
+  },
   fonts: { provider: 'local' },
   css: ['~/assets/css/main.css'],
   runtimeConfig: {

@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 from functools import lru_cache
+from typing import Any, Mapping
 
 from flask import current_app
-from neo4j import GraphDatabase
+from neo4j import GraphDatabase, Query
 
 DIM_KEYS = [
     "cap_req_theory",
@@ -34,7 +35,36 @@ PROMOTION_EDGE_SOURCES = ["openai_lmstudio"]
 
 @lru_cache(maxsize=1)
 def neo4j_driver(uri: str, user: str, password: str):
-    return GraphDatabase.driver(uri, auth=(user, password))
+    connection_timeout = max(
+        1.0,
+        float(current_app.config.get("NEO4J_CONNECTION_TIMEOUT_SECONDS", 5.0)),
+    )
+    return GraphDatabase.driver(
+        uri,
+        auth=(user, password),
+        connection_timeout=connection_timeout,
+        connection_acquisition_timeout=connection_timeout,
+    )
+
+
+def neo4j_query(
+    session,
+    statement: str,
+    parameters: Mapping[str, Any] | None = None,
+    *,
+    timeout: float | None = None,
+):
+    """Run an interactive query with a server-side deadline.
+
+    The driver connection timeout only covers establishing a Bolt connection. A
+    Cypher query can otherwise wait indefinitely, which is especially harmful to
+    user-triggered graph pages.
+    """
+    configured = timeout
+    if configured is None:
+        configured = float(current_app.config.get("NEO4J_QUERY_TIMEOUT_SECONDS", 12.0))
+    effective_timeout = max(1.0, min(float(configured), 60.0))
+    return session.run(Query(statement, timeout=effective_timeout), parameters or {})
 
 
 def neo4j_settings() -> tuple[str, str, str, str]:
@@ -74,4 +104,7 @@ def serialize_job_row(row: dict) -> dict:
     raw = row.get("salary_raw")
     if raw is not None and str(raw).strip():
         out["salary_raw"] = str(raw).strip()
+    workstyle = row.get("workstyle")
+    if isinstance(workstyle, dict):
+        out["workstyle"] = workstyle
     return out

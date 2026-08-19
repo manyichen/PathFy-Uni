@@ -116,6 +116,15 @@ def _apply_capabilities(tx, change: dict[str, Any], _run_id: str) -> None:
         tx.run("MATCH (j:Job {job_key:$key}) SET j += $props,j.cap_updated_at=datetime()", key=item["job_key"], props=item["capability"])
 
 
+def _apply_workstyles(tx, change: dict[str, Any], run_id: str) -> None:
+    for item in change.get("items", []):
+        if item.get("target_type") == "job":
+            query = "MATCH (n:Job {job_key:$id}) SET n += $props,n.workstyle_updated_at=datetime(),n.workstyle_last_task_run_id=$run"
+        else:
+            query = "MATCH (n:JobTitle {name:$id}) SET n += $props,n.workstyle_updated_at=datetime(),n.workstyle_last_task_run_id=$run"
+        tx.run(query, id=item["target_id"], props=item["properties"], run=run_id)
+
+
 def _apply_promotions(tx, change: dict[str, Any], run_id: str) -> None:
     source = change.get("source_id") or "curated-promotions"; ids = []
     for row in change.get("items", []):
@@ -214,6 +223,8 @@ def apply_change_set(change: dict[str, Any], *, task_uuid: str, change_sha256: s
             "job_import": _apply_job,
             "job_capability_evaluation": _apply_capabilities,
             "job_capability_result_import": _apply_capabilities,
+            "job_workstyle_import": _apply_workstyles,
+            "job_workstyle_evaluation": _apply_workstyles,
             "learning_resource_import": _apply_resources,
             "competition_import": _apply_competitions,
             "job_promotion_import": _apply_promotions,

@@ -18,6 +18,8 @@ from app.domains.graph.services import _call_llm_batch_extract, _llm_model
 from app.domains.graph.sync_service import LATERAL_SYSTEM, PROMOTION_PATH_SYSTEM, _call_llm_json, _parse_confidence
 from app.infrastructure.neo4j import neo4j_driver, neo4j_settings
 from app.infrastructure.salary import SALARY_PARSE_VERSION, neo4j_salary_properties
+from app.domains.jobs.workstyle import WORKSTYLE_AXES, WORKSTYLE_SCORING_VERSION
+from app.domains.jobs.workstyle_extraction import WORKSTYLE_TEXT_VERSION, extract_workstyle_profile, workstyle_input_fingerprint
 
 
 class TaskPlanningError(ValueError):
@@ -150,6 +152,11 @@ PROMOTION_COLUMNS = {"promotion_id", "job_title", "title", "promotion", "stage1"
 LATERAL_COLUMNS = {"from_job_title", "to_job_title", "score", "rank", "track_from", "track_to", "cap_similarity", "same_track", "promotion_linked", "rationale"}
 RECOMMENDATION_RESOURCE_COLUMNS = {"promotion_id", "resource_id", "stage", "stage_role", "rank", "score", "rationale"}
 RECOMMENDATION_COMPETITION_COLUMNS = {"promotion_id", "competition_id", "stage", "stage_role", "rank", "score", "match_via", "rationale"}
+WORKSTYLE_COLUMNS = {
+    "target_type", "target_id", "workstyle_source", "workstyle_scoring_version",
+    "workstyle_evidence_json",
+    *{key for _code, value_key, confidence_key, _low, _high in WORKSTYLE_AXES for key in (value_key, confidence_key)},
+}
 
 
 def _plan_csv(task: dict[str, Any], *, kind: str, required: set[str], id_column: str, emit=lambda *_args, **_kwargs: None):
@@ -246,6 +253,94 @@ def plan_capability_result_import(task: dict[str, Any], emit=lambda *_args, **_k
     return {"version": 2, "kind": "job_capability_result_import", "jobs": records}, {"jobs": len(records), "preview": records[:10]}
 
 
+def plan_workstyle_import(task: dict[str, Any], emit=lambda *_args, **_kwargs: None):
+    rows = _read_csv(task, WORKSTYLE_COLUMNS)
+    driver, database = _driver()
+    with driver.session(database=database) as session:
+        job_keys = {str(row["key"]) for row in session.run("MATCH (j:Job) RETURN j.job_key AS key") if row.get("key")}
+        title_names = {str(row["name"]) for row in session.run("MATCH (jt:JobTitle) RETURN jt.name AS name") if row.get("name")}
+    items: list[dict[str, Any]] = []
+    identities: set[tuple[str, str]] = set()
+    for line_no, row in enumerate(rows, 2):
+        target_type = str(row.get("target_type") or "").strip().lower()
+        target_id = str(row.get("target_id") or "").strip()
+        identity = (target_type, target_id)
+        if target_type not in {"job", "job_title"} or not target_id:
+            raise TaskPlanningError(f"CSV 第 {line_no} 行 target_type/target_id 无效")
+        if identity in identities:
+            raise TaskPlanningError(f"CSV 存在重复目标: {target_type}:{target_id}")
+        identities.add(identity)
+        known = job_keys if target_type == "job" else title_names
+        if target_id not in known:
+            raise TaskPlanningError(f"工作环境画像引用不存在的目标: {target_type}:{target_id}")
+        source = str(row.get("workstyle_source") or "").strip()
+        version = str(row.get("workstyle_scoring_version") or WORKSTYLE_SCORING_VERSION).strip()
+        if not source or not version:
+            raise TaskPlanningError(f"CSV 第 {line_no} 行必须提供来源和评分版本")
+        try:
+            evidence = json.loads(str(row.get("workstyle_evidence_json") or "{}"))
+        except json.JSONDecodeError as exc:
+            raise TaskPlanningError(f"CSV 第 {line_no} 行 workstyle_evidence_json 非法") from exc
+        if not isinstance(evidence, dict):
+            raise TaskPlanningError(f"CSV 第 {line_no} 行证据必须是 JSON 对象")
+        props: dict[str, Any] = {
+            "workstyle_source": source[:120],
+            "workstyle_scoring_version": version[:64],
+            "workstyle_evidence_json": json.dumps(evidence, ensure_ascii=False),
+        }
+        supplied = 0
+        for code, value_key, confidence_key, _low, _high in WORKSTYLE_AXES:
+            raw_value, raw_confidence = row.get(value_key), row.get(confidence_key)
+            if not str(raw_value or "").strip() and not str(raw_confidence or "").strip():
+                continue
+            try:
+                value, confidence = float(raw_value), float(raw_confidence)
+            except (TypeError, ValueError) as exc:
+                raise TaskPlanningError(f"CSV 第 {line_no} 行 {code} 数值格式错误") from exc
+            if not 0 <= value <= 100 or not 0 <= confidence <= 1:
+                raise TaskPlanningError(f"CSV 第 {line_no} 行 {code} 超出 0-100 / 0-1 范围")
+            axis_evidence = evidence.get(code) or evidence.get(value_key)
+            if not axis_evidence:
+                raise TaskPlanningError(f"CSV 第 {line_no} 行 {code} 缺少可审计证据")
+            props[value_key], props[confidence_key] = value, confidence
+            supplied += 1
+        if not supplied:
+            raise TaskPlanningError(f"CSV 第 {line_no} 行至少需要一个工作环境轴")
+        items.append({"target_type": target_type, "target_id": target_id, "properties": props})
+    emit("validation", "岗位工作环境证据校验完成", {"items": len(items)})
+    return ({"version": 2, "kind": "job_workstyle_import", "source_id": task.get("source_id"), "items": items},
+            {"items": len(items), "jobs": sum(1 for x in items if x["target_type"] == "job"), "job_titles": sum(1 for x in items if x["target_type"] == "job_title"), "preview": items[:10]})
+
+
+def plan_workstyle_evaluation(task: dict[str, Any], emit=lambda *_args, **_kwargs: None):
+    scope = task.get("options", {}).get("scope", "missing")
+    source_id = task.get("options", {}).get("source_id")
+    driver, database = _driver()
+    with driver.session(database=database) as session:
+        rows = [dict(row) for row in session.run("""
+        MATCH (j:Job)
+        WHERE coalesce(j.source,'') <> 'inferred' AND ($source IS NULL OR j.import_source_id=$source)
+        RETURN j.job_key AS job_key,j.title AS title,j.demand AS demand,j.company_detail AS company_detail,
+               j.experience_text AS experience,j.workstyle_scoring_version AS workstyle_scoring_version,
+               j.workstyle_input_fingerprint AS workstyle_input_fingerprint,
+               j.workstyle_interaction AS workstyle_interaction,j.workstyle_abstraction AS workstyle_abstraction,
+               j.workstyle_analytical AS workstyle_analytical,j.workstyle_structure AS workstyle_structure
+        """, source=source_id)]
+    items = []
+    for row in rows:
+        payload = {key: row.get(key) for key in ("demand", "company_detail", "experience")}
+        axis_count = sum(row.get(key) is not None for key in ("workstyle_interaction", "workstyle_abstraction", "workstyle_analytical", "workstyle_structure"))
+        missing = axis_count < 2 or not row.get("workstyle_scoring_version")
+        stale = row.get("workstyle_scoring_version") != WORKSTYLE_TEXT_VERSION or row.get("workstyle_input_fingerprint") != workstyle_input_fingerprint(payload)
+        if scope == "all" or (scope == "missing" and missing) or (scope == "stale" and stale):
+            properties = extract_workstyle_profile(payload)
+            items.append({"target_type": "job", "target_id": row["job_key"], "properties": properties, "title": row.get("title")})
+    ready = sum(1 for item in items if sum(key.startswith("workstyle_") and not key.startswith("workstyle_conf_") and key in {axis[1] for axis in WORKSTYLE_AXES} for key in item["properties"]) >= 2)
+    emit("workstyle", "岗位工作环境证据提取完成，等待人工复核", {"items": len(items), "ready": ready})
+    return ({"version": 2, "kind": "job_workstyle_evaluation", "items": items},
+            {"scope": scope, "source_id": source_id, "candidate_jobs": len(rows), "evaluated_jobs": len(items), "workstyle_ready": ready, "preview": items[:10]})
+
+
 def plan_promotions_import(task: dict[str, Any], emit=lambda *_args, **_kwargs: None):
     rows = _read_csv(task, PROMOTION_COLUMNS)
     ids = [row["promotion_id"].strip() for row in rows]
@@ -334,6 +429,8 @@ PLANNERS = {
     "job_import": plan_job_import,
     "job_capability_evaluation": plan_capability_evaluation,
     "job_capability_result_import": plan_capability_result_import,
+    "job_workstyle_import": plan_workstyle_import,
+    "job_workstyle_evaluation": plan_workstyle_evaluation,
     "learning_resource_import": lambda task, emit: _plan_csv(task, kind="learning_resource_import", required=RESOURCE_COLUMNS, id_column="resource_id", emit=emit),
     "competition_import": lambda task, emit: _plan_csv(task, kind="competition_import", required=COMPETITION_COLUMNS, id_column="competition_id", emit=emit),
     "job_promotion_import": plan_promotions_import,

@@ -42,6 +42,7 @@ def call_ark_json(
     *,
     temperature: float = 0.2,
     required: bool = False,
+    thinking: str | None = None,
 ) -> dict[str, Any] | None:
     """
     调用 Ark 模型并解析 JSON 对象响应。
@@ -58,6 +59,9 @@ def call_ark_json(
         sys_content = f"{sys_content}\n{notice}"
     safe_payload = redact_payload(payload) if privacy_mode_enabled() else payload
     try:
+        request_options: dict[str, Any] = {}
+        if thinking in {"enabled", "disabled", "auto"}:
+            request_options["extra_body"] = {"thinking": {"type": thinking}}
         resp = client.chat.completions.create(
             model=model,
             messages=[
@@ -67,6 +71,7 @@ def call_ark_json(
             temperature=temperature,
             stream=False,
             response_format={"type": "json_object"},
+            **request_options,
         )
         content = strip_json_fence((resp.choices[0].message.content or "").strip())
         data = json.loads(content)

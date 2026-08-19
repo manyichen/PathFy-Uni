@@ -25,6 +25,11 @@ def _s(key, label, group, *options): return SettingField(key, label, group, "str
 
 
 FIELDS = (
+    _b("MATCH_PREFERENCE_TIE_BREAK_ENABLED", "启用偏好同分带软排序", "match"),
+    _f("MATCH_PREFERENCE_TIE_BREAK_MAX_ABILITY_GAP", "偏好软排序最大能力分差", "match", 0, 10, True),
+    _f("MATCH_PREFERENCE_TIE_BREAK_MIN_COVERAGE", "偏好软排序最低证据覆盖率", "match", 0, 1, True),
+    _i("MATCH_PREFERENCE_TIE_BREAK_EXPERIMENT_PERCENT", "偏好软排序实验流量百分比", "match", 0, 100, True),
+    _b("CAREER_ENABLE_PERSONALITY_STRATEGY", "启用报告执行方式建议", "career"),
     _i("AI_MAX_RETURN_JOBS", "助手最多返回岗位", "jobs", 1, 100),
     _i("AI_CONTEXT_WINDOW", "助手上下文轮数", "jobs", 1, 20),
     _i("AI_LLM_TIMEOUT_SECONDS", "助手超时（秒）", "jobs", 10, 300),
@@ -37,6 +42,8 @@ FIELDS = (
     _f("MATCH_STRETCH_MATCH_SCORE_FLOOR", "冲刺最低匹配分", "match", 0, 100, True),
     _f("MATCH_STRETCH_SORT_W_MATCH", "冲刺匹配分权重", "match", 0, 1, True),
     _f("MATCH_STRETCH_SORT_W_JOB_AVG", "冲刺岗位强度权重", "match", 0, 1, True),
+    _i("MATCH_PREFERENCE_MIN_AXES", "偏好解释最少证据轴", "match", 1, 4, True),
+    _f("MATCH_PREFERENCE_MIN_CONFIDENCE", "偏好解释最低置信度", "match", 0, 1, True),
     _s("MATCH_DEEPSEEK_MODEL", "匹配精排模型", "match", "deepseek-v4-flash", "deepseek-v4-pro"),
     _i("MATCH_LLM_TIMEOUT_SECONDS", "匹配精排超时（秒）", "match", 10, 300),
     _s("CAREER_DEEPSEEK_MODEL", "报告规划模型", "career", "deepseek-v4-flash", "deepseek-v4-pro"),
@@ -84,6 +91,9 @@ USER_DEFAULTS = {
     "default_match_goal": "fit", "default_refine_with_llm": False, "match_result_count": 30,
     "report_public_info": True, "report_copywriter": True, "report_auto_replan": True,
     "report_graph_recommendations": True, "report_recommendation_llm": True,
+    "report_longitudinal_personalization": True,
+    "use_personality_in_match": True, "use_personality_in_report": True,
+    "default_preference_mode": "explain",
     "learning_resource_count": 6, "competition_count": 3,
 }
 
@@ -134,10 +144,12 @@ def validate_preferences(values: dict[str, Any]) -> dict[str, Any]:
         if not 0 <= hue <= 360: raise ValueError("主题色值无效")
         out["hue"] = str(hue)
     if "default_match_goal" in out and out["default_match_goal"] not in {"fit", "stretch"}: raise ValueError("默认匹配目标无效")
-    for key in ("allow_external_llm", "default_refine_with_llm", "report_public_info", "report_copywriter", "report_auto_replan", "report_graph_recommendations", "report_recommendation_llm"):
+    for key in ("allow_external_llm", "default_refine_with_llm", "report_public_info", "report_copywriter", "report_auto_replan", "report_graph_recommendations", "report_recommendation_llm", "report_longitudinal_personalization", "use_personality_in_match", "use_personality_in_report"):
         if key in out and not isinstance(out[key], bool): raise ValueError(f"{key} 必须为布尔值")
     for key, lo, hi in (("match_result_count", 1, 100), ("learning_resource_count", 1, 20), ("competition_count", 0, 10)):
         if key in out:
             out[key] = int(out[key])
             if not lo <= out[key] <= hi: raise ValueError(f"{key} 超出允许范围")
+    if "default_preference_mode" in out and out["default_preference_mode"] not in {"off", "explain", "tie_break"}:
+        raise ValueError("default_preference_mode 无效")
     return out

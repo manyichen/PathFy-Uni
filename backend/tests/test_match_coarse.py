@@ -3,7 +3,12 @@
 from __future__ import annotations
 
 from app.domains.match.capability_profile import serialize_capability_profile
-from app.domains.match.services import _coarse_morphology_match, _pearson_across_dims
+from app.domains.match.services import (
+    _coarse_morphology_match,
+    _effective_llm_pool_k,
+    _effective_llm_timeout,
+    _pearson_across_dims,
+)
 from app.infrastructure.neo4j import CONF_KEYS, DIM_KEYS
 
 
@@ -43,3 +48,10 @@ def test_serialize_capability_profile():
     assert out["vector_kind"] == "student_supply"
     assert out["score_avg"] == 60.0
     assert len(out["scores"]) == len(DIM_KEYS)
+
+
+def test_interactive_llm_limits_cap_legacy_database_values():
+    assert _effective_llm_pool_k(40) == 20
+    assert _effective_llm_pool_k(12) == 12
+    assert _effective_llm_timeout(120) == 90
+    assert _effective_llm_timeout(60) == 60

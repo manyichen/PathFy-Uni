@@ -6,6 +6,7 @@ from app.infrastructure.neo4j import (
     DIM_KEYS,
     PROMOTION_EDGE_SOURCES,
     neo4j_driver,
+    neo4j_query,
     neo4j_settings,
     serialize_job_row,
 )
@@ -29,6 +30,7 @@ __all__ = [
     "build_ark_openai_client",
     "call_ark_json",
     "neo4j_driver",
+    "neo4j_query",
     "neo4j_settings",
     "SALARY_PARSE_VERSION",
     "cypher_job_salary_display",

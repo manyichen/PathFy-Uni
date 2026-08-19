@@ -86,6 +86,7 @@ CREATE TABLE IF NOT EXISTS student_resume (
     radar_html TEXT,
     detailed_analysis LONGTEXT NULL COMMENT '能力画像详细分析报告 JSON',
     create_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     CONSTRAINT fk_student_resume_user_id
       FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -107,9 +108,12 @@ CREATE TABLE IF NOT EXISTS personality_test_questions (
 CREATE TABLE IF NOT EXISTS personality_test_answers (
     id INT AUTO_INCREMENT PRIMARY KEY,
     user_id BIGINT UNSIGNED NOT NULL,
+    personality_profile_id INT NULL,
     question_id INT NOT NULL,
     user_choice VARCHAR(1) NOT NULL,
+    question_set_version VARCHAR(64) NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    KEY idx_personality_answers_profile (personality_profile_id, question_id),
     CONSTRAINT fk_personality_answers_user_id
       FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
     CONSTRAINT fk_personality_answers_question_id
@@ -123,9 +127,22 @@ CREATE TABLE IF NOT EXISTS personality_profiles (
     mbti_type VARCHAR(4) NOT NULL,
     personality_analysis TEXT NOT NULL,
     recommended_jobs TEXT,
+    detailed_analysis LONGTEXT NULL,
+    dimension_scores_json JSON NULL,
+    question_set_version VARCHAR(64) NOT NULL DEFAULT 'legacy-v1',
+    scoring_version VARCHAR(64) NOT NULL DEFAULT 'mbti-count-v1',
+    result_status VARCHAR(24) NOT NULL DEFAULT 'legacy_signature',
+    is_active TINYINT(1) NOT NULL DEFAULT 0,
+    personalization_enabled TINYINT(1) NOT NULL DEFAULT 0,
+    completed_at DATETIME NULL,
+    superseded_by_profile_id INT NULL,
+    answer_signature CHAR(64) NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    KEY idx_personality_profiles_user_active (user_id, is_active, completed_at),
     CONSTRAINT fk_personality_profiles_user_id
-      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    CONSTRAINT fk_personality_profiles_superseded
+      FOREIGN KEY (superseded_by_profile_id) REFERENCES personality_profiles(id) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- 插入 MBTI 性格测试题目（50 题）；仅当表中尚无题目时插入，重复执行本文件不会产生重复题目
@@ -189,17 +206,42 @@ CREATE TABLE IF NOT EXISTS career_reports (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   user_id BIGINT UNSIGNED NOT NULL,
   resume_id BIGINT UNSIGNED NOT NULL,
+  personality_profile_id INT NULL,
   title VARCHAR(160) NOT NULL,
   primary_job_id VARCHAR(191) NULL,
   target_job_ids_json JSON NOT NULL,
   report_json LONGTEXT NOT NULL,
+  report_version INT UNSIGNED NOT NULL DEFAULT 1,
   meta_json JSON NULL,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (id),
   KEY idx_career_reports_user_id_created_at (user_id, created_at DESC),
+  KEY idx_career_reports_personality_profile (personality_profile_id),
   CONSTRAINT fk_career_reports_user_id
-    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+  CONSTRAINT fk_career_reports_personality_profile
+    FOREIGN KEY (personality_profile_id) REFERENCES personality_profiles(id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS career_report_enrichment_jobs (
+  report_id BIGINT UNSIGNED NOT NULL,
+  attempt INT UNSIGNED NOT NULL DEFAULT 0,
+  status VARCHAR(24) NOT NULL DEFAULT 'pending',
+  scope VARCHAR(24) NOT NULL DEFAULT 'full',
+  stage VARCHAR(64) NOT NULL DEFAULT 'pending',
+  progress TINYINT UNSIGNED NOT NULL DEFAULT 0,
+  error VARCHAR(500) NULL,
+  timing_json JSON NULL,
+  quality_json JSON NULL,
+  requested_at DATETIME NULL,
+  started_at DATETIME NULL,
+  completed_at DATETIME NULL,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (report_id),
+  KEY idx_report_enrichment_status (status, updated_at),
+  CONSTRAINT fk_report_enrichment_report
+    FOREIGN KEY (report_id) REFERENCES career_reports(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS career_report_targets (
@@ -223,16 +265,120 @@ CREATE TABLE IF NOT EXISTS career_report_reviews (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   report_id BIGINT UNSIGNED NOT NULL,
   review_cycle VARCHAR(32) NOT NULL DEFAULT 'biweekly',
+  scope VARCHAR(16) NOT NULL DEFAULT 'all',
+  job_id VARCHAR(191) NULL,
   metrics_json JSON NOT NULL,
   adjustment_json JSON NULL,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (id),
   KEY idx_career_report_reviews_report_id_created_at (report_id, created_at DESC),
+  KEY idx_career_report_reviews_scope (report_id, scope, job_id),
   CONSTRAINT fk_career_report_reviews_report_id
     FOREIGN KEY (report_id) REFERENCES career_reports(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+CREATE TABLE IF NOT EXISTS career_report_review_drafts (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  report_id BIGINT UNSIGNED NOT NULL,
+  review_cycle VARCHAR(16) NOT NULL DEFAULT 'monthly',
+  scope VARCHAR(16) NOT NULL DEFAULT 'target',
+  job_id VARCHAR(191) NULL,
+  review_text LONGTEXT NOT NULL,
+  candidates_json JSON NOT NULL,
+  extraction_json JSON NULL,
+  status VARCHAR(16) NOT NULL DEFAULT 'draft',
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  confirmed_at DATETIME NULL,
+  PRIMARY KEY (id),
+  KEY idx_review_drafts_report_status (report_id, status, created_at),
+  CONSTRAINT fk_review_drafts_report FOREIGN KEY (report_id) REFERENCES career_reports(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS career_report_plan_versions (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  report_id BIGINT UNSIGNED NOT NULL,
+  review_id BIGINT UNSIGNED NULL,
+  base_report_version INT UNSIGNED NOT NULL,
+  status VARCHAR(16) NOT NULL DEFAULT 'proposed',
+  scope VARCHAR(16) NOT NULL DEFAULT 'target',
+  job_id VARCHAR(191) NULL,
+  snapshot_json LONGTEXT NOT NULL,
+  diff_json JSON NOT NULL,
+  decision_json JSON NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  decided_at DATETIME NULL,
+  PRIMARY KEY (id),
+  KEY idx_plan_versions_report_status (report_id, status, created_at),
+  CONSTRAINT fk_plan_versions_report FOREIGN KEY (report_id) REFERENCES career_reports(id) ON DELETE CASCADE,
+  CONSTRAINT fk_plan_versions_review FOREIGN KEY (review_id) REFERENCES career_report_reviews(id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS career_report_evidence_records (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  report_id BIGINT UNSIGNED NOT NULL,
+  review_id BIGINT UNSIGNED NULL,
+  evidence_type VARCHAR(32) NOT NULL DEFAULT 'other',
+  label VARCHAR(191) NOT NULL,
+  value_text TEXT NULL,
+  source_url TEXT NULL,
+  source_text TEXT NULL,
+  verification_status VARCHAR(16) NOT NULL DEFAULT 'user_confirmed',
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  KEY idx_evidence_records_report_review (report_id, review_id),
+  CONSTRAINT fk_evidence_records_report FOREIGN KEY (report_id) REFERENCES career_reports(id) ON DELETE CASCADE,
+  CONSTRAINT fk_evidence_records_review FOREIGN KEY (review_id) REFERENCES career_report_reviews(id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS career_report_action_events (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  report_id BIGINT UNSIGNED NOT NULL,
+  review_id BIGINT UNSIGNED NULL,
+  plan_version_id BIGINT UNSIGNED NULL,
+  event_type VARCHAR(32) NOT NULL,
+  action_ref VARCHAR(191) NULL,
+  payload_json JSON NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  KEY idx_action_events_report_created (report_id, created_at),
+  CONSTRAINT fk_action_events_report FOREIGN KEY (report_id) REFERENCES career_reports(id) ON DELETE CASCADE,
+  CONSTRAINT fk_action_events_review FOREIGN KEY (review_id) REFERENCES career_report_reviews(id) ON DELETE SET NULL,
+  CONSTRAINT fk_action_events_plan_version FOREIGN KEY (plan_version_id) REFERENCES career_report_plan_versions(id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS career_report_experiment_assignments (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  report_id BIGINT UNSIGNED NOT NULL,
+  experiment_key VARCHAR(64) NOT NULL,
+  variant VARCHAR(32) NOT NULL,
+  bucket SMALLINT UNSIGNED NOT NULL,
+  assigned_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  UNIQUE KEY uk_report_experiment (report_id, experiment_key),
+  KEY idx_experiment_variant (experiment_key, variant, assigned_at),
+  CONSTRAINT fk_experiment_assignment_report FOREIGN KEY (report_id) REFERENCES career_reports(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 -- 人岗匹配快照（报告页可复用最近匹配结果）
+CREATE TABLE IF NOT EXISTS behavioral_preference_evidence (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  user_id BIGINT UNSIGNED NOT NULL,
+  report_id BIGINT UNSIGNED NULL,
+  review_id BIGINT UNSIGNED NULL,
+  axis_code VARCHAR(32) NOT NULL,
+  observed_value DECIMAL(6,2) NULL,
+  source_type VARCHAR(32) NOT NULL,
+  source_json JSON NULL,
+  user_confirmed TINYINT(1) NOT NULL DEFAULT 0,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  KEY idx_behavioral_preference_user_axis (user_id, axis_code, created_at),
+  KEY idx_behavioral_preference_report_review (report_id, review_id),
+  CONSTRAINT fk_behavioral_preference_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+  CONSTRAINT fk_behavioral_preference_report FOREIGN KEY (report_id) REFERENCES career_reports(id) ON DELETE CASCADE,
+  CONSTRAINT fk_behavioral_preference_review FOREIGN KEY (review_id) REFERENCES career_report_reviews(id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 CREATE TABLE IF NOT EXISTS match_runs (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   user_id BIGINT UNSIGNED NOT NULL,
@@ -244,12 +390,22 @@ CREATE TABLE IF NOT EXISTS match_runs (
   student_json LONGTEXT NULL,
   stats_json JSON NULL,
   llm_json LONGTEXT NULL,
+  personality_profile_id INT NULL,
+  preference_mode VARCHAR(24) NOT NULL DEFAULT 'off',
+  preference_snapshot_json LONGTEXT NULL,
+  preference_algorithm_version VARCHAR(64) NULL,
+  workstyle_snapshot_version VARCHAR(64) NULL,
+  preference_experiment_variant VARCHAR(32) NULL,
+  preference_ranking_diff_json JSON NULL,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (id),
   KEY idx_match_runs_user_resume_created (user_id, resume_id, created_at DESC),
   KEY idx_match_runs_user_goal_created (user_id, match_goal, created_at DESC),
+  KEY idx_match_runs_personality_profile (personality_profile_id),
   CONSTRAINT fk_match_runs_user_id
-    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+  CONSTRAINT fk_match_runs_personality_profile
+    FOREIGN KEY (personality_profile_id) REFERENCES personality_profiles(id) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS match_run_items (

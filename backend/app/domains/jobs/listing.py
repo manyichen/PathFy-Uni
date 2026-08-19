@@ -5,7 +5,39 @@ from __future__ import annotations
 import hashlib
 from typing import Any, Dict, List
 
-from app.infrastructure.neo4j import serialize_job_row
+from app.infrastructure.neo4j import CONF_KEYS, DIM_KEYS, serialize_job_row
+from app.domains.jobs.workstyle import WORKSTYLE_PROPERTY_KEYS, build_job_workstyle
+
+
+def job_row_from_properties(
+    properties: Any,
+    element_id: Any,
+    job_title_properties: Any = None,
+) -> Dict[str, Any]:
+    """Convert a Neo4j Job property map to the shared flat job-row contract."""
+    props = dict(properties or {})
+    fallback_id = str(element_id or "")
+    row: Dict[str, Any] = {
+        "id": (
+            props.get("job_key")
+            or props.get("job_code")
+            or props.get("name")
+            or props.get("title")
+            or fallback_id
+        ),
+        "title": props.get("title") or props.get("name") or "未命名岗位",
+        "salary": props.get("salary_norm") or props.get("salary") or "薪资面议",
+        "salary_raw": props.get("salary") or "",
+        "company": props.get("company") or "未知公司",
+        "location": props.get("location") or "未知地点",
+        "risk_flags": props.get("cap_risk_flags") or [],
+    }
+    for key in (*DIM_KEYS, *CONF_KEYS):
+        row[key] = props.get(key) or 0.0
+    for key in WORKSTYLE_PROPERTY_KEYS:
+        row[key] = props.get(key)
+    row["workstyle"] = build_job_workstyle(props, dict(job_title_properties or {}))
+    return row
 
 
 def normalize_jobs_sort(raw: str) -> str:

@@ -38,6 +38,32 @@ def test_partial_achievement_scales_linearly():
     assert 0 < p < TIMELINE_MAX_PROGRESS_GAIN_PER_MONTH
 
 
+def test_completed_actions_create_progress_without_inventing_metric_values():
+    progress = timeline_progress_after_review(
+        submitted={},
+        pass_rate=None,
+        action_completion_rate=0.5,
+        prev_progress=0.0,
+        month_span=1.0,
+    )
+    assert progress == TIMELINE_MAX_PROGRESS_GAIN_PER_MONTH * 0.5
+
+
+def test_text_only_review_without_actions_stays_at_zero():
+    assert timeline_progress_after_review(
+        submitted={},
+        pass_rate=None,
+        action_completion_rate=None,
+        prev_progress=0.0,
+        month_span=1.0,
+    ) == 0.0
+
+
+def test_missing_review_metrics_are_not_scored_as_zero():
+    assert _review_achievement_score({"project_completion": 100}, 1.0) == 100.0
+    assert _review_achievement_score({"project_completion": 50}, 0.0) == 25.0
+
+
 def test_twelve_months_full_achievement_reaches_100():
     progress = 0.0
     for _ in range(12):

@@ -1,12 +1,14 @@
 import json
+from functools import wraps
 from typing import Any, Dict, List, Tuple
 
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, current_app, jsonify, request
 
 from app.infrastructure.neo4j import (
     CONF_KEYS,
     DIM_KEYS,
     neo4j_driver,
+    neo4j_query,
     neo4j_settings,
     serialize_job_row,
 )
@@ -17,8 +19,7 @@ from app.infrastructure.salary import (
     parse_salary_range,
 )
 from app.domains.jobs.listing import (
-    jobs_order_clause,
-    jobs_page_payload,
+    job_row_from_properties,
     jobs_shuffle_key,
     normalize_jobs_sort,
 )
@@ -27,6 +28,19 @@ _SALARY_DISP = cypher_job_salary_display()
 _SALARY_RAW = cypher_job_salary_raw()
 
 jobs_bp = Blueprint("jobs", __name__, url_prefix="/api/jobs")
+
+
+def _career_graph_query_guard(handler):
+    """Convert bounded Neo4j failures into a stable API response for graph UI."""
+    @wraps(handler)
+    def wrapped(*args, **kwargs):
+        try:
+            return handler(*args, **kwargs)
+        except Exception:  # noqa: BLE001
+            current_app.logger.exception("career_graph_query_failed", extra={"endpoint": handler.__name__})
+            return jsonify({"ok": False, "message": "职业图谱数据服务响应超时，请稍后重试"}), 503
+
+    return wrapped
 
 _JOBS_FILTER_WHERE = """
     (j.source IS NULL OR trim(toString(j.source)) = '')
@@ -38,38 +52,12 @@ _JOBS_FILTER_WHERE = """
       )
 """
 
-_JOBS_RETURN_FIELDS = f"""
-      coalesce(j.job_key, j.job_code, j.name, j.title, elementId(j)) AS id,
-      coalesce(j.title, j.name, '未命名岗位') AS title,
-      {_SALARY_DISP},
-      {_SALARY_RAW},
-      coalesce(j.company, '未知公司') AS company,
-      coalesce(j.location, '未知地点') AS location,
-      coalesce(j.cap_risk_flags, []) AS risk_flags,
-      coalesce(j.cap_req_theory, 0.0) AS cap_req_theory,
-      coalesce(j.cap_req_cross, 0.0) AS cap_req_cross,
-      coalesce(j.cap_req_practice, 0.0) AS cap_req_practice,
-      coalesce(j.cap_req_digital, 0.0) AS cap_req_digital,
-      coalesce(j.cap_req_innovation, 0.0) AS cap_req_innovation,
-      coalesce(j.cap_req_teamwork, 0.0) AS cap_req_teamwork,
-      coalesce(j.cap_req_social, 0.0) AS cap_req_social,
-      coalesce(j.cap_req_growth, 0.0) AS cap_req_growth,
-      coalesce(j.cap_conf_theory, 0.0) AS cap_conf_theory,
-      coalesce(j.cap_conf_cross, 0.0) AS cap_conf_cross,
-      coalesce(j.cap_conf_practice, 0.0) AS cap_conf_practice,
-      coalesce(j.cap_conf_digital, 0.0) AS cap_conf_digital,
-      coalesce(j.cap_conf_innovation, 0.0) AS cap_conf_innovation,
-      coalesce(j.cap_conf_teamwork, 0.0) AS cap_conf_teamwork,
-      coalesce(j.cap_conf_social, 0.0) AS cap_conf_social,
-      coalesce(j.cap_conf_growth, 0.0) AS cap_conf_growth
-"""
-
-_JOBS_SHUFFLE_CACHE: Dict[Tuple[str, str], List[Dict[str, Any]]] = {}
+_JOBS_SHUFFLE_CACHE: Dict[Tuple[str, str], List[str]] = {}
 _JOBS_SHUFFLE_CACHE_ORDER: List[Tuple[str, str]] = []
 _MAX_JOBS_SHUFFLE_CACHES = 32
 
 
-def _shuffled_job_rows(keyword: str, seed: str) -> List[Dict[str, Any]]:
+def _shuffled_job_ids(keyword: str, seed: str) -> List[str]:
     cache_key = (keyword, seed)
     cached = _JOBS_SHUFFLE_CACHE.get(cache_key)
     if cached is not None:
@@ -78,29 +66,44 @@ def _shuffled_job_rows(keyword: str, seed: str) -> List[Dict[str, Any]]:
     query = f"""
     MATCH (j:Job)
     WHERE {_JOBS_FILTER_WHERE}
-    WITH j,
-      (coalesce(j.cap_req_theory, 0.0) +
-       coalesce(j.cap_req_cross, 0.0) +
-       coalesce(j.cap_req_practice, 0.0) +
-       coalesce(j.cap_req_digital, 0.0) +
-       coalesce(j.cap_req_innovation, 0.0) +
-       coalesce(j.cap_req_teamwork, 0.0) +
-       coalesce(j.cap_req_social, 0.0) +
-       coalesce(j.cap_req_growth, 0.0)) AS total_score
-    RETURN
-      {_JOBS_RETURN_FIELDS},
-      total_score
+    RETURN elementId(j) AS element_id,
+      coalesce(j.job_key, j.job_code, j.name, j.title, elementId(j)) AS stable_id
     """
     driver = neo4j_driver(uri, user, password)
     with driver.session(database=database) as session:
-        rows = [dict(r) for r in session.run(query, {"q": keyword})]
-    rows.sort(key=lambda row: jobs_shuffle_key(str(row.get("id") or ""), seed))
-    _JOBS_SHUFFLE_CACHE[cache_key] = rows
+        records = session.run(query, {"q": keyword})
+        pairs = [
+            (str(r["element_id"]), str(r["stable_id"] or r["element_id"]))
+            for r in records
+        ]
+    pairs.sort(key=lambda pair: jobs_shuffle_key(pair[1], seed))
+    element_ids = [pair[0] for pair in pairs]
+    _JOBS_SHUFFLE_CACHE[cache_key] = element_ids
     _JOBS_SHUFFLE_CACHE_ORDER.append(cache_key)
     while len(_JOBS_SHUFFLE_CACHE_ORDER) > _MAX_JOBS_SHUFFLE_CACHES:
         old_key = _JOBS_SHUFFLE_CACHE_ORDER.pop(0)
         _JOBS_SHUFFLE_CACHE.pop(old_key, None)
-    return rows
+    return element_ids
+
+
+def _job_rows_by_element_ids(element_ids: List[str]) -> List[Dict[str, Any]]:
+    if not element_ids:
+        return []
+    uri, user, password, database = neo4j_settings()
+    query = """
+    MATCH (j:Job)
+    WHERE elementId(j) IN $element_ids
+    OPTIONAL MATCH (j)-[:HAS_TITLE]->(jt:JobTitle)
+    WITH j, head(collect(jt)) AS jt
+    RETURN properties(j) AS job, properties(jt) AS job_title, elementId(j) AS element_id
+    """
+    driver = neo4j_driver(uri, user, password)
+    with driver.session(database=database) as session:
+        ordered = {
+            str(r["element_id"]): job_row_from_properties(r["job"], r["element_id"], r.get("job_title"))
+            for r in session.run(query, {"element_ids": element_ids})
+        }
+    return [ordered[element_id] for element_id in element_ids if element_id in ordered]
 
 
 def _safe_float(value, default=0.0):
@@ -257,12 +260,12 @@ def _fetch_title_materials(session, title_names: List[str]) -> Dict[str, Dict[st
       c.award_level AS award_level
     ORDER BY title ASC, c.difficulty ASC, c.competition_id ASC
     """
-    for row in session.run(resource_query, {"titles": titles}):
+    for row in neo4j_query(session, resource_query, {"titles": titles}):
         rec = dict(row)
         title = str(rec.pop("title") or "").strip()
         if title in out:
             out[title]["learning_resources"].append(rec)
-    for row in session.run(competition_query, {"titles": titles}):
+    for row in neo4j_query(session, competition_query, {"titles": titles}):
         rec = dict(row)
         title = str(rec.pop("title") or "").strip()
         if title in out:
@@ -455,7 +458,8 @@ def _build_lateral_action_plan(
 
 
 def _fetch_job_for_analysis(session, job_id):
-    row = session.run(
+    row = neo4j_query(
+        session,
         f"""
         MATCH (j:Job)
         WHERE coalesce(j.job_key, j.job_code, j.name, j.title, elementId(j)) = $job_id
@@ -595,11 +599,8 @@ def list_jobs():
     sort_mode = normalize_jobs_sort(request.args.get("sort") or "")
     seed = str(request.args.get("seed") or "").strip()
 
-    if sort_mode == "random":
-        if not seed:
-            return jsonify({"ok": False, "message": "随机排序需要提供 seed"}), 400
-        rows = _shuffled_job_rows(keyword, seed)
-        return jsonify({"ok": True, "data": jobs_page_payload(rows, page=page, page_size=page_size, sort_mode=sort_mode, seed=seed)})
+    if sort_mode == "random" and not seed:
+        return jsonify({"ok": False, "message": "随机排序需要提供 seed"}), 400
 
     count_query = f"""
     MATCH (j:Job)
@@ -607,6 +608,7 @@ def list_jobs():
     RETURN count(j) AS total
     """
 
+    score_direction = "ASC" if sort_mode == "score_asc" else "DESC"
     list_query = f"""
     MATCH (j:Job)
     WHERE {_JOBS_FILTER_WHERE}
@@ -619,24 +621,50 @@ def list_jobs():
        coalesce(j.cap_req_teamwork, 0.0) +
        coalesce(j.cap_req_social, 0.0) +
        coalesce(j.cap_req_growth, 0.0)) AS total_score
-    RETURN
-      {_JOBS_RETURN_FIELDS}
-    {jobs_order_clause(sort_mode)}
+    OPTIONAL MATCH (j)-[:HAS_TITLE]->(jt:JobTitle)
+    WITH j, total_score, head(collect(jt)) AS jt
+    ORDER BY total_score {score_direction}, coalesce(j.title, j.name, '') ASC
     SKIP $skip
     LIMIT $limit
+    RETURN properties(j) AS job, properties(jt) AS job_title, elementId(j) AS element_id
     """
 
-    driver = neo4j_driver(uri, user, password)
-    with driver.session(database=database) as session:
-        total_row = session.run(count_query, {"q": keyword}).single()
-        total = int((total_row or {}).get("total") or 0)
-        rows = [
-            dict(r)
-            for r in session.run(
+    try:
+        if sort_mode == "random":
+            element_ids = _shuffled_job_ids(keyword, seed)
+            total = len(element_ids)
+            total_pages = max(1, (total + page_size - 1) // page_size)
+            page = min(page, total_pages)
+            start = (page - 1) * page_size
+            rows = _job_rows_by_element_ids(element_ids[start : start + page_size])
+            data = [serialize_job_row(row) for row in rows]
+            return jsonify(
+                {
+                    "ok": True,
+                    "data": {
+                        "jobs": data,
+                        "total": total,
+                        "page": page,
+                        "page_size": page_size,
+                        "total_pages": total_pages,
+                        "sort": sort_mode,
+                        "seed": seed,
+                    },
+                }
+            )
+
+        driver = neo4j_driver(uri, user, password)
+        with driver.session(database=database) as session:
+            total_row = session.run(count_query, {"q": keyword}).single()
+            total = int((total_row or {}).get("total") or 0)
+            records = session.run(
                 list_query,
                 {"limit": page_size, "skip": skip, "q": keyword},
             )
-        ]
+            rows = [job_row_from_properties(r["job"], r["element_id"], r.get("job_title")) for r in records]
+    except Exception:  # noqa: BLE001
+        current_app.logger.exception("jobs_list_neo4j_query_failed")
+        return jsonify({"ok": False, "message": "岗位数据服务暂时不可用，请稍后重试"}), 503
 
     data = [serialize_job_row(r) for r in rows]
     total_pages = max(1, (total + page_size - 1) // page_size)
@@ -727,6 +755,7 @@ def list_job_options():
 
 
 @jobs_bp.get("/<path:job_id>")
+@_career_graph_query_guard
 def job_detail(job_id: str):
     uri, user, password, database = neo4j_settings()
     if not password:
@@ -735,6 +764,8 @@ def job_detail(job_id: str):
     detail_query = f"""
     MATCH (j:Job)
     WHERE coalesce(j.job_key, j.job_code, j.name, j.title, elementId(j)) = $job_id
+    OPTIONAL MATCH (j)-[:HAS_TITLE]->(jt:JobTitle)
+    WITH j, head(collect(DISTINCT jt)) AS jt
     OPTIONAL MATCH (j)-[:REQUIRES]->(req)
     RETURN
       coalesce(j.job_key, j.job_code, j.name, j.title, elementId(j)) AS id,
@@ -771,6 +802,8 @@ def job_detail(job_id: str):
       coalesce(j.cap_conf_teamwork, 0.0) AS cap_conf_teamwork,
       coalesce(j.cap_conf_social, 0.0) AS cap_conf_social,
       coalesce(j.cap_conf_growth, 0.0) AS cap_conf_growth,
+      properties(j) AS job_properties,
+      properties(jt) AS job_title_properties,
       collect(DISTINCT {{
         name: coalesce(req.name, ''),
         label: head(labels(req)),
@@ -781,12 +814,18 @@ def job_detail(job_id: str):
 
     driver = neo4j_driver(uri, user, password)
     with driver.session(database=database) as session:
-        row = session.run(detail_query, {"job_id": job_id}).single()
+        row = neo4j_query(session, detail_query, {"job_id": job_id}).single()
 
     if not row:
         return jsonify({"ok": False, "message": "岗位不存在"}), 404
 
     raw = dict(row)
+    workstyle_row = job_row_from_properties(
+        raw.get("job_properties") or {},
+        raw.get("id"),
+        raw.get("job_title_properties") or {},
+    )
+    raw["workstyle"] = workstyle_row.get("workstyle")
     detail = serialize_job_row(raw)
     detail.update(
         {
@@ -820,6 +859,7 @@ def job_detail(job_id: str):
 
 
 @jobs_bp.post("/transition-analysis")
+@_career_graph_query_guard
 def transition_analysis():
     uri, user, password, database = neo4j_settings()
     if not password:
@@ -833,16 +873,25 @@ def transition_analysis():
     if from_job_id == to_job_id:
         return jsonify({"ok": False, "message": "请至少选择两个不同岗位"}), 400
 
-    driver = neo4j_driver(uri, user, password)
-    with driver.session(database=database) as session:
-        from_row = _fetch_job_for_analysis(session, from_job_id)
-        to_row = _fetch_job_for_analysis(session, to_job_id)
+    try:
+        driver = neo4j_driver(uri, user, password)
+        with driver.session(database=database) as session:
+            from_row = _fetch_job_for_analysis(session, from_job_id)
+            to_row = _fetch_job_for_analysis(session, to_job_id)
+    except Exception:  # noqa: BLE001
+        current_app.logger.exception("career_transition_neo4j_query_failed")
+        return jsonify({"ok": False, "message": "职业图谱数据查询超时，请稍后重试"}), 503
 
     if not from_row or not to_row:
         return jsonify({"ok": False, "message": "岗位不存在"}), 404
 
     analysis = _build_transition_analysis(from_row, to_row)
-    advice = _llm_transition_advice(from_row, to_row, analysis)
+    llm_enabled = bool(current_app.config.get("JOBS_TRANSITION_LLM_ENABLED", False))
+    advice = (
+        _llm_transition_advice(from_row, to_row, analysis)
+        if llm_enabled
+        else _fallback_transition_advice(from_row, to_row, analysis)
+    )
 
     return jsonify(
         {
@@ -864,12 +913,14 @@ def transition_analysis():
                 },
                 "analysis": analysis,
                 "advice": advice,
+                "meta": {"advice_source": "llm" if llm_enabled else "deterministic"},
             },
         }
     )
 
 
 @jobs_bp.get("/<path:job_id>/promotion-path")
+@_career_graph_query_guard
 def get_promotion_path(job_id: str):
     uri, user, password, database = neo4j_settings()
     if not password:
@@ -911,22 +962,9 @@ def get_promotion_path(job_id: str):
     WITH title_name, coalesce(direct_jt, fallback_jt) AS jt
     WHERE jt IS NOT NULL
     MATCH (promotion:JobPromotion)-[:FOR_JOB_TITLE]->(jt)
-    OPTIONAL MATCH (promotion)-[rr:RECOMMENDS_RESOURCE]->(lr:LearningResource)
-    OPTIONAL MATCH (promotion)-[rc:RECOMMENDS_COMPETITION]->(c:Competition)
-    RETURN
-      coalesce(jt.name, title_name) AS from_title,
-      coalesce(promotion.promotion_id, promotion.name, '') AS id,
-      coalesce(promotion.stage3_job_title, promotion.stage3, promotion.title, promotion.name, '未命名岗位') AS to_title,
-      coalesce(promotion.title, promotion.name, '') AS promotion_name,
-      coalesce(promotion.promotion, '') AS promotion,
-      coalesce(promotion.stage1, '') AS stage1,
-      coalesce(promotion.stage2, '') AS stage2,
-      coalesce(promotion.stage3, '') AS stage3,
-      coalesce(promotion.stage3_job_title, '') AS stage3_job_title,
-      coalesce(promotion.confidence, 0.0) AS confidence,
-      coalesce(promotion.rationale, '') AS rationale,
-      coalesce(promotion.notes, '') AS notes,
-      collect(DISTINCT CASE WHEN lr IS NULL THEN null ELSE {
+    CALL (promotion) {
+      OPTIONAL MATCH (promotion)-[rr:RECOMMENDS_RESOURCE]->(lr:LearningResource)
+      RETURN collect(DISTINCT CASE WHEN lr IS NULL THEN null ELSE {
         resource_id: lr.resource_id,
         resource_name: lr.resource_name,
         resource_desc: lr.resource_desc,
@@ -940,8 +978,11 @@ def get_promotion_path(job_id: str):
         rank: rr.rank,
         score: rr.score,
         rationale: rr.rationale
-      } END) AS resources,
-      collect(DISTINCT CASE WHEN c IS NULL THEN null ELSE {
+      } END) AS resources
+    }
+    CALL (promotion) {
+      OPTIONAL MATCH (promotion)-[rc:RECOMMENDS_COMPETITION]->(c:Competition)
+      RETURN collect(DISTINCT CASE WHEN c IS NULL THEN null ELSE {
         competition_id: c.competition_id,
         competition_name: c.competition_name,
         competition_desc: c.competition_desc,
@@ -962,28 +1003,49 @@ def get_promotion_path(job_id: str):
         match_via: rc.match_via,
         rationale: rc.rationale
       } END) AS competitions
+    }
+    RETURN
+      coalesce(jt.name, title_name) AS from_title,
+      coalesce(promotion.promotion_id, promotion.name, '') AS id,
+      coalesce(promotion.stage3_job_title, promotion.stage3, promotion.title, promotion.name, '未命名岗位') AS to_title,
+      coalesce(promotion.title, promotion.name, '') AS promotion_name,
+      coalesce(promotion.promotion, '') AS promotion,
+      coalesce(promotion.stage1, '') AS stage1,
+      coalesce(promotion.stage2, '') AS stage2,
+      coalesce(promotion.stage3, '') AS stage3,
+      coalesce(promotion.stage3_job_title, '') AS stage3_job_title,
+      coalesce(promotion.confidence, 0.0) AS confidence,
+      coalesce(promotion.rationale, '') AS rationale,
+      coalesce(promotion.notes, '') AS notes,
+      resources,
+      competitions
     ORDER BY confidence DESC, promotion_name ASC, to_title ASC
     LIMIT $limit
     """
 
-    driver = neo4j_driver(uri, user, password)
-    with driver.session(database=database) as session:
-        start_row = session.run(start_query, {"job_id": job_id}).single()
-        if not start_row:
-            return jsonify({"ok": False, "message": "岗位不存在"}), 404
+    try:
+        driver = neo4j_driver(uri, user, password)
+        with driver.session(database=database) as session:
+            start_row = neo4j_query(session, start_query, {"job_id": job_id}).single()
+            if not start_row:
+                return jsonify({"ok": False, "message": "岗位不存在"}), 404
 
-        promotion_rows = [
-            dict(r)
-            for r in session.run(
-                promotion_query,
-                {"job_id": job_id, "limit": promotion_limit},
+            promotion_rows = [
+                dict(r)
+                for r in neo4j_query(
+                    session,
+                    promotion_query,
+                    {"job_id": job_id, "limit": promotion_limit},
+                )
+            ]
+            job_title_name = promotion_rows[0]["from_title"] if promotion_rows else str(start_row.get("title") or "")
+            title_materials = _fetch_title_materials(session, [job_title_name]).get(
+                job_title_name,
+                {"learning_resources": [], "competitions": []},
             )
-        ]
-        job_title_name = promotion_rows[0]["from_title"] if promotion_rows else str(start_row.get("title") or "")
-        title_materials = _fetch_title_materials(session, [job_title_name]).get(
-            job_title_name,
-            {"learning_resources": [], "competitions": []},
-        )
+    except Exception:  # noqa: BLE001
+        current_app.logger.exception("career_promotion_neo4j_query_failed")
+        return jsonify({"ok": False, "message": "晋升路径查询超时，请稍后重试"}), 503
 
     start_job = dict(start_row)
     normalized_paths = []
@@ -1078,6 +1140,7 @@ def get_promotion_path(job_id: str):
 
 
 @jobs_bp.get("/<path:job_id>/lateral-paths")
+@_career_graph_query_guard
 def get_lateral_paths(job_id: str):
     uri, user, password, database = neo4j_settings()
     if not password:
@@ -1157,26 +1220,31 @@ def get_lateral_paths(job_id: str):
     RETURN title, jobs
     """
 
-    driver = neo4j_driver(uri, user, password)
-    with driver.session(database=database) as session:
-        start_row = session.run(start_query, {"job_id": job_id}).single()
-        if not start_row:
-            return jsonify({"ok": False, "message": "岗位不存在"}), 404
+    try:
+        driver = neo4j_driver(uri, user, password)
+        with driver.session(database=database) as session:
+            start_row = neo4j_query(session, start_query, {"job_id": job_id}).single()
+            if not start_row:
+                return jsonify({"ok": False, "message": "岗位不存在"}), 404
 
-        lateral_rows = [
-            dict(r)
-            for r in session.run(
-                lateral_query,
-                {"job_id": job_id, "limit": max_paths},
-            )
-        ]
-        target_titles = [str(r.get("target_title") or "").strip() for r in lateral_rows]
-        materials = _fetch_title_materials(session, target_titles)
-        candidate_jobs: Dict[str, List[Dict[str, Any]]] = {}
-        if target_titles:
-            for row in session.run(candidate_jobs_query, {"titles": target_titles}):
-                rec = dict(row)
-                candidate_jobs[str(rec.get("title") or "")] = rec.get("jobs") or []
+            lateral_rows = [
+                dict(r)
+                for r in neo4j_query(
+                    session,
+                    lateral_query,
+                    {"job_id": job_id, "limit": max_paths},
+                )
+            ]
+            target_titles = [str(r.get("target_title") or "").strip() for r in lateral_rows]
+            materials = _fetch_title_materials(session, target_titles)
+            candidate_jobs: Dict[str, List[Dict[str, Any]]] = {}
+            if target_titles:
+                for row in neo4j_query(session, candidate_jobs_query, {"titles": target_titles}):
+                    rec = dict(row)
+                    candidate_jobs[str(rec.get("title") or "")] = rec.get("jobs") or []
+    except Exception:  # noqa: BLE001
+        current_app.logger.exception("career_lateral_neo4j_query_failed")
+        return jsonify({"ok": False, "message": "横向迁移查询超时，请稍后重试"}), 503
 
     start_job = dict(start_row)
     job_title_name = str(start_job.pop("job_title", "") or start_job.get("title") or "").strip()

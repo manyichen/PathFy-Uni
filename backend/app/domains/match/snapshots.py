@@ -18,9 +18,14 @@ CREATE TABLE IF NOT EXISTS match_runs (
   refine_with_llm TINYINT(1) NOT NULL DEFAULT 0,
   student_json LONGTEXT NULL,
   stats_json JSON NULL,
-              llm_json LONGTEXT NULL,
-              settings_revision INT UNSIGNED NULL,
-              config_snapshot_json JSON NULL,
+  llm_json LONGTEXT NULL,
+  settings_revision INT UNSIGNED NULL,
+  config_snapshot_json JSON NULL,
+  personality_profile_id INT NULL,
+  preference_mode VARCHAR(24) NOT NULL DEFAULT 'off',
+  preference_snapshot_json LONGTEXT NULL,
+  preference_algorithm_version VARCHAR(64) NULL,
+  workstyle_snapshot_version VARCHAR(64) NULL,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (id),
   KEY idx_match_runs_user_resume_created (user_id, resume_id, created_at DESC),
@@ -53,10 +58,29 @@ def _json_dumps(obj: Any) -> str:
     return json.dumps(obj, ensure_ascii=False)
 
 
+def _columns(cur, table: str) -> set[str]:
+    cur.execute(f"SHOW COLUMNS FROM `{table}`")
+    return {str(row["Field"]) for row in cur.fetchall() or []}
+
+
+def _ensure_column(cur, table: str, column: str, definition: str) -> None:
+    if column not in _columns(cur, table):
+        cur.execute(f"ALTER TABLE `{table}` ADD COLUMN {column} {definition}")
+
+
 def ensure_match_snapshot_tables() -> None:
     with db_cursor() as (_, cur):
         cur.execute(_MATCH_RUNS_DDL)
         cur.execute(_MATCH_RUN_ITEMS_DDL)
+        _ensure_column(cur, "match_runs", "settings_revision", "INT UNSIGNED NULL")
+        _ensure_column(cur, "match_runs", "config_snapshot_json", "JSON NULL")
+        _ensure_column(cur, "match_runs", "personality_profile_id", "INT NULL")
+        _ensure_column(cur, "match_runs", "preference_mode", "VARCHAR(24) NOT NULL DEFAULT 'off'")
+        _ensure_column(cur, "match_runs", "preference_snapshot_json", "LONGTEXT NULL")
+        _ensure_column(cur, "match_runs", "preference_algorithm_version", "VARCHAR(64) NULL")
+        _ensure_column(cur, "match_runs", "workstyle_snapshot_version", "VARCHAR(64) NULL")
+        _ensure_column(cur, "match_runs", "preference_experiment_variant", "VARCHAR(32) NULL")
+        _ensure_column(cur, "match_runs", "preference_ranking_diff_json", "JSON NULL")
 
 
 def persist_match_snapshot(
@@ -67,6 +91,8 @@ def persist_match_snapshot(
     refine_with_llm: bool,
     settings_revision: int | None = None,
     config_snapshot: dict[str, Any] | None = None,
+    preference_snapshot: dict[str, Any] | None = None,
+    preference_context: dict[str, Any] | None = None,
 ) -> None:
     if jwt_user_id is None or resume_id is None:
         return
@@ -78,6 +104,16 @@ def persist_match_snapshot(
     filters = data_out.get("filters") or {}
     stats = data_out.get("stats") or {}
     llm = data_out.get("llm") or {}
+    preference_context = preference_context or {}
+    tie_break = preference_context.get("tie_break") if isinstance(preference_context.get("tie_break"), dict) else {}
+    frozen_preference = preference_snapshot
+    if not frozen_preference and str(preference_context.get("mode") or "off") != "off":
+        frozen_preference = {
+            "status": str(preference_context.get("status") or "missing"),
+            "personality_profile_id": preference_context.get("personality_profile_id"),
+            "mbti_type": preference_context.get("mbti_type"),
+            "completed_at": preference_context.get("completed_at"),
+        }
     llm_top_ids: set[str] = set()
     if isinstance(llm, dict) and llm.get("ok"):
         for it in llm.get("top5") or []:
@@ -89,8 +125,11 @@ def persist_match_snapshot(
             """
             INSERT INTO match_runs (
               user_id, resume_id, match_goal, q, location_q, refine_with_llm, student_json, stats_json, llm_json,
-              settings_revision,config_snapshot_json
-            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+              settings_revision, config_snapshot_json,
+              personality_profile_id, preference_mode, preference_snapshot_json,
+              preference_algorithm_version, workstyle_snapshot_version,
+              preference_experiment_variant, preference_ranking_diff_json
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             """,
             (
                 jwt_user_id,
@@ -104,6 +143,13 @@ def persist_match_snapshot(
                 _json_dumps(llm if isinstance(llm, dict) else {}),
                 settings_revision,
                 _json_dumps(config_snapshot or {}),
+                preference_context.get("personality_profile_id"),
+                str(preference_context.get("mode") or "off")[:24],
+                _json_dumps(frozen_preference) if frozen_preference else None,
+                str(preference_context.get("algorithm_version") or "")[:64] or None,
+                str(preference_context.get("workstyle_snapshot_version") or "")[:64] or None,
+                str(tie_break.get("experiment_variant") or "")[:32] or None,
+                _json_dumps(tie_break) if tie_break else None,
             ),
         )
         run_id = int(cur.lastrowid)
@@ -172,7 +218,10 @@ def list_user_match_history(*, user_id: int, limit: int = 30) -> list[dict[str, 
         cur.execute(
             """
             SELECT id, resume_id, match_goal, q, location_q, refine_with_llm,
-                   student_json, stats_json, llm_json, settings_revision, created_at
+                   student_json, stats_json, llm_json, settings_revision,
+                   personality_profile_id, preference_mode, preference_snapshot_json,
+                   preference_algorithm_version, workstyle_snapshot_version,
+                   preference_experiment_variant, preference_ranking_diff_json, created_at
             FROM match_runs
             WHERE user_id = %s
             ORDER BY id DESC
@@ -206,6 +255,12 @@ def list_user_match_history(*, user_id: int, limit: int = 30) -> list[dict[str, 
                 "returned": _safe_int(stats.get("returned")),
                 "llm_ok": bool(llm.get("ok")),
                 "settings_revision": row.get("settings_revision"),
+                "preference_mode": str(row.get("preference_mode") or "off"),
+                "personality_profile_id": row.get("personality_profile_id"),
+                "preference_status": (
+                    str((_json_loads(row.get("preference_snapshot_json"), {}) or {}).get("status") or "off")
+                ),
+                "preference_experiment_variant": row.get("preference_experiment_variant"),
             }
         )
     return items
@@ -218,7 +273,10 @@ def fetch_match_run_detail(*, user_id: int, run_id: int) -> dict[str, Any] | Non
         cur.execute(
             """
             SELECT id, resume_id, match_goal, q, location_q, refine_with_llm,
-                   student_json, stats_json, llm_json, settings_revision, config_snapshot_json, created_at
+                   student_json, stats_json, llm_json, settings_revision, config_snapshot_json,
+                   personality_profile_id, preference_mode, preference_snapshot_json,
+                   preference_algorithm_version, workstyle_snapshot_version,
+                   preference_experiment_variant, preference_ranking_diff_json, created_at
             FROM match_runs
             WHERE id = %s AND user_id = %s
             LIMIT 1
@@ -259,6 +317,13 @@ def fetch_match_run_detail(*, user_id: int, run_id: int) -> dict[str, Any] | Non
     location_q = str(row.get("location_q") or "")
     match_goal = str(row.get("match_goal") or "fit")
 
+    frozen_preference = _json_loads(row.get("preference_snapshot_json"), {})
+    if not isinstance(frozen_preference, dict):
+        frozen_preference = {}
+    ranking_diff = _json_loads(row.get("preference_ranking_diff_json"), {})
+    if not isinstance(ranking_diff, dict):
+        ranking_diff = {}
+
     data: dict[str, Any] = {
         "run_id": int(row["id"]),
         "resume_id": int(row.get("resume_id") or 0),
@@ -268,6 +333,18 @@ def fetch_match_run_detail(*, user_id: int, run_id: int) -> dict[str, Any] | Non
         "stats": stats,
         "jobs": jobs,
         "configuration": {"settings_revision": row.get("settings_revision"), "source": "revision" if row.get("settings_revision") is not None else "legacy_env_config"},
+        "preference_context": {
+            "mode": str(row.get("preference_mode") or "off"),
+            "status": str(frozen_preference.get("status") or ("off" if str(row.get("preference_mode") or "off") == "off" else "missing")),
+            "personality_profile_id": row.get("personality_profile_id"),
+            "mbti_type": frozen_preference.get("mbti_type"),
+            "completed_at": frozen_preference.get("completed_at"),
+            "personalization_enabled": frozen_preference.get("personalization_enabled"),
+            "algorithm_version": row.get("preference_algorithm_version"),
+            "workstyle_snapshot_version": row.get("workstyle_snapshot_version"),
+            "influenced_ranking": bool(ranking_diff.get("applied") and ranking_diff.get("changes")),
+            "tie_break": ranking_diff,
+        },
     }
     if llm:
         data["llm"] = llm

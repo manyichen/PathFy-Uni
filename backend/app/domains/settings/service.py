@@ -33,7 +33,14 @@ _RUNTIME_SETTINGS: ContextVar[dict[str, Any] | None] = ContextVar("pathfy_runtim
 
 def legacy_settings() -> dict[str, Any]:
     config = current_app.config if has_app_context() else Config
-    values = {key: (config.get(key, PLATFORM_DEFAULTS.get(key)) if hasattr(config, "get") else getattr(config, key, PLATFORM_DEFAULTS.get(key))) for key in FIELD_MAP}
+    values = {
+        key: (
+            config.get(key, DEFAULT_SETTINGS_V1.get(key, PLATFORM_DEFAULTS.get(key)))
+            if hasattr(config, "get")
+            else getattr(config, key, DEFAULT_SETTINGS_V1.get(key, PLATFORM_DEFAULTS.get(key)))
+        )
+        for key in FIELD_MAP
+    }
     replacements = {
         "MATCH_DEEPSEEK_MODEL": "deepseek-v4-flash",
         "CAREER_DEEPSEEK_MODEL": "deepseek-v4-pro",
@@ -69,7 +76,7 @@ def active_system_settings() -> dict[str, Any]:
     except Exception:
         revision = None
     result = ({"revision": None, "source": "legacy_env", "settings": legacy_settings()}
-              if not revision else {**revision, "source": "database"})
+              if not revision else {**revision, "settings": {**DEFAULT_SETTINGS_V1, **revision["settings"]}, "source": "database"})
     if has_request_context(): g.pathfy_system_settings = result
     return result
 

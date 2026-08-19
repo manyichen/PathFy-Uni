@@ -43,11 +43,31 @@ def test_route_contract_inventory(app):
         if rule.endpoint != "static"
         for method in rule.methods - {"HEAD", "OPTIONS"}
     }
-    assert len(routes) == 66
+    assert len(routes) == 86
     assert ("/api/profile/upload", "POST") in routes
     assert ("/api/jobs/<path:job_id>/promotion-path", "GET") in routes
     assert ("/api/match/preview", "POST") in routes
+    assert ("/api/personality/me/latest", "GET") in routes
+    assert ("/api/personality/me/profiles", "GET") in routes
+    assert ("/api/personality/profiles/<int:profile_id>", "GET") in routes
+    assert ("/api/personality/profiles/<int:profile_id>/activate", "POST") in routes
+    assert ("/api/personality/profiles/<int:profile_id>/preferences", "PATCH") in routes
+    assert ("/api/personality/profiles/<int:profile_id>", "DELETE") in routes
     assert ("/api/report/generate", "POST") in routes
+    assert ("/api/report/<int:report_id>/enrichment", "POST") in routes
+    assert ("/api/report/<int:report_id>/enrichment", "GET") in routes
+    assert ("/api/report/<int:report_id>/preference-strategy", "PATCH") in routes
+    assert ("/api/report/review-drafts", "POST") in routes
+    assert ("/api/report/review-drafts/<int:draft_id>/confirm", "POST") in routes
+    assert ("/api/report/<int:report_id>/plan-versions", "GET") in routes
+    assert ("/api/report/plan-proposals/<int:proposal_id>/decision", "POST") in routes
+    assert ("/api/report/<int:report_id>/plan-actions", "POST") in routes
+    assert ("/api/report/<int:report_id>/plan-actions/<path:action_uid>", "PATCH") in routes
+    assert ("/api/report/<int:report_id>/plan-actions/<path:action_uid>", "DELETE") in routes
+    assert ("/api/report/<int:report_id>/export/data", "GET") in routes
+    assert ("/api/report/<int:report_id>/export/pdf", "POST") in routes
+    assert ("/api/report/<int:report_id>", "DELETE") in routes
+    assert ("/api/report/operations/metrics", "GET") in routes
     assert ("/api/graph/sync/job-titles", "POST") in routes
     assert ("/api/graph/import-runs", "GET") in routes
     assert ("/api/graph/tasks", "POST") in routes

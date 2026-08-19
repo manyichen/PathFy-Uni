@@ -10,11 +10,12 @@ const categories = ['岗位与能力', '策展数据', '图谱维护']
 const itemsByCategory = (category: string) => Object.entries(graphTaskCatalog).filter(([key, item]) => item.category === category && key !== 'emergency_clear')
 const selected = computed(() => graphTaskCatalog[type.value])
 const isCurated = computed(() => selected.value.category === '策展数据')
-const needsPrimaryFile = computed(() => ['job_import','job_capability_result_import','learning_resource_import','competition_import','job_promotion_import','job_lateral_import'].includes(type.value))
+const needsPrimaryFile = computed(() => ['job_import','job_capability_result_import','job_workstyle_import','learning_resource_import','competition_import','job_promotion_import','job_lateral_import'].includes(type.value))
 const accepts = computed(() => type.value === 'job_import' ? '.xls,.xlsx' : type.value === 'job_capability_result_import' ? '.jsonl' : '.csv')
 const contracts: Partial<Record<GraphTaskType,string>> = {
   job_import: 'Excel（.xls/.xlsx）。关键列：岗位名称、公司名称、地址、薪资范围、所属行业、岗位详情、岗位编码、岗位来源地址。',
   job_capability_result_import: 'JSONL（每行一个 JSON）。关键字段：job_key 或 job_id、scores、confidence、evidence、risk_flags。scores 和 confidence 均需包含完整八维。',
+  job_workstyle_import: 'CSV。关键列：target_type、target_id、四组 workstyle_* 数值/置信度、workstyle_source、workstyle_scoring_version、workstyle_evidence_json。每个已填轴都必须有证据。',
   learning_resource_import: 'CSV。关键列：resource_id、job_name、resource_name、resource_url、resource_type、difficulty、skill_tag。多个岗位名称用 | 分隔。',
   competition_import: 'CSV。关键列：competition_id、job_name、competition_name、official_url、competition_type、difficulty、cap_tags、skill_tags。',
   job_promotion_import: 'CSV。关键列：promotion_id、job_title、title、promotion、stage1、stage2、stage3、stage3_job_title。',
@@ -56,9 +57,10 @@ onMounted(async () => { try { guard.value = await graph.guard() } catch {} })
         <div class="grid gap-5 md:grid-cols-2">
           <template v-if="needsPrimaryFile"><UFormField label="导入文件" required><UInput type="file" :accept="accepts" @change="pick('file',$event)"/></UFormField></template>
           <template v-if="type === 'promotion_recommendation_import'"><UFormField label="学习资源推荐 CSV" required><UInput type="file" accept=".csv" @change="pick('learning_file',$event)"/></UFormField><UFormField label="竞赛推荐 CSV" required><UInput type="file" accept=".csv" @change="pick('competition_file',$event)"/></UFormField></template>
-          <template v-if="isCurated || type === 'job_import'"><UFormField label="导入模式"><USelect v-model="mode" :items="[{label:'增量合并',value:'merge'},{label:'来源快照',value:'snapshot'}]" class="w-full"/></UFormField><UFormField label="source_id" :required="mode === 'snapshot'"><UInput v-model="sourceId" placeholder="稳定的数据来源标识"/></UFormField></template>
+          <template v-if="isCurated || type === 'job_import' || type === 'job_workstyle_import'"><UFormField label="导入模式"><USelect v-model="mode" :items="[{label:'增量合并',value:'merge'},{label:'来源快照',value:'snapshot'}]" class="w-full"/></UFormField><UFormField label="source_id" :required="mode === 'snapshot'"><UInput v-model="sourceId" placeholder="稳定的数据来源标识"/></UFormField></template>
           <template v-if="type === 'job_import'"><UFormField label="岗位抽取批大小"><UInput v-model.number="batch" type="number" min="1" max="1000"/></UFormField><UFormField label="八维评估批大小"><UInput v-model.number="capabilityBatch" type="number" min="1" max="50"/><template #hint>每次模型请求包含的岗位数，建议 5–10。</template></UFormField><div class="grid gap-2"><UCheckbox v-model="promotions" label="生成自动晋升路线"/><UCheckbox v-model="lateral" label="生成自动换岗关系"/><p class="text-xs muted">岗位名称同步和八维评估始终执行。</p></div></template>
-          <template v-if="type === 'job_capability_evaluation'"><UFormField label="评估范围"><USelect v-model="scope" :items="[{label:'仅缺失评分',value:'missing'},{label:'版本过期',value:'stale'},{label:'全部岗位',value:'all'}]" class="w-full"/></UFormField><UFormField label="八维评估批大小"><UInput v-model.number="capabilityBatch" type="number" min="1" max="50"/><template #hint>每次模型请求包含的岗位数，建议 5–10。</template></UFormField><UFormField label="限定 source_id（可选）"><UInput v-model="sourceId"/></UFormField></template>
+          <template v-if="type === 'job_capability_evaluation' || type === 'job_workstyle_evaluation'"><UFormField label="评估范围"><USelect v-model="scope" :items="[{label:'仅缺失评分',value:'missing'},{label:'版本过期',value:'stale'},{label:'全部岗位',value:'all'}]" class="w-full"/></UFormField><UFormField v-if="type === 'job_capability_evaluation'" label="八维评估批大小"><UInput v-model.number="capabilityBatch" type="number" min="1" max="50"/><template #hint>每次模型请求包含的岗位数，建议 5–10。</template></UFormField><UFormField label="限定 source_id（可选）"><UInput v-model="sourceId"/></UFormField></template>
+          <UAlert v-if="type === 'job_workstyle_evaluation'" class="md:col-span-2" color="info" variant="soft" title="保守证据提取" description="只读取招聘正文中的明确工作方式信号，不按岗位名称推断；生成变更集后仍需管理员逐项复核并整单确认。"/>
           <UCheckbox v-if="type === 'salary_normalization'" v-model="force" label="强制重新计算所有岗位"/>
         </div>
         <UAlert v-if="contracts[type]" class="mt-5" icon="i-lucide-info" title="输入格式" :description="contracts[type]"/>

@@ -1,20 +1,74 @@
 <script setup lang="ts">
-import type { CapabilityScores, CodeEnvelope } from '~/types/api'
-definePageMeta({middleware:'auth'});useSeoMeta({title:'人岗匹配'})
-const api=useApi();const settingsApi=useSettingsApi();const auth=useAuth();const toast=useToast();const resumes=ref<any[]>([]);const resumeId=ref<number>();const q=ref('');const locationQ=ref('');const goal=ref('fit');const refine=ref(false);const loading=ref(false);const result=ref<any>();const selected=ref<any>();const historyOpen=ref(false);const history=ref<any[]>([]);const cacheKey=computed(()=>`career_pj_match_v1_${auth.user.value?.id||'guest'}`)
-async function run(){if(!resumeId.value){toast.add({title:'请选择能力画像',color:'warning'});return};loading.value=true;try{result.value=await api.ok<any>('/api/match/preview',{method:'POST',body:{resume_id:resumeId.value,q:q.value,location_q:locationQ.value,match_goal:goal.value,refine_with_llm:refine.value}});localStorage.setItem(cacheKey.value,JSON.stringify({v:1,savedAt:Date.now(),result:result.value,resumeId:resumeId.value,filters:{q:q.value,locationQ:locationQ.value,goal:goal.value,refine:refine.value}}))}catch(e){toast.add({title:String(e),color:'error'})}finally{loading.value=false}}
-async function openHistory(){historyOpen.value=true;try{history.value=(await api.ok<{items:any[]}>('/api/match/history?limit=30')).items}catch(e){toast.add({title:String(e),color:'error'})}}
-async function restore(runId:number){result.value=await api.ok<any>(`/api/match/history/${runId}`);historyOpen.value=false}
-const jobs=computed(()=>{
-  const rows=result.value?.jobs||result.value?.ranked_jobs||result.value?.results||[]
-  return rows.map((item:any)=>{
-    const card=item.job||item
-    const matchScore=item.match_score??item.score??item.match_preview?.match_score??card.match_preview?.match_score??item.coarse_match_score??item.overall_fit_0_100
-    return {...item,match_score:matchScore}
-  })
-})
-const studentScores=computed<Partial<CapabilityScores>>(()=>result.value?.student?.scores||result.value?.student||{})
-onMounted(async()=>{auth.hydrate();const body=await api.request<CodeEnvelope<any[]>>('/api/profile/resumes');if(body.code===200)resumes.value=body.data||[];const raw=localStorage.getItem(cacheKey.value);if(raw)try{const c=JSON.parse(raw);result.value=c.result;resumeId.value=c.resumeId;q.value=c.filters?.q||'';locationQ.value=c.filters?.locationQ||'';goal.value=c.filters?.goal||'fit';refine.value=Boolean(c.filters?.refine)}catch{}})
-onMounted(async()=>{if(localStorage.getItem(cacheKey.value))return;try{const data=await settingsApi.preferences();goal.value=data.preferences.default_match_goal;refine.value=Boolean(data.preferences.default_refine_with_llm)}catch{}})
+import { useMatchWorkspace } from '~/composables/match/useMatchWorkspace'
+
+definePageMeta({ middleware: 'auth' })
+useSeoMeta({ title: '人岗匹配' })
+
+const workspace = useMatchWorkspace()
 </script>
-<template><div class="page-stack"><div class="flex flex-wrap items-end justify-between gap-3"><div class="page-heading"><h1 class="flex items-center gap-2"><UIcon name="i-lucide-target" class="text-primary"/>人岗匹配</h1><p class="muted">选择能力画像，按吻合度或冲刺目标进行岗位排序</p></div><UButton variant="soft" icon="i-lucide-history" @click="openHistory">历史记录</UButton></div><UCard><div class="grid gap-4 md:grid-cols-2 xl:grid-cols-5"><UFormField label="能力画像"><USelect v-model="resumeId" value-key="id" label-key="name" :items="resumes" class="w-full"/></UFormField><UFormField label="关键词"><UInput v-model="q"/></UFormField><UFormField label="地点"><UInput v-model="locationQ"/></UFormField><UFormField label="匹配目标"><USelect v-model="goal" :items="[{label:'优先吻合',value:'fit'},{label:'冲刺发展',value:'stretch'}]"/></UFormField><div class="flex items-end gap-3"><USwitch v-model="refine" label="AI 精排"/><UButton :loading="loading" @click="run">开始匹配</UButton></div></div></UCard><div v-if="loading" class="grid gap-4"><USkeleton class="h-48"/><USkeleton class="h-48"/></div><UEmpty v-else-if="!jobs.length" title="尚未生成匹配结果" description="选择画像后开始匹配"/><div v-else class="grid gap-4 lg:grid-cols-[1fr_420px]"><div class="grid gap-3"><UCard v-for="(item,index) in jobs" :key="item.id||item.job?.id" class="cursor-pointer" @click="selected=item.job||item"><div class="flex items-start justify-between gap-3"><div><h2 class="font-semibold">{{Number(index)+1}}. {{(item.job||item).title}}</h2><p class="text-sm muted">{{(item.job||item).company}} · {{(item.job||item).location}}</p></div><UBadge :label="`匹配 ${item.match_score??item.score??0}`"/></div><p v-if="item.reason||item.explanation" class="mt-3 text-sm">{{item.reason||item.explanation}}</p></UCard></div><UCard class="h-fit"><template #header><h2 class="font-semibold">能力对比</h2></template><CapabilityRadar :scores="studentScores" :compare="selected?.scores" height="380px"/><p v-if="!selected" class="text-center text-sm muted">选择岗位查看双雷达对比</p></UCard></div><UModal v-model:open="historyOpen" title="匹配历史"><template #body><div class="grid gap-2"><UButton v-for="item in history" :key="item.run_id" color="neutral" variant="soft" block @click="restore(item.run_id)">{{item.student_name||'画像'}} · {{item.created_at}} · {{item.returned}} 个岗位</UButton><UEmpty v-if="!history.length" title="暂无历史记录"/></div></template></UModal></div></template>
+
+<template>
+  <div class="cockpit-page">
+    <CockpitPageHeader eyebrow="Matching Workspace / Fit" title="人岗匹配" description="从八维能力画像出发，区分智能精排与完整粗排，并明确展示每个排名的依据。" icon="i-lucide-target" mark="03" edition-label="匹配工作台" />
+    <CockpitStageRail current="match" />
+
+    <section><CockpitSectionHeading kicker="01 · Primary View" title="设置本次匹配意图" description="选择画像、关键词、地点与策略后开始比较。" />
+    <MatchIntentPanel
+      v-model:resume-id="workspace.resumeId.value"
+      v-model:q="workspace.q.value"
+      v-model:location-q="workspace.locationQ.value"
+      v-model:goal="workspace.goal.value"
+      v-model:refine="workspace.refine.value"
+      v-model:preference-mode="workspace.preferenceMode.value"
+      :resumes="workspace.resumes.value"
+      :personality="workspace.personalityProfile.value"
+      :preference-context="workspace.result.value?.preference_context"
+      :loading="workspace.loading.value"
+      @run="workspace.run"
+      @history="workspace.openHistory"
+    />
+    </section>
+
+    <UAlert
+      v-if="workspace.runError.value"
+      role="alert"
+      color="error"
+      variant="soft"
+      icon="i-lucide-circle-alert"
+      title="匹配未完成"
+      :description="workspace.runError.value"
+    >
+      <template #actions>
+        <UButton
+          size="sm"
+          color="error"
+          variant="outline"
+          icon="i-lucide-rotate-ccw"
+          :loading="workspace.loading.value"
+          @click="workspace.run"
+        >重新匹配</UButton>
+      </template>
+    </UAlert>
+
+    <div v-if="workspace.loading.value" class="grid gap-4"><USkeleton class="h-48" /><USkeleton class="h-48" /></div>
+    <template v-else-if="workspace.result.value">
+      <MatchSnapshotStatus :warning="workspace.result.value.snapshot_warning" :restored-message="workspace.restoredMessage.value" />
+      <MatchPreferenceStatus :context="workspace.result.value.preference_context" />
+      <CockpitSectionHeading kicker="02 · Supporting Evidence" title="排名结果与比较依据" description="智能精排解释发展适配，完整粗排保留八维能力差距，两种结果不会混为一谈。" />
+      <div v-if="workspace.jobs.value.length" class="match-results-layout grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_420px]">
+        <MatchResultList :jobs="workspace.jobs.value" :llm="workspace.result.value.llm" :preference-context="workspace.result.value.preference_context" :refine-requested="workspace.refine.value" :refining="workspace.refineLoading.value" @select="workspace.select" @detail="workspace.openDetail" @retry-refine="workspace.retryRefine" />
+        <aside class="match-comparison-float" aria-label="固定八维能力对比浮窗"><MatchComparisonPanel :student-scores="workspace.studentScores.value" :job="workspace.selectedJob.value" @detail="workspace.openDetail" /></aside>
+      </div>
+      <UEmpty v-else title="没有找到匹配岗位" description="尝试减少关键词或放宽地点条件" icon="i-lucide-search-x" />
+    </template>
+    <UEmpty v-else title="尚未生成匹配结果" description="选择能力画像后开始匹配" icon="i-lucide-target" />
+
+    <MatchHistoryModal v-model:open="workspace.historyOpen.value" :items="workspace.history.value" :loading="workspace.historyLoading.value" @restore="workspace.restore" />
+    <JobDetailModal :job-id="workspace.detailJobId.value" @close="workspace.detailJobId.value = null" />
+  </div>
+</template>
+
+<style scoped>
+.match-comparison-float{position:sticky;top:4.75rem;z-index:10;align-self:start;max-height:calc(100vh - 5.5rem);overflow-y:auto;overscroll-behavior:contain;scrollbar-gutter:stable;border-radius:.75rem}
+@media(max-width:1279px){.match-comparison-float{position:static;max-height:none;overflow:visible}}
+</style>

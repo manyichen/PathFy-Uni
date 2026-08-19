@@ -11,20 +11,30 @@
     "preview": "npx serve .output/public",
     "typecheck": "nuxt typecheck",
     "test": "vitest run",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "test:integration": "playwright test --config=playwright.integration.config.ts",
+    "test:visual-baseline": "playwright test --config=playwright.visual.config.ts",
+    "bundle:report": "node scripts/report-bundle-size.mjs",
+    "bundle:check": "node scripts/report-bundle-size.mjs --check",
+    "experiment:ssr": "nuxt generate experiments/ssr-spike && node scripts/check-ssr-spike.mjs",
+    "experiment:ssr:test": "playwright test --config=playwright.ssr.config.ts"
   },
   "dependencies": {
+    "@iconify-json/lucide": "^1.2.123",
     "@nuxt/ui": "^4.0.0",
     "echarts": "^6.0.0",
     "nuxt": "^4.0.0",
+    "p5": "^2.3.2",
     "vue": "^3.5.0",
     "vue-echarts": "^8.0.0",
     "zod": "^4.0.0"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.13.0",
     "@nuxt/test-utils": "^4.0.0",
     "@playwright/test": "^1.50.0",
     "@types/node": "^22.0.0",
+    "@vitejs/plugin-vue": "^6.0.8",
     "@vue/test-utils": "^2.4.0",
     "happy-dom": "^20.0.0",
     "typescript": "^5.7.0",

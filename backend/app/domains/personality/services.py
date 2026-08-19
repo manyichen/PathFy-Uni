@@ -9,44 +9,25 @@ from app.domains.personality.mbti_data import (
     dimension_analysis as mbti_dimension,
     job_recommendations as mbti_jobs,
 )
+from app.domains.personality.scoring import build_dimension_scores, score_assessment
 
 def calculate_mbti(answers):
-    """根据答案计算MBTI类型"""
-    dimensions = {
-        'E': 0, 'I': 0,
-        'S': 0, 'N': 0,
-        'T': 0, 'F': 0,
-        'J': 0, 'P': 0
-    }
-
+    """兼容旧调用：按当前完整题库校验并计算 MBTI。"""
     with db_cursor() as (_, cur):
-        for answer in answers:
-            cur.execute(
-                "SELECT dimension, option_a_type, option_b_type FROM personality_test_questions WHERE id = %s",
-                (answer['question_id'],)
-            )
-            question = cur.fetchone()
-            if question:
-                if answer['user_choice'] == 'A':
-                    dimensions[question['option_a_type']] += 1
-                else:
-                    dimensions[question['option_b_type']] += 1
-
-    # 确定MBTI类型
-    mbti = ''
-    mbti += 'E' if dimensions['E'] > dimensions['I'] else 'I'
-    mbti += 'S' if dimensions['S'] > dimensions['N'] else 'N'
-    mbti += 'T' if dimensions['T'] > dimensions['F'] else 'F'
-    mbti += 'J' if dimensions['J'] > dimensions['P'] else 'P'
-
-    return mbti, dimensions
+        cur.execute(
+            """SELECT id, dimension, option_a_type, option_b_type
+               FROM personality_test_questions ORDER BY id"""
+        )
+        questions = list(cur.fetchall() or [])
+    result = score_assessment(answers, questions)
+    return result["mbti_type"], result["dimensions"]
 
 def generate_dimension_analysis(dimensions):
     """生成四维度详细分析"""
     analysis = []
 
     # 能量来源维度
-    ei_result = 'E' if dimensions['E'] >= dimensions['I'] else 'I'
+    ei_result = 'E' if dimensions['E'] > dimensions['I'] else 'I'
     ei_data = mbti_dimension()[ei_result]
     analysis.append({
         "dimension": "能量来源",
@@ -59,7 +40,7 @@ def generate_dimension_analysis(dimensions):
     })
 
     # 信息获取维度
-    sn_result = 'S' if dimensions['S'] >= dimensions['N'] else 'N'
+    sn_result = 'S' if dimensions['S'] > dimensions['N'] else 'N'
     sn_data = mbti_dimension()[sn_result]
     analysis.append({
         "dimension": "信息获取",
@@ -72,7 +53,7 @@ def generate_dimension_analysis(dimensions):
     })
 
     # 决策方式维度
-    tf_result = 'T' if dimensions['T'] >= dimensions['F'] else 'F'
+    tf_result = 'T' if dimensions['T'] > dimensions['F'] else 'F'
     tf_data = mbti_dimension()[tf_result]
     analysis.append({
         "dimension": "决策方式",
@@ -85,7 +66,7 @@ def generate_dimension_analysis(dimensions):
     })
 
     # 生活方式维度
-    jp_result = 'J' if dimensions['J'] >= dimensions['P'] else 'P'
+    jp_result = 'J' if dimensions['J'] > dimensions['P'] else 'P'
     jp_data = mbti_dimension()[jp_result]
     analysis.append({
         "dimension": "生活方式",

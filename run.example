@@ -9,6 +9,8 @@ cd E:\Suilli10086\PathFy-Uni\backend
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 pip install -r requirements.txt
+python -m alembic upgrade head
+python tools\check_runtime_schema.py
 python run.py
 deactivate
 

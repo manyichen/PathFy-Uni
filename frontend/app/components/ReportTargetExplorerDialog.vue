@@ -1,4 +1,7 @@
 <script setup lang="ts">
+import { isAbortError } from '~/composables/useApi'
+import { createLatestRequestController, SEARCH_DEBOUNCE_MS } from '~/utils/request-performance'
+
 const props = withDefaults(defineProps<{
   open: boolean
   selectedIds?: string[]
@@ -29,6 +32,8 @@ const total = ref(0)
 const totalPages = ref(1)
 const seed = ref('')
 const targets = ref<any[]>([])
+const requests = createLatestRequestController()
+let searchTimer: ReturnType<typeof setTimeout> | undefined
 
 const selectedSet = computed(() => new Set((props.selectedIds || []).map(String)))
 const selectedFull = computed(() => (props.selectedTargets || []).filter(Boolean))
@@ -60,20 +65,24 @@ async function runSearch() {
   }
 
   mode.value = 'search'
+  const ticket = requests.start()
   loading.value = true
   errorMessage.value = ''
   try {
     const data = await api.ok<any>('/api/report/targets/manual-search', {
       method: 'POST',
-      body: { q, location_q: locationQ.value.trim(), limit: 24 }
+      body: { q, location_q: locationQ.value.trim(), limit: 24 },
+      signal: ticket.signal
     })
+    if (!ticket.isCurrent()) return
     page.value = 1
     normalizeResult(data)
   } catch (error) {
+    if (isAbortError(error)) return
     errorMessage.value = error instanceof Error ? error.message : '搜索候选岗位失败'
     targets.value = []
   } finally {
-    loading.value = false
+    if (ticket.isCurrent()) loading.value = false
   }
 }
 
@@ -84,6 +93,7 @@ async function loadRandom(reset = false) {
     page.value = 1
   }
 
+  const ticket = requests.start()
   loading.value = true
   errorMessage.value = ''
   try {
@@ -92,14 +102,27 @@ async function loadRandom(reset = false) {
       page: String(page.value),
       page_size: '12'
     })
-    const data = await api.ok<any>(`/api/report/targets/random-browse?${params}`)
+    const data = await api.ok<any>(`/api/report/targets/random-browse?${params}`, { signal: ticket.signal })
+    if (!ticket.isCurrent()) return
     normalizeResult(data)
   } catch (error) {
+    if (isAbortError(error)) return
     errorMessage.value = error instanceof Error ? error.message : '随机浏览岗位失败'
     targets.value = []
   } finally {
-    loading.value = false
+    if (ticket.isCurrent()) loading.value = false
   }
+}
+
+function scheduleSearch() {
+  if (searchTimer) clearTimeout(searchTimer)
+  if (!props.open || !query.value.trim()) return
+  searchTimer = setTimeout(runSearch, SEARCH_DEBOUNCE_MS)
+}
+
+function submitSearch() {
+  if (searchTimer) clearTimeout(searchTimer)
+  runSearch()
 }
 
 function choose(item: any) {
@@ -120,6 +143,12 @@ function changeRandomPage(next: number) {
 
 watch(() => props.open, value => {
   if (value && !targets.value.length) loadRandom(true)
+  if (!value) requests.cancel()
+})
+watch([query, locationQ], scheduleSearch)
+onBeforeUnmount(() => {
+  if (searchTimer) clearTimeout(searchTimer)
+  requests.cancel()
 })
 </script>
 
@@ -133,7 +162,7 @@ watch(() => props.open, value => {
     <template #body>
       <div class="explorer-layout">
         <section class="explorer-main">
-          <form class="search-bar" @submit.prevent="runSearch">
+          <form class="search-bar" @submit.prevent="submitSearch">
             <UInput v-model="query" class="min-w-0 flex-1" size="lg" icon="i-lucide-search" placeholder="搜索岗位、公司或技能关键词" />
             <UInput v-model="locationQ" class="location-input" size="lg" icon="i-lucide-map-pin" placeholder="城市，可选" />
             <UButton type="submit" size="lg" :loading="loading && mode === 'search'">搜索候选</UButton>
