@@ -17,7 +17,7 @@
     "bundle:report": "node scripts/report-bundle-size.mjs",
     "bundle:check": "node scripts/report-bundle-size.mjs --check",
     "experiment:ssr": "nuxt generate experiments/ssr-spike && node scripts/check-ssr-spike.mjs",
-    "experiment:ssr:test": "playwright test --config=playwright.ssr.config.ts"
+    "experiment:ssr:test": "pnpm experiment:ssr && playwright test --config=playwright.ssr.config.ts"
   },
   "dependencies": {
     "@iconify-json/lucide": "^1.2.123",

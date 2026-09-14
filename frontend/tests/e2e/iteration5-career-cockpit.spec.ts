@@ -56,7 +56,10 @@ test('profile and matching share the same information hierarchy', async ({ page 
 
 test('report first screen answers status, target, largest gap and next action', async ({ page }) => {
   await page.goto('/report')
-  for (const label of ['当前状态', '当前目标', '最大差距', '下一步']) await expect(page.getByText(label, { exact: true }).first()).toBeVisible()
+  const summary = page.getByRole('region', { name: '报告首屏摘要' })
+  await expect(summary.getByText('第 1 月 · 执行中')).toBeVisible()
+  await expect(summary.getByRole('heading', { name: '数据分析师' })).toBeVisible()
+  for (const label of ['岗位匹配', '主要短板', '现在最值得完成什么？']) await expect(summary.getByText(label, { exact: true })).toBeVisible()
   await expect(page.getByText('数据分析师', { exact: true }).first()).toBeVisible()
   await expect(page.getByText('社会网络 10 分')).toBeVisible()
   await expect(page.getByText('每周日提交一次进展复盘', { exact: true }).first()).toBeVisible()

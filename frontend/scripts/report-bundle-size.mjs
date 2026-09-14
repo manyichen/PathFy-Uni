@@ -67,7 +67,7 @@ async function main() {
     if (/zrender|echarts/i.test(content)) echartsChunks.push(item)
     if (/_addAccsOutput|p5\.js says:/i.test(content)) authJourneyChunks.push(item)
     if (/PATH RELATIONSHIP MAP|career-graph-canvas/.test(content)) careerGraphChunks.push(item)
-    if (/profile-evidence-canvas|画像形成过程/.test(content)) profileEvidenceChunks.push(item)
+    if (/profile-evidence-map-heading/.test(content)) profileEvidenceChunks.push(item)
     if (/match-tension-canvas|能力张力场/.test(content)) matchTensionChunks.push(item)
     if (/personality-fingerprint-canvas|人格视觉指纹/.test(content)) personalityFingerprintChunks.push(item)
     if (/report-path-canvas|报告真实状态路径/.test(content)) reportPathChunks.push(item)
@@ -84,7 +84,7 @@ async function main() {
   for (const item of css) {
     const content = await readFile(join(publicDir, item.file), 'utf8')
     if (/career-graph-explorer/.test(content)) careerGraphCss.push(item)
-    if (/profile-evidence-heading/.test(content)) profileEvidenceCss.push(item)
+    if (/profile-evidence-map/.test(content)) profileEvidenceCss.push(item)
     if (/match-tension-heading/.test(content)) matchTensionCss.push(item)
     if (/personality-fingerprint-heading/.test(content)) personalityFingerprintCss.push(item)
     if (/report-path-heading/.test(content)) reportPathCss.push(item)

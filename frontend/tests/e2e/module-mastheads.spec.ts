@@ -3,7 +3,7 @@ import { installStableApiMocks, reportWorkspace, seedAuthenticatedSession } from
 
 const modules = [
   { path: '/jobs', title: '岗位探索', mark: '01', edition: '岗位星图' },
-  { path: '/profile', title: '学生就业能力画像', mark: '02', edition: '能力档案' },
+  { path: '/profile', title: '个人职业画像', mark: '02', edition: '职业画像' },
   { path: '/match', title: '人岗匹配', mark: '03', edition: '匹配工作台' },
   { path: '/graph', title: '职业关联图谱', mark: '04', edition: '路径图谱' },
   { path: '/report', title: '我的生涯计划', mark: '05', edition: '生涯档案' },

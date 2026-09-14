@@ -9,5 +9,5 @@ export default defineConfig({
   workers: process.env.CI ? 2 : 4,
   expect: { timeout: 20_000 },
   use: { baseURL, trace: 'retain-on-failure' },
-  webServer: { command: `pnpm exec nuxt dev --host 127.0.0.1 --port ${port}`, url: baseURL, reuseExistingServer: true, timeout: 120_000 }
+  webServer: { command: `pnpm exec nuxt dev --host 127.0.0.1 --port ${port}`, url: baseURL, reuseExistingServer: !process.env.CI, timeout: 120_000 }
 })

@@ -25,7 +25,7 @@ test('match history failure is shown inline in the report import dialog', async 
 
   await expect(page.getByText('匹配记录加载失败')).toBeVisible()
   await expect(page.getByText('匹配历史服务暂时不可用').first()).toBeVisible()
-  await expect(page.locator('h1', { hasText: '职业生涯发展报告' })).toBeVisible()
+  await expect(page.locator('h1', { hasText: '我的生涯计划' })).toBeVisible()
 })
 
 test('report generation failure preserves the selected resume and target', async ({ page }) => {
@@ -59,7 +59,7 @@ test('profile resume failure keeps the page usable', async ({ page }) => {
 
   await page.goto('/profile')
 
-  await expect(page.getByRole('heading', { name: '学生就业能力画像' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: '个人职业画像' })).toBeVisible()
   await expect(page.getByText('还没有能力画像')).toBeVisible()
   await expect(page.getByRole('button', { name: '生成能力画像' })).toBeVisible()
 })

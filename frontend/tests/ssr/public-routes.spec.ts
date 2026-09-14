@@ -18,5 +18,6 @@ for (const [path, text] of [['/', '职业规划智能体'], ['/login', '登录']
 test('SPA fallback handles a protected deep link before client auth redirect', async ({ page }) => {
   await page.goto('/report', { waitUntil: 'domcontentloaded' })
   await expect(page).toHaveURL(/\/login\?redirect=(?:%2F|\/)report/)
-  await expect(page.getByRole('heading', { name: '登录' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: '欢迎回来', exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: '登录', exact: true })).toBeVisible()
 })

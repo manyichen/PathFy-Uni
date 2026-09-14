@@ -20,9 +20,9 @@ const viewports = [
 
 const pages = [
   { name: 'home', path: '/', heading: '职业规划智能体', admin: false },
-  { name: 'profile', path: '/profile', heading: '学生就业能力画像', admin: false },
+  { name: 'profile', path: '/profile', heading: '个人职业画像', admin: false },
   { name: 'match', path: '/match', heading: '人岗匹配', admin: false },
-  { name: 'report', path: '/report', heading: '职业生涯发展报告', admin: false },
+  { name: 'report', path: '/report', heading: '我的生涯计划', admin: false },
   { name: 'graph-admin', path: '/graph-admin', heading: '图谱 Dashboard', admin: true }
 ] as const
 

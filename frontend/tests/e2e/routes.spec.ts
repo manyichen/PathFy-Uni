@@ -187,6 +187,7 @@ test('report keeps the real-event path visualization and guidance copy', async (
   await page.goto('/report')
   await page.getByRole('tab', { name: /路线/ }).click()
   await expect(page.getByRole('heading', { name: '12 个月已验证成长轨迹' })).toBeVisible()
+  await page.locator('.trajectory-canvas').scrollIntoViewIfNeeded()
   await expect(page.locator('canvas.report-path-canvas')).toBeVisible()
   await expect(page.getByText(/没有复盘就不画线/)).toBeVisible()
   expect(pageErrors).toEqual([])

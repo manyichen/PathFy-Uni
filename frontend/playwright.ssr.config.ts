@@ -8,7 +8,7 @@ export default defineConfig({
   webServer: {
     command: 'node scripts/serve-static-fallback.mjs',
     url: `http://127.0.0.1:${port}`,
-    reuseExistingServer: true,
+    reuseExistingServer: !process.env.CI,
     timeout: 60_000
   }
 })

@@ -5,6 +5,12 @@ import { extname, join, normalize, resolve } from 'node:path'
 const root = resolve(import.meta.dirname, '..')
 const publicDir = resolve(root, 'experiments', 'ssr-spike', '.output', 'public')
 const port = Number(process.env.PORT || 4331)
+// Fail immediately on a clean checkout instead of serving 500s until Playwright times out.
+try {
+  await stat(join(publicDir, 'index.html'))
+} catch {
+  throw new Error('Missing SSR build. Run `pnpm experiment:ssr` before starting the SSR static server.')
+}
 const mime = { '.css': 'text/css', '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.json': 'application/json', '.svg': 'image/svg+xml' }
 
 async function existingFile(pathname) {

@@ -32,7 +32,7 @@ const preferenceItems = computed(() => [
       <div class="grid gap-1">
         <div class="flex flex-wrap items-center gap-2">
           <span class="text-xs font-medium">工作偏好</span>
-          <USelect v-model="preferenceMode" :items="preferenceItems" size="sm" class="w-56" />
+          <USelect v-model="preferenceMode" :items="preferenceItems" aria-label="工作偏好" size="sm" class="w-56" />
           <UBadge v-if="canExplain" :label="`${personality?.mbti_type || ''} · ${personality?.completed_at?.slice(0, 10) || '当前画像'}`" variant="soft" />
           <UButton v-else to="/personality" size="xs" color="neutral" variant="ghost">{{ personality?.status === 'legacy' ? '重新测评' : personality ? '开启个性化' : '补充工作偏好' }}</UButton>
         </div>
